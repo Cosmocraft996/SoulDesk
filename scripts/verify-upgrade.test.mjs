@@ -6,6 +6,9 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { configurationSummary, snapshotStoppedData, compareSavedData, bundleMarkerEquivalent, canResumeUpgrade } from './verify-upgrade.mjs';
 
+// 全新检出没有被Git忽略的产物目录，测试自行准备夹具父目录。
+mkdirSync(resolve('artifacts'), { recursive: true });
+
 test('安装器映像只接受Tauri安装类型标记差异，其他字节篡改仍拒绝', () => {
   const build = Buffer.from('before:__TAURI_BUNDLE_TYPE_VAR_UNK:after');
   const bundled = Buffer.from('before:__TAURI_BUNDLE_TYPE_VAR_NSS:after');
