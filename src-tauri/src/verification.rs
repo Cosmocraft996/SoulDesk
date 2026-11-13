@@ -346,7 +346,7 @@ async fn check(
         return Err("隐藏全部仍有可见窗口".into());
     }
     let epoch = app.state::<Core>().visibility.lock().map_err(err)?.epoch;
-    windows::delayed_collapse(app, false);
+    windows::auto_collapse(app);
     tokio::time::sleep(Duration::from_secs(1)).await;
     if app
         .webview_windows()

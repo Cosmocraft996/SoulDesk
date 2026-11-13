@@ -11,7 +11,7 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub async fn install(app: &AppHandle, path: &Path) -> AppResult<widgets::Manifest> {
     let path = path.to_owned();
@@ -42,6 +42,16 @@ pub async fn ensure_preset(app: &AppHandle, id: &str) -> AppResult<()> {
         .await?;
     }
     Ok(())
+}
+
+/// 用户在管理界面显式升级预置版本；沿用隐藏试加载和失败保留，不在启动时覆盖。
+pub async fn update_preset(app: &AppHandle, id: &str) -> AppResult<()> {
+    let preset = presets::find(id)?.ok_or("没有此预置组件")?;
+    install_with(app, move |store| {
+        widgets::stage_bytes(store, preset.archive()?)
+    })
+    .await?;
+    app.emit("host:changed", ()).map_err(err)
 }
 
 async fn install_with(

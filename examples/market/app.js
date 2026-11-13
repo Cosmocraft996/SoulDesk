@@ -1,5 +1,9 @@
 import { connectHost } from './host.js';
 import { alreadyMet } from './price.js';
+const role = new URLSearchParams(location.search).get('role');
+if (role === 'primary') {
+  await import('./compact.js');
+} else {
 const $ = id => document.getElementById(id);
 const host = await connectHost();
 const settings = await host.request('settings.get');
@@ -93,6 +97,8 @@ async function loadHistory() {
 }
 for (const el of document.querySelectorAll('[data-tab]')) el.onclick = () => void run(async () => { for (const b of document.querySelectorAll('[data-tab]')) b.classList.toggle('active', b === el); for (const id of ['quotes', 'rules', 'history']) $(id).hidden = id !== el.dataset.tab; if (el.dataset.tab === 'rules') await loadRules(); if (el.dataset.tab === 'history') await loadHistory(); });
 $('search').oninput = renderSearch; $('search-form').onsubmit = e => e.preventDefault(); $('reload').onclick = () => void run(loadCatalog); $('new-rule').onclick = () => void run(() => openEditor()); $('cancel').onclick = () => $('editor').close(); $('refresh-history').onclick = () => void run(loadHistory); $('previous').onclick = () => void run(async () => { offset = Math.max(0, offset - 30); await loadHistory(); }); $('next').onclick = () => void run(async () => { offset += 30; await loadHistory(); });
+const requestedPage = new URLSearchParams(location.search).get('page');
+if (['quotes', 'rules', 'history'].includes(requestedPage)) document.querySelector(`[data-tab=${requestedPage}]`)?.click();
 await host.ready();
 if (host.preview) { $('connection').textContent = '隔离试加载'; renderPrices(); }
 else {
@@ -121,4 +127,6 @@ else {
       await host.request('storage.set', { ...saved, g2Ready: true, loads: (saved.loads ?? 0) + 1, origin: location.origin, hostTokenAbsent: typeof window.__SOULDESK_HOST_TOKEN__ === 'undefined', symbols, priceRows: $('prices').children.length, observedKeys: snapshot.quotes.length, generation: snapshot.generation, background: getComputedStyle(document.documentElement).backgroundColor });
     } catch (error) { message(String(error)); await host.request('storage.set', { g2Error: String(error), editorOpen: $('editor').open, editorError: $('editor-error').textContent, invalidFields: [...form.elements].filter(el => el.validity && !el.validity.valid).map(el => ({ name: el.name, value: el.value, message: el.validationMessage })) }); throw error; }
   }
+}
+
 }

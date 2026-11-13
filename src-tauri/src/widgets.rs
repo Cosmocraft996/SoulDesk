@@ -729,6 +729,27 @@ pub fn open_session_expected(
     instance: &str,
     expected_digest: Option<&str>,
 ) -> AppResult<Value> {
+    open_session_inner(store, sessions, window, instance, expected_digest, false)
+}
+
+/// 正式宿主角色直接校验数据库归属；main 管理窗口没有展示权限。
+pub fn open_display_session(
+    store: &Store,
+    sessions: &Sessions,
+    window: &str,
+    instance: &str,
+    expected_digest: Option<&str>,
+) -> AppResult<Value> {
+    open_session_inner(store, sessions, window, instance, expected_digest, true)
+}
+fn open_session_inner(
+    store: &Store,
+    sessions: &Sessions,
+    window: &str,
+    instance: &str,
+    expected_digest: Option<&str>,
+    display: bool,
+) -> AppResult<Value> {
     let mut sessions = sessions.0.lock().map_err(err)?;
     let db = store.db.lock().map_err(err)?;
     let (package, settings, floating): (String, String, bool) = db
@@ -738,7 +759,33 @@ pub fn open_session_expected(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(err)?;
-    if !(window == "main" && !floating || window == format!("float-{instance}") && floating) {
+    let detail = window == format!("detail-{instance}");
+    if display {
+        let (location, visible): (String, bool) = db
+            .query_row(
+                "SELECT location,visible FROM widget_instances WHERE id=?1",
+                [instance],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(err)?;
+        let hidden = db
+            .query_row(
+                "SELECT value FROM app_settings WHERE key='hidden_all'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_default()
+            == "true";
+        if hidden
+            || !visible
+            || !(detail
+                || window == "panel" && location == "panel"
+                || window == format!("float-{instance}") && location == "desktop")
+        {
+            return Err("SESSION_EXPIRED: 当前窗口不是可见实例的展示所有者".into());
+        }
+    } else if !(window == "main" && !floating || window == format!("float-{instance}") && floating)
+    {
         return Err("SESSION_EXPIRED: 实例已移动".into());
     }
     let manifest: String = db
@@ -759,8 +806,13 @@ pub fn open_session_expected(
     if expected_digest.is_some_and(|expected| expected != digest) {
         return Err("VERSION_INCOMPATIBLE: 组件版本已更新，请重新加载".into());
     }
+    if display && detail && !manifest.capabilities.iter().any(|c| c == "alerts.manage") {
+        return Err("CAPABILITY_DENIED: 此组件未声明详情能力".into());
+    }
     let token = Uuid::new_v4().to_string();
-    sessions.retain(|_, s| s.instance != instance);
+    sessions.retain(|_, s| {
+        s.instance != instance || display && (s.window.starts_with("detail-") != detail)
+    });
     sessions.insert(
         token.clone(),
         Session {
@@ -770,7 +822,7 @@ pub fn open_session_expected(
         },
     );
     Ok(
-        json!({"token":token,"instanceId":instance,"packageId":package,"digest":digest,"entry":manifest.entry,"resourcePath":format!("{package}/{digest}/{}",manifest.entry),"version":manifest.version,"settings":serde_json::from_str::<Value>(&settings).map_err(err)?}),
+        json!({"token":token,"instanceId":instance,"packageId":package,"digest":digest,"entry":manifest.entry,"resourcePath":format!("{package}/{digest}/{}",manifest.entry),"version":manifest.version,"role":if detail {"details"} else {"primary"},"settings":serde_json::from_str::<Value>(&settings).map_err(err)?}),
     )
 }
 
@@ -956,6 +1008,68 @@ pub fn resource(store: &Store, path: &str) -> AppResult<(Vec<u8>, String)> {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn formal_primary_and_detail_sessions_are_isolated_and_manager_cannot_mount() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-display-session-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let sessions = Sessions::default();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["capabilities"] = json!(["storage.instance", "alerts.manage"]);
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let id = create_instance(&store, manifest["id"].as_str().unwrap()).unwrap();
+        let label = format!("float-{id}");
+        let detail = format!("detail-{id}");
+        assert!(open_display_session(&store, &sessions, "main", &id, None).is_err());
+        assert!(open_display_session(&store, &sessions, "panel", &id, None).is_err());
+        let primary = open_display_session(&store, &sessions, &label, &id, None).unwrap();
+        let extra = open_display_session(&store, &sessions, &detail, &id, None).unwrap();
+        assert_eq!(extra["role"], "details");
+        assert_eq!(sessions.0.lock().unwrap().len(), 2);
+        assert!(gateway(
+            &store,
+            &sessions,
+            &label,
+            primary["token"].as_str().unwrap(),
+            "settings.get",
+            Value::Null
+        )
+        .is_ok());
+        assert!(gateway(
+            &store,
+            &sessions,
+            &detail,
+            primary["token"].as_str().unwrap(),
+            "settings.get",
+            Value::Null
+        )
+        .is_err());
+        store.presentation(&id, "panel", true, false).unwrap();
+        assert!(open_display_session(&store, &sessions, &label, &id, None).is_err());
+        // 正式协调器在转移之前撤销旧会话；新握手只替换同角色，详情不挤掉主展示。
+        let panel = open_display_session(&store, &sessions, "panel", &id, None).unwrap();
+        assert!(gateway(
+            &store,
+            &sessions,
+            &label,
+            primary["token"].as_str().unwrap(),
+            "settings.get",
+            Value::Null
+        )
+        .is_err());
+        assert!(gateway(
+            &store,
+            &sessions,
+            "panel",
+            panel["token"].as_str().unwrap(),
+            "settings.get",
+            Value::Null
+        )
+        .is_ok());
+        store.save_preference("hidden_all", "true").unwrap();
+        assert!(open_display_session(&store, &sessions, "panel", &id, None).is_err());
+    }
     #[test]
     fn upgrade_rejects_old_page_handshake_and_concurrent_configuration_changes() {
         let root = std::env::temp_dir().join(format!("souldesk-upgrade-race-{}", Uuid::new_v4()));

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-surface-failed"
+description = "Enables the surface_failed command without any pre-configured scope."
+commands.allow = ["surface_failed"]
+
+[[permission]]
+identifier = "deny-surface-failed"
+description = "Denies the surface_failed command without any pre-configured scope."
+commands.deny = ["surface_failed"]

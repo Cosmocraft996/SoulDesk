@@ -56,6 +56,39 @@ pub fn panel_geometry(
     })
 }
 
+/// 初次摆放优先找工作区内的空位；空间不足时保留可拖动的错位位置。
+pub fn initial_position(
+    area: WorkArea,
+    width: u32,
+    height: u32,
+    occupied: &[(i32, i32, u32, u32)],
+) -> (i32, i32) {
+    let margin = (16. * area.scale_factor).round() as i32;
+    let right = area.left + area.width.saturating_sub(width) as i32;
+    let bottom = area.top + area.height.saturating_sub(height) as i32;
+    let mut y = (area.top + margin).min(bottom);
+    while y <= bottom {
+        let mut x = (area.left + margin).min(right);
+        while x <= right {
+            if occupied.iter().all(|(ox, oy, ow, oh)| {
+                x as i64 + width as i64 + margin as i64 <= *ox as i64
+                    || x as i64 >= *ox as i64 + *ow as i64 + margin as i64
+                    || y as i64 + height as i64 + margin as i64 <= *oy as i64
+                    || y as i64 >= *oy as i64 + *oh as i64 + margin as i64
+            }) {
+                return (x, y);
+            }
+            x = x.saturating_add(width as i32 + margin.max(1));
+        }
+        y = y.saturating_add(height as i32 + margin.max(1));
+    }
+    let offset = (occupied.len() % 7) as i32 * margin;
+    (
+        (area.left + margin + offset).min(right),
+        (area.top + margin + offset).min(bottom),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,6 +100,15 @@ mod tests {
             height: 1040,
             scale_factor: 1.0,
         }
+    }
+    #[test]
+    fn initial_placement_uses_free_space_and_keeps_overflow_reachable() {
+        let a = area();
+        let first = initial_position(a, 400, 300, &[]);
+        let second = initial_position(a, 400, 300, &[(first.0, first.1, 400, 300)]);
+        assert!(second.0 >= first.0 + 400 || second.1 >= first.1 + 300);
+        let p = initial_position(a, 1920, 1040, &[(0, 0, 1920, 1040)]);
+        assert_eq!(p, (0, 0));
     }
     #[test]
     fn right_edge_and_height_follow_work_area() {

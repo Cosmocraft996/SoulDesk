@@ -1,7 +1,7 @@
 [package]
 name = "souldesk"
-version = "0.3.3"
-description = "SoulDesk 通用桌面工作台"
+version = "0.5.0"
+description = "SoulDesk 通用桌面组件"
 edition = "2021"
 rust-version = "1.92"
 default-run = "souldesk"
@@ -19,6 +19,9 @@ tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-global-shortcut = "=2.4.1"
 tauri-plugin-notification = "=2.8.1"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls"] }
+# 更新插件使用0.13；补齐SOCKS5，不升级现有业务客户端。
+reqwest-updater = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
@@ -37,6 +40,7 @@ url = "2"
 rust_decimal = { version = "=1.43.0", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_UI_Accessibility", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant"] }
 windows-sys = { version = "0.61", features = ["Win32_Media_Audio", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Power", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
 winreg = "0.55"
 tauri-winrt-notification = "=0.8.1"

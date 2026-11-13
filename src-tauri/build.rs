@@ -2,6 +2,17 @@ fn main() {
     let attributes =
         tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
             "snapshot",
+            "update_preset",
+            "save_panel_layout",
+            "app_update",
+            "set_panel",
+            "surface_activate",
+            "surface_pointer",
+            "surface_failed",
+            "set_panel",
+            "surface_activate",
+            "surface_pointer",
+            "surface_failed",
             "import_package",
             "create_instance",
             "manage_instance",
@@ -28,5 +39,5 @@ fn main() {
             "desktop_widget_view",
             "desktop_widget_activate",
         ]));
-    tauri_build::try_build(attributes).expect("Tauri 构建配置无效");
+    tauri_build::try_build(attributes).expect("Tauri 鏋勫缓閰嶇疆鏃犳晥");
 }

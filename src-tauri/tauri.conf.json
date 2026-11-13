@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoulDesk",
-  "version": "0.3.3",
+  "version": "0.5.0",
   "identifier": "local.souldesk.desktop",
   "build": {
     "beforeDevCommand": "node node_modules/vite/bin/vite.js --host 127.0.0.1",
@@ -18,10 +18,39 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico"],
-    "resources": { "icons/icon.png": "notification-icon.png" },
-    "shortDescription": "个人桌面工作台",
-    "windows": { "nsis": { "installMode": "currentUser", "languages": ["SimpChinese", "English"], "displayLanguageSelector": false, "installerHooks": "windows/installer-hooks.nsh" } }
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "icons/icon.png": "notification-icon.png"
+    },
+    "shortDescription": "独立桌面组件与本地价格提醒",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBNDAyNjU0QjI3NTVFODMKUldTRFhuV3lWQ1pBNnRzTnlGREQzV0FxV3I5WG5rWWxqUW9MWlYwTWpiaG9zbkJtRW1pdGJDczMK",
+      "endpoints": [
+        "https://github.com/Cosmocraft996/SoulDesk/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      },
+      "requireSignedVersion": true
+    }
   }
 }

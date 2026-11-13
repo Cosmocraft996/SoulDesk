@@ -1,0 +1,67 @@
+name: Windows 自动打包
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: 核对版本与发行配置
+        run: node scripts/release.mjs
+      - name: 核对公开仓库与签名配置
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY -or -not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) { throw '请先配置签名 Secrets，详见 docs/12-面板交互与自动更新.md' }
+          $source = gh api "repos/$env:GITHUB_REPOSITORY" --jq '.visibility'
+          if ($LASTEXITCODE -ne 0 -or $source -ne 'public') { throw '当前仓库必须为公开仓库' }
+      - run: pnpm check
+      - run: pnpm test:web
+      - run: node scripts/desktop.mjs test --locked --lib
+      - name: 构建签名安装包及发布草稿
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: Cosmocraft996
+          repo: SoulDesk
+          releaseCommitish: ${{ github.sha }}
+          tagName: v__VERSION__
+          releaseName: SoulDesk v__VERSION__
+          releaseBody: 'Windows x64 安装包。更新前会备份本地数据；安装期间价格警报暂停。'
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: false
+          uploadPlainBinary: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+          tauriScript: node scripts/desktop.mjs
+          args: --ci --bundles nsis -- --locked
+      - name: 核验交付签名与版本
+        run: node scripts/release.mjs --verify-installer

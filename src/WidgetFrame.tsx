@@ -3,8 +3,8 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { invoke } from './host';
 import { widgetEntryUrl } from './widget-url';
 
-interface Session { token: string; instanceId: string; packageId: string; entry: string; resourcePath: string; version: string; digest: string; verify: boolean; preview?: boolean }
-export function WidgetFrame({ instance, probe = false }: { instance: string; probe?: boolean }) {
+interface Session { token: string; instanceId: string; packageId: string; entry: string; resourcePath: string; version: string; digest: string; verify: boolean; role?: string; preview?: boolean }
+export function WidgetFrame({ instance, probe = false, page }: { instance: string; probe?: boolean; page?: string }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
@@ -17,22 +17,33 @@ export function WidgetFrame({ instance, probe = false }: { instance: string; pro
     let channel: MessageChannel | undefined;
     let listener: ((e: MessageEvent) => void) | undefined;
     let updateTimer: ReturnType<typeof setInterval> | undefined;
-    const timeout = setTimeout(() => setError('组件未在 10 秒内完成握手，可重新加载。'), 10_000);
+    const fail = (message: string) => {
+      if (disposed) return;
+      setError(message);
+      if (!probe) void invoke('surface_failed', { instance, message }).catch(() => {});
+    };
+    const timeout = setTimeout(() => fail('组件未在 10 秒内完成握手，可重新加载。'), 10_000);
     void call<Session>('open_session', { instance }).then(s => {
       session = s;
       if (disposed) { void call('close_session', { token: s.token }); return; }
       const resource = widgetEntryUrl(convertFileSrc(s.resourcePath, 'widget'));
       resource.searchParams.set('hostOrigin', location.origin);
       if (s.verify) resource.searchParams.set('verify', '1');
+      if (s.role) resource.searchParams.set('role', s.role);
+      if (page) resource.searchParams.set('page', page);
       let handshake = 0;
       listener = async e => {
-        if (probe && e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:user-pointer' && e.data?.protocol === 1) {
-          void invoke('desktop_widget_activate').catch(cause => { if (!disposed) setError(String(cause)); });
+        if (!probe && new URLSearchParams(location.search).has('panel') && e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:editing' && e.data?.protocol === 1) {
+          void invoke('window_action', { action: e.data.editing === true ? 'editing' : 'idle' }).catch(() => {}); return;
+        }
+        if (e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:user-pointer' && e.data?.protocol === 1) {
+          if (!probe && !new URLSearchParams(location.search).has('instance')) return;
+          void invoke(probe ? 'desktop_widget_activate' : 'surface_activate').catch(cause => { if (!disposed) setError(String(cause)); });
           return;
         }
         if (e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:failed') {
           const message = String(e.data.message).slice(0, 1000);
-          setError(message);
+          fail(message);
           if (s.preview) void call('trial_failed', { message });
           return;
         }
@@ -43,7 +54,7 @@ export function WidgetFrame({ instance, probe = false }: { instance: string; pro
         setReady(false);
         let active: Session;
         try { active = await call<Session>('open_session', { instance, expectedDigest: s.digest }); }
-        catch (cause) { if (!disposed && generation === handshake) setError(String(cause)); return; }
+        catch (cause) { if (!disposed && generation === handshake) fail(String(cause)); return; }
         if (disposed || generation !== handshake) { void call('close_session', { token: active.token }); return; }
         session = active;
         const next = new MessageChannel();
@@ -79,7 +90,7 @@ export function WidgetFrame({ instance, probe = false }: { instance: string; pro
       };
       window.addEventListener('message', listener);
       setUrl(resource.href);
-    }).catch(cause => { clearTimeout(timeout); setError(String(cause)); });
+    }).catch(cause => { clearTimeout(timeout); fail(String(cause)); });
     return () => {
       disposed = true; clearTimeout(timeout);
       clearInterval(updateTimer);
@@ -87,7 +98,7 @@ export function WidgetFrame({ instance, probe = false }: { instance: string; pro
       channel?.port1.close(); channel?.port2.close();
       if (session) void call('close_session', { token: session.token });
     };
-  }, [instance, revision, probe]);
+  }, [instance, revision, probe, page]);
   return <div className="frame-wrap">
     {url && <iframe ref={frame} title="独立组件" src={url} sandbox="allow-scripts allow-same-origin allow-forms" referrerPolicy="no-referrer" />}
     {error ? <div className="frame-message error">{error}<button onClick={() => { setError(''); setReady(false); setUrl(''); setRevision(v => v + 1); }}>重新加载</button></div> : !ready && <div className="frame-message">正在连接组件…</div>}

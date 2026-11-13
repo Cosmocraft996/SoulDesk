@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "edge",
+  "description": "正式展示容器的最小能力；组件页面不授予原生命令",
+  "windows": [
+    "edge"
+  ],
+  "permissions": [
+    "allow-window-action"
+  ]
+}

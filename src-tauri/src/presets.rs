@@ -29,6 +29,10 @@ pub const PRESETS: &[Preset] = &[
                 include_bytes!("../../examples/market/app.js"),
             ),
             (
+                "dist/compact.js",
+                include_bytes!("../../examples/market/compact.js"),
+            ),
+            (
                 "dist/price.js",
                 include_bytes!("../../examples/market/price.js"),
             ),
@@ -117,6 +121,7 @@ pub fn catalog(installed: &[Value]) -> AppResult<Vec<Value>> {
         let mut entry = active.unwrap_or(&manifest).clone();
         entry["preset"] = json!(true);
         entry["installed"] = json!(active.is_some());
+        entry["availableVersion"] = manifest["version"].clone();
         entry["description"] = json!(preset.description);
         entry["symbol"] = json!(preset.symbol);
         catalog.push(entry);

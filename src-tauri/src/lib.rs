@@ -2,16 +2,23 @@ mod alert_store;
 pub mod alerts;
 mod business;
 pub mod desktop_geometry;
+#[cfg(windows)]
+mod desktop_input;
+#[cfg(windows)]
+mod desktop_native;
 mod desktop_probe;
 mod desktop_widgets;
+mod integration;
 pub mod market;
 pub mod network;
 mod packages;
+mod panel;
 mod power;
 mod presets;
 mod recovery;
 mod soak;
 mod store;
+mod updates;
 mod verification;
 mod view_probe;
 mod widgets;
@@ -73,6 +80,9 @@ pub struct Core {
     trials: Mutex<std::collections::HashMap<String, std::sync::Arc<Mutex<widgets::Preview>>>>,
     geometry_versions: Mutex<std::collections::HashMap<String, u64>>,
     window_tasks: AtomicU64,
+    integration: Option<integration::Config>,
+    transfer_failure: Mutex<Option<String>>,
+    updates: updates::State,
 }
 impl Core {
     fn report(&self, error: String) {
@@ -92,6 +102,12 @@ async fn snapshot(app: AppHandle, core: State<'_, Core>) -> AppResult<Value> {
     value["packages"] = json!(presets::catalog(
         value["packages"].as_array().ok_or("组件目录无效")?
     )?);
+    value["hiddenAll"] = json!(core.visibility.lock().map_err(err)?.hidden);
+    value["panelOpen"] = json!(app.get_webview_window("panel").is_some());
+    value["panel"] = windows::panel_preferences(&app)?;
+    value["panelGeometry"] = windows::panel_metrics(&app)?;
+    value["panelLayouts"] = core.store.panel_layouts()?;
+    value["updates"] = updates::snapshot(&app)?;
     value["autostart"] = json!(windows::autostart_enabled().ok());
     value["windowTasks"] = json!(core.window_tasks.load(Ordering::Relaxed));
     value["trialCount"] = json!(core.trials.lock().map_err(err)?.len());
@@ -128,10 +144,25 @@ async fn import_package(app: AppHandle) -> AppResult<Value> {
 }
 
 #[tauri::command]
+async fn update_preset(app: AppHandle, package_id: String) -> AppResult<()> {
+    packages::update_preset(&app, &package_id).await
+}
+#[tauri::command]
 async fn create_instance(app: AppHandle, package_id: String) -> AppResult<String> {
+    if app.state::<Core>().visibility.lock().map_err(err)?.hidden {
+        return Err("请先恢复组件显示".into());
+    }
     packages::ensure_preset(&app, &package_id).await?;
     let id = widgets::create_instance(&app.state::<Core>().store, &package_id)?;
-    app.emit("host:changed", ()).map_err(err)?;
+    let target = id.clone();
+    let shown = tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| windows::show_instance(app, &target))
+    })
+    .await
+    .map_err(err)?;
+    if let Err(e) = shown {
+        return Err(format!("实例已保留，可在管理中重试显示：{e}"));
+    }
     Ok(id)
 }
 #[tauri::command]
@@ -142,23 +173,27 @@ async fn manage_instance(
     width: Option<u32>,
     height: Option<u32>,
 ) -> AppResult<()> {
-    let core = app.state::<Core>();
-    match action.as_str() {
-        "resize" => widgets::set_instance_size(
-            &core.store,
-            &instance,
-            width.ok_or("缺少宽度")?,
-            height.ok_or("缺少高度")?,
-        )?,
-        "remove" => {
-            widgets::remove_instance(&core.store, &core.sessions, &instance)?;
-            if let Some(w) = app.get_webview_window(&format!("float-{instance}")) {
-                w.destroy().map_err(err)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| {
+            let core = app.state::<Core>();
+            match action.as_str() {
+                "resize" => windows::resize_instance(
+                    app,
+                    &instance,
+                    width.ok_or("缺少宽度")?,
+                    height.ok_or("缺少高度")?,
+                )?,
+                "remove" => {
+                    windows::hide_instance(app, &instance)?;
+                    widgets::remove_instance(&core.store, &core.sessions, &instance)?;
+                }
+                _ => return Err("INVALID_ARGUMENT: 未知实例操作".into()),
             }
-        }
-        _ => return Err("INVALID_ARGUMENT: 未知实例操作".into()),
-    }
-    app.emit("host:changed", ()).map_err(err)
+            windows::changed(app)
+        })
+    })
+    .await
+    .map_err(err)?
 }
 #[tauri::command]
 async fn reorder_instances(app: AppHandle, ids: Vec<String>) -> AppResult<()> {
@@ -180,7 +215,7 @@ fn open_session(
     if let Some(value) = packages::session(&core, window.label(), &instance)? {
         return Ok(value);
     }
-    let mut value = widgets::open_session_expected(
+    let mut value = widgets::open_display_session(
         &core.store,
         &core.sessions,
         window.label(),
@@ -214,20 +249,51 @@ async fn widget_request(
     method: String,
     args: Value,
 ) -> AppResult<Value> {
+    if method == "view.openDetails" {
+        let id = {
+            let sessions = core.sessions.0.lock().map_err(err)?;
+            let s = sessions
+                .get(&token)
+                .filter(|s| s.window == window.label() && s.preview.is_none())
+                .ok_or("SESSION_EXPIRED: 无有效展示会话")?;
+            s.instance.clone()
+        };
+        let page = args["page"].as_str().unwrap_or("quotes").to_owned();
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            windows::serialized(&handle, |app| windows::detail_at(app, &id, &page))
+        })
+        .await
+        .map_err(err)??;
+        return Ok(Value::Null);
+    }
     if method.starts_with("market.")
         || method.starts_with("watchlist.")
         || method.starts_with("alerts.")
     {
         return business::gateway(&app, window.label(), &token, &method, args).await;
     }
-    widgets::gateway(
+    let result = widgets::gateway(
         &core.store,
         &core.sessions,
         window.label(),
         &token,
         &method,
         args,
-    )
+    );
+    if method == "runtime.ready" && result.is_ok() {
+        let id = core
+            .sessions
+            .0
+            .lock()
+            .map_err(err)?
+            .get(&token)
+            .map(|s| s.instance.clone());
+        if let Some(id) = id {
+            windows::ready(&app, window.label(), &id)?;
+        }
+    }
+    result
 }
 
 #[tauri::command]
@@ -263,66 +329,236 @@ async fn business_settings(
 }
 
 #[tauri::command]
-async fn window_action(app: AppHandle, action: String, instance: Option<String>) -> AppResult<()> {
-    let core = app.state::<Core>();
-    let _guard = core.window_actions.lock().map_err(err)?;
-    match action.as_str() {
-        "show" => windows::show(&app, true),
-        "hide-all" => windows::hide_all(&app),
-        "toggle" => windows::toggle(&app),
-        "pin" => {
-            let id = instance.ok_or("缺少浮窗实例")?;
-            let window = app
-                .get_webview_window(&format!("float-{id}"))
-                .ok_or("浮窗不存在")?;
-            window
-                .set_always_on_top(!window.is_always_on_top().map_err(err)?)
-                .map_err(err)?;
-            windows::save_geometry(&window)
-        }
-        "dock" => {
-            let mut v = core.visibility.lock().map_err(err)?;
-            v.docked = !v.docked;
-            let enabled = v.docked;
-            drop(v);
-            core.store
-                .save_preference("docked", if enabled { "true" } else { "false" })?;
-            if enabled {
-                windows::collapse(&app)?;
-            } else {
-                windows::show(&app, true)?;
-            }
-            Ok(())
-        }
-        "edge-enter" => {
-            if !core.visibility.lock().map_err(err)?.hidden {
-                windows::show(&app, false)?;
-                core.edge_hits.fetch_add(1, Ordering::Relaxed);
-            }
-            Ok(())
-        }
-        "enter" => {
-            core.visibility.lock().map_err(err)?.epoch += 1;
-            Ok(())
-        }
-        "leave" => {
-            windows::delayed_collapse(&app, false);
-            Ok(())
-        }
-        "float" | "embed" => windows::move_instance(
-            &app,
-            instance.as_deref().ok_or("缺少实例")?,
-            action == "float",
-        ),
-        "destroy" => windows::destroy_views(&app),
-        "repair" => {
-            for w in app.webview_windows().values() {
-                windows::clamp(w)?;
-            }
-            Ok(())
-        }
-        _ => Err("未知窗口操作".into()),
+async fn window_action(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    instance: Option<String>,
+) -> AppResult<()> {
+    let label = window.label();
+    let allowed = if label == "main" {
+        true
+    } else if label == "edge" {
+        action == "edge-enter"
+    } else if label.starts_with("detail-") {
+        action == "close-detail"
+    } else if label == "panel" {
+        [
+            "show",
+            "settings",
+            "collapse",
+            "enter",
+            "leave",
+            "editing",
+            "idle",
+            "float",
+            "hide",
+            "detail",
+            "interaction-start",
+            "interaction-end",
+            "menu-open",
+            "menu-close",
+        ]
+        .contains(&action.as_str())
+            && instance.as_ref().is_none_or(|id| {
+                windows::instance(&app, id).is_ok_and(|i| i["location"] == "panel")
+            })
+    } else if let Some(id) = label.strip_prefix("float-") {
+        ["show", "pin", "hide", "embed", "detail"].contains(&action.as_str())
+            && instance.as_deref().is_none_or(|given| given == id)
+    } else {
+        false
+    };
+    if !allowed {
+        return Err("CAPABILITY_DENIED: 当前窗口无此展示权限".into());
     }
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| {
+            let id = || instance.as_deref().ok_or("缺少实例".to_owned());
+            match action.as_str() {
+                "show" => windows::show(app, true),
+                "settings" => windows::settings(app),
+                "hide-all" => windows::hide_all(app),
+                "restore-all" => windows::restore(app),
+                "toggle" => windows::toggle(app),
+                "collapse" => windows::collapse(app),
+                "pin" => windows::pin(app, id()?),
+                "hide" => windows::hide_instance(app, id()?),
+                "restore" => windows::restore_instance(app, id()?),
+                "float" => windows::move_to(app, id()?, "desktop"),
+                "embed" => windows::move_to(app, id()?, "panel"),
+                "detail" => windows::detail(app, id()?),
+                "close-detail" => windows::destroy_window(app, window.label()),
+                "edge-enter" => {
+                    if !app.state::<Core>().visibility.lock().map_err(err)?.hidden {
+                        windows::show_panel(app, false)?;
+                        app.state::<Core>()
+                            .edge_hits
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                    Ok(())
+                }
+                "editing" | "idle" => {
+                    let core = app.state::<Core>();
+                    let mut v = core.visibility.lock().map_err(err)?;
+                    v.editing = action == "editing";
+                    v.epoch += 1;
+                    drop(v);
+                    if action == "idle" {
+                        windows::auto_collapse(app);
+                    }
+                    Ok(())
+                }
+                "interaction-start" | "interaction-end" | "menu-open" | "menu-close" => {
+                    let core = app.state::<Core>();
+                    let mut v = core.visibility.lock().map_err(err)?;
+                    let key = instance.clone().unwrap_or_else(|| "panel-settings".into());
+                    match action.as_str() {
+                        "interaction-start" => v.interacting = true,
+                        "interaction-end" => v.interacting = false,
+                        "menu-open" => {
+                            v.menus.insert(key);
+                        }
+                        _ => {
+                            v.menus.remove(&key);
+                        }
+                    }
+                    v.epoch += 1;
+                    drop(v);
+                    if action == "interaction-end" || action == "menu-close" {
+                        windows::auto_collapse(app);
+                    }
+                    Ok(())
+                }
+                "enter" => {
+                    app.state::<Core>().visibility.lock().map_err(err)?.epoch += 1;
+                    Ok(())
+                }
+                "leave" => {
+                    windows::auto_collapse(app);
+                    Ok(())
+                }
+                "destroy" => windows::destroy_views(app),
+                "repair" => windows::repair(app),
+                _ => Err("未知窗口操作".into()),
+            }
+        })
+    })
+    .await
+    .map_err(err)?
+}
+#[tauri::command]
+async fn set_panel(
+    app: AppHandle,
+    ratio: f64,
+    tint: f64,
+    slide_in_ms: Option<u32>,
+    slide_out_ms: Option<u32>,
+    desktop_double_click: Option<bool>,
+) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| {
+            let mut settings: panel::Preferences =
+                serde_json::from_value(windows::panel_preferences(app)?).map_err(err)?;
+            settings.ratio = ratio;
+            settings.tint = tint;
+            if let Some(value) = slide_in_ms {
+                settings.slide_in_ms = value;
+            }
+            if let Some(value) = slide_out_ms {
+                settings.slide_out_ms = value;
+            }
+            if let Some(value) = desktop_double_click {
+                settings.desktop_double_click = value;
+            }
+            windows::save_panel_settings(app, settings)
+        })
+    })
+    .await
+    .map_err(err)?
+}
+#[tauri::command]
+async fn save_panel_layout(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    instance: String,
+    layout: panel::Layout,
+) -> AppResult<()> {
+    if !["main", "panel"].contains(&window.label()) {
+        return Err("CAPABILITY_DENIED: 仅管理与面板可调整面板布局".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| {
+            app.state::<Core>()
+                .store
+                .save_panel_layout(&instance, layout)?;
+            windows::changed(app)
+        })
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+async fn app_update(
+    app: AppHandle,
+    action: String,
+    enabled: Option<bool>,
+    version: Option<String>,
+) -> AppResult<Value> {
+    updates::command(app, &action, enabled, version.as_deref()).await
+}
+#[tauri::command]
+async fn surface_activate(window: tauri::WebviewWindow) -> AppResult<Value> {
+    if !window.label().starts_with("float-") {
+        return Ok(Value::Null);
+    }
+    #[cfg(windows)]
+    {
+        return tauri::async_runtime::spawn_blocking(move || {
+            desktop_native::activate_clicked(&window)
+        })
+        .await
+        .map_err(err)?;
+    }
+    #[cfg(not(windows))]
+    {
+        Err("当前平台不支持桌面输入适配".into())
+    }
+}
+#[tauri::command]
+async fn surface_pointer(window: tauri::WebviewWindow, resize: bool) -> AppResult<()> {
+    let id = window
+        .label()
+        .strip_prefix("float-")
+        .ok_or("CAPABILITY_DENIED: 仅桌面组件允许拖动")?
+        .to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(window.app_handle(), |app| {
+            let (_, _, mw, mh) = windows::dimensions(app, &id)?;
+            #[cfg(windows)]
+            desktop_native::pointer_move(&window, resize, mw, mh)?;
+            windows::save_geometry(&window)
+        })
+    })
+    .await
+    .map_err(err)?
+}
+#[tauri::command]
+fn surface_failed(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    instance: String,
+    message: String,
+) -> AppResult<()> {
+    let label = window.label();
+    if label != "panel"
+        && label != format!("float-{instance}")
+        && label != format!("detail-{instance}")
+    {
+        return Err("CAPABILITY_DENIED: 无效展示来源".into());
+    }
+    windows::failed(&app, label, &instance, message.chars().take(1000).collect())
 }
 
 #[tauri::command]
@@ -515,10 +751,19 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         menu::{Menu, MenuItem},
         tray::TrayIconBuilder,
     };
-    let verification = verification::parse(&std::env::args().collect::<Vec<_>>())?;
-    let root = match &verification {
-        Some(config) => config.root.clone(),
-        None => app.path().app_local_data_dir()?,
+    let args = std::env::args().collect::<Vec<_>>();
+    let integration = integration::parse(&args)?;
+    if let Some(config) = &integration {
+        integration::prepare(config)?;
+    }
+    let verification = verification::parse(&args)?;
+    let root = if let Some(config) = &integration {
+        config.root.clone()
+    } else {
+        match &verification {
+            Some(config) => config.root.clone(),
+            None => app.path().app_local_data_dir()?,
+        }
     };
     let store = Store::open(root)?;
     let config = store
@@ -530,7 +775,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let network_ready = network.is_ok();
     let (feed, market_rx, market_tx, market_inputs) =
         market::Feed::new(network.unwrap_or(network::NetworkConfig::Direct));
-    let docked = store.preference("docked").as_deref() == Some("true");
+    let hidden = store.preference("hidden_all").as_deref() == Some("true");
     let shortcut = store
         .preference("shortcut")
         .unwrap_or("Ctrl+Alt+Space".into());
@@ -543,8 +788,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         store,
         sessions: Default::default(),
         visibility: Mutex::new(windows::Visibility {
-            hidden: true,
-            docked,
+            hidden,
             ..Default::default()
         }),
         window_actions: Mutex::new(()),
@@ -564,12 +808,17 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         trials: Mutex::new(Default::default()),
         geometry_versions: Mutex::new(Default::default()),
         window_tasks: AtomicU64::new(0),
+        integration,
+        transfer_failure: Mutex::new(None),
+        updates: Default::default(),
     });
-    let show = MenuItem::with_id(app, "show", "显示工作台", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "管理组件", true, None::<&str>)?;
+    let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
+    let panel = MenuItem::with_id(app, "panel", "打开组件面板", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 SoulDesk", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &hide, &settings, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &panel, &restore, &hide, &settings, &quit])?;
     let mut pixels = vec![0u8; 32 * 32 * 4];
     for y in 0..32 {
         for x in 0..32 {
@@ -603,16 +852,43 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     "show" => windows::show(app, true),
                     "settings" => windows::settings(app),
                     "hide" => windows::hide_all(app),
+                    "restore" => windows::restore(app),
+                    "panel" => windows::toggle(app),
                     _ => Ok(()),
                 });
             }
         })
         .build(app)?;
-    if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
-        app.state::<Core>()
-            .report(format!("快捷键不可用：{e}；请从托盘更改"));
+    if app
+        .state::<Core>()
+        .integration
+        .as_ref()
+        .is_none_or(|c| c.mode != "panel")
+    {
+        if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
+            app.state::<Core>()
+                .report(format!("快捷键不可用：{e}；请从托盘更改"));
+        }
     }
-    // 不在启动时创建可见窗口。此任务属于 Rust 核心进程。
+    if app.state::<Core>().integration.is_none() && app.state::<Core>().verification.is_none() {
+        #[cfg(windows)]
+        match desktop_input::start(
+            app.handle(),
+            windows::panel_preferences(app.handle())?["desktopDoubleClick"]
+                .as_bool()
+                .unwrap_or(true),
+        ) {
+            Ok(listener) => {
+                app.manage(listener);
+            }
+            Err(error) => app.state::<Core>().report(error),
+        }
+        updates::start(app.handle());
+    }
+    // 正常启动恢复桌面场景；显式隔离历史验收继续由其入口拥有。
+    if app.state::<Core>().verification.is_none() && !hidden {
+        windows::dispatch(app.handle(), windows::restore);
+    }
     let handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(1));
@@ -621,18 +897,27 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
                 break;
             }
-            handle.state::<Core>().ticks.fetch_add(1, Ordering::Relaxed);
+            let tick = handle.state::<Core>().ticks.fetch_add(1, Ordering::Relaxed);
+            if tick % 2 == 0 {
+                windows::dispatch(&handle, windows::monitor_changes);
+            }
         }
     });
     if std::env::args().any(|a| a == "--show") {
         windows::show(app.handle(), true)?;
     }
     verification::start(app.handle());
+    integration::start(app.handle());
     if app
         .state::<Core>()
-        .verification
+        .integration
         .as_ref()
-        .is_none_or(|c| c.g2)
+        .is_none_or(|c| c.mode != "panel")
+        && app
+            .state::<Core>()
+            .verification
+            .as_ref()
+            .is_none_or(|c| c.g2)
     {
         business::start(app.handle(), market_rx, market_tx, market_inputs);
     }
@@ -641,10 +926,24 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn run() {
     verification::capture_start();
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app,args,_| {app.state::<Core>().second_launches.fetch_add(1,Ordering::Relaxed);if args.iter().any(|a|a=="--show"){windows::dispatch(app,|app| windows::show(app,true));}}))
+    let panel_check = integration::parse(&std::env::args().collect::<Vec<_>>())
+        .is_ok_and(|c| c.is_some_and(|c| c.mode == "panel"));
+    let mut builder = tauri::Builder::default();
+    // 专项检查必须先通过独立路径校验，且不注册全局快捷键、桌面监听或更新定时器。
+    if !panel_check {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            app.state::<Core>()
+                .second_launches
+                .fetch_add(1, Ordering::Relaxed);
+            if args.iter().any(|a| a == "--show") {
+                windows::dispatch(app, |app| windows::show(app, true));
+            }
+        }));
+    }
+    builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app,_,event|{if event.state()==ShortcutState::Pressed {windows::dispatch(app,|app| {let before=app.webview_windows().iter().any(|(label,w)|label!="edge"&&w.is_visible().unwrap_or(false));windows::toggle(app)?;let after=app.webview_windows().iter().any(|(label,w)|label!="edge"&&w.is_visible().unwrap_or(false));*app.state::<Core>().shortcut_trace.lock().map_err(err)?=Some(json!({"beforeVisible":before,"afterVisible":after}));app.state::<Core>().shortcut_hits.fetch_add(1,Ordering::Relaxed);Ok(())});}}).build())
         .plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .register_uri_scheme_protocol("widget",|ctx,request| {
             let result=widgets::resource(&ctx.app_handle().state::<Core>().store,request.uri().path());
             let (status,data,mime)=match result {Ok((b,m))=>(200,b,m),Err(_)=>(404,b"component resource unavailable".to_vec(),"text/plain".into())};
@@ -657,7 +956,7 @@ pub fn run() {
         .invoke_handler(|invoke| {
             let allowed=invoke.message.webview_ref().try_state::<Core>().is_some_and(|core|invoke.message.headers().get("x-souldesk-host").and_then(|h|h.to_str().ok())==Some(core.host_token.as_str()));
             if !allowed {invoke.resolver.reject("CAPABILITY_DENIED: 只允许宿主顶层容器调用");return true;}
-            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![snapshot,import_package,create_instance,manage_instance,reorder_instances,unregister_package,open_session,close_session,widget_request,window_action,set_shortcut,set_autostart,schedule_test,business_settings,verification::report_view,packages::trial_failed];
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![snapshot,import_package,update_preset,create_instance,manage_instance,reorder_instances,unregister_package,open_session,close_session,widget_request,window_action,set_shortcut,set_autostart,schedule_test,business_settings,set_panel,save_panel_layout,app_update,surface_activate,surface_pointer,surface_failed,verification::report_view,packages::trial_failed];
             handler(invoke)
         })
         .setup(setup)
@@ -665,10 +964,14 @@ pub fn run() {
             let app=window.app_handle();
             match event {
                 tauri::WindowEvent::Moved(_)|tauri::WindowEvent::Resized(_)=>windows::queue_geometry_save(window),
-                tauri::WindowEvent::CloseRequested{api,..}=>{api.prevent_close();let label=window.label().to_owned();windows::dispatch(app,move|app|{if label=="main" {if let Some(window)=app.get_webview_window("main"){windows::save_geometry(&window)?;window.hide().map_err(err)?;}Ok(())}else if let Some(id)=label.strip_prefix("float-"){windows::move_instance(app,id,false)}else{Ok(())}});},
-                tauri::WindowEvent::Focused(false) if window.label()=="main"=>windows::delayed_collapse(app,true),
-                tauri::WindowEvent::Focused(true) if window.label()=="main"=>{let core=app.state::<Core>();let Ok(mut v)=core.visibility.lock() else{return;};v.epoch+=1;},
-                tauri::WindowEvent::Destroyed=>{if let Some(core)=app.try_state::<Core>(){if let Ok(mut values)=core.geometry_versions.lock(){values.remove(window.label());}let Ok(mut sessions)=core.sessions.0.lock() else{return;};sessions.retain(|_,s|s.window!=window.label());}},
+                tauri::WindowEvent::CloseRequested{api,..}=>{api.prevent_close();let label=window.label().to_owned();windows::dispatch(app,move|app|{
+                    if let Some(id)=label.strip_prefix("float-"){windows::hide_instance(app,id)}
+                    else if label=="panel" {windows::collapse(app)}
+                    else {if let Some(w)=app.get_webview_window(&label){windows::save_geometry(&w)?;}windows::release(app,&label)?;windows::destroy_window(app,&label)}
+                });},
+                tauri::WindowEvent::Focused(false) if window.label()=="panel"=>windows::auto_collapse(app),
+                tauri::WindowEvent::Focused(true) if window.label()=="panel"=>{let core=app.state::<Core>();if let Ok(mut v)=core.visibility.lock(){v.epoch+=1;};},
+                tauri::WindowEvent::Destroyed=>{if let Some(core)=app.try_state::<Core>(){if let Ok(mut values)=core.geometry_versions.lock(){values.remove(window.label());}if let Ok(mut sessions)=core.sessions.0.lock(){sessions.retain(|_,s|s.window!=window.label());}}},
                 _=>{}
             }
         })
