@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-widget-open-session"
+description = "Enables the desktop_widget_open_session command without any pre-configured scope."
+commands.allow = ["desktop_widget_open_session"]
+
+[[permission]]
+identifier = "deny-desktop-widget-open-session"
+description = "Denies the desktop_widget_open_session command without any pre-configured scope."
+commands.deny = ["desktop_widget_open_session"]

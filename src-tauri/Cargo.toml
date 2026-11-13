@@ -1,0 +1,42 @@
+[package]
+name = "souldesk"
+version = "0.3.3"
+description = "SoulDesk 通用桌面工作台"
+edition = "2021"
+rust-version = "1.92"
+default-run = "souldesk"
+
+[lib]
+name = "souldesk_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
+tauri-plugin-single-instance = "=2.5.5"
+tauri-plugin-global-shortcut = "=2.4.1"
+tauri-plugin-notification = "=2.8.1"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+sha2 = "=0.10.9"
+uuid = { version = "=1.29.2", features = ["v4", "serde"] }
+mime_guess = "=2.0.5"
+percent-encoding = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "=0.7.20"
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls", "socks", "json"] }
+tokio-tungstenite = { version = "=0.28.0", features = ["rustls-tls-native-roots"] }
+tokio-socks = "=0.5.3"
+futures-util = "0.3"
+url = "2"
+rust_decimal = { version = "=1.43.0", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Media_Audio", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Power", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
+winreg = "0.55"
+tauri-winrt-notification = "=0.8.1"

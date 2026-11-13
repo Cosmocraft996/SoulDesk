@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-business-settings"
+description = "Enables the business_settings command without any pre-configured scope."
+commands.allow = ["business_settings"]
+
+[[permission]]
+identifier = "deny-business-settings"
+description = "Denies the business_settings command without any pre-configured scope."
+commands.deny = ["business_settings"]

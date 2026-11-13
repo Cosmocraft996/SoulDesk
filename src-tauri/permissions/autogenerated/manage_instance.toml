@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-manage-instance"
+description = "Enables the manage_instance command without any pre-configured scope."
+commands.allow = ["manage_instance"]
+
+[[permission]]
+identifier = "deny-manage-instance"
+description = "Denies the manage_instance command without any pre-configured scope."
+commands.deny = ["manage_instance"]

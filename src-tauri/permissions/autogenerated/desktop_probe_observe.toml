@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-probe-observe"
+description = "Enables the desktop_probe_observe command without any pre-configured scope."
+commands.allow = ["desktop_probe_observe"]
+
+[[permission]]
+identifier = "deny-desktop-probe-observe"
+description = "Denies the desktop_probe_observe command without any pre-configured scope."
+commands.deny = ["desktop_probe_observe"]

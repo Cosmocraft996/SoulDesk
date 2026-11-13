@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-probe-action"
+description = "Enables the desktop_probe_action command without any pre-configured scope."
+commands.allow = ["desktop_probe_action"]
+
+[[permission]]
+identifier = "deny-desktop-probe-action"
+description = "Denies the desktop_probe_action command without any pre-configured scope."
+commands.deny = ["desktop_probe_action"]

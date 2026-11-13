@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "host",
+  "description": "仅宿主容器允许基础事件；组件 iframe 不授予 Tauri 权限",
+  "windows": ["main", "float-*", "edge"],
+  "permissions": [
+    "core:event:default", "allow-snapshot", "allow-import-package", "allow-create-instance",
+    "allow-manage-instance", "allow-reorder-instances", "allow-unregister-package", "allow-set-autostart",
+    "allow-open-session", "allow-close-session", "allow-widget-request", "allow-window-action",
+    "allow-set-shortcut", "allow-schedule-test", "allow-report-view", "allow-business-settings"
+  ]
+}

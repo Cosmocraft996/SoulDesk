@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-widget-close-session"
+description = "Enables the desktop_widget_close_session command without any pre-configured scope."
+commands.allow = ["desktop_widget_close_session"]
+
+[[permission]]
+identifier = "deny-desktop-widget-close-session"
+description = "Denies the desktop_widget_close_session command without any pre-configured scope."
+commands.deny = ["desktop_widget_close_session"]

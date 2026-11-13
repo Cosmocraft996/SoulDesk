@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unregister-package"
+description = "Enables the unregister_package command without any pre-configured scope."
+commands.allow = ["unregister_package"]
+
+[[permission]]
+identifier = "deny-unregister-package"
+description = "Denies the unregister_package command without any pre-configured scope."
+commands.deny = ["unregister_package"]

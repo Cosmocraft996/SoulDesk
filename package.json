@@ -1,0 +1,44 @@
+{
+  "name": "souldesk",
+  "private": true,
+  "version": "0.3.3",
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "dev": "node scripts/desktop.mjs dev",
+    "dev:web": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit && node scripts/desktop.mjs fmt -- --check",
+    "test": "node --test src/widget-url.test.ts scripts/verification-contract.test.mjs scripts/capabilities.test.mjs examples/market/price.test.js scripts/child-cleanup.test.mjs scripts/shorten-soak.test.mjs scripts/verify-upgrade.test.mjs && node scripts/desktop.mjs test --locked",
+    "test:web": "node --test src/widget-url.test.ts scripts/verification-contract.test.mjs scripts/capabilities.test.mjs examples/market/price.test.js scripts/child-cleanup.test.mjs scripts/shorten-soak.test.mjs scripts/verify-upgrade.test.mjs",
+    "build:web": "tsc --noEmit && vite build",
+    "build": "node scripts/desktop.mjs build",
+    "example:build": "node scripts/build-example.mjs",
+    "g1:fixtures": "node scripts/build-g1-fixtures.mjs",
+    "g1:verify": "node scripts/verify-installed.mjs --g1",
+    "g2:verify": "node scripts/verify-installed.mjs --g2",
+    "g3:verify": "node scripts/verify-installed.mjs --g3",
+    "g3:upgrade": "node scripts/verify-upgrade.mjs",
+    "market:build": "node scripts/build-example.mjs examples/market",
+    "market:probe": "node scripts/desktop.mjs market",
+    "recovery:probe": "node scripts/desktop.mjs recovery",
+    "network:probe": "node scripts/desktop.mjs network",
+    "g0:verify": "node scripts/verify-installed.mjs",
+    "g0:verify:auto": "node scripts/verify-installed.mjs --auto"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "fflate": "0.8.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.1"
+  }
+}

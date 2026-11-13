@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-widget-view"
+description = "Enables the desktop_widget_view command without any pre-configured scope."
+commands.allow = ["desktop_widget_view"]
+
+[[permission]]
+identifier = "deny-desktop-widget-view"
+description = "Denies the desktop_widget_view command without any pre-configured scope."
+commands.deny = ["desktop_widget_view"]

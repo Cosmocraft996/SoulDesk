@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "trial",
+  "description": "试加载宿主只允许隔离消息桥和失败报告，不授予窗口管理、安装或系统能力",
+  "windows": ["trial-*"],
+  "permissions": ["allow-open-session", "allow-close-session", "allow-widget-request", "allow-trial-failed"]
+}

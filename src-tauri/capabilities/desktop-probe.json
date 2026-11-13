@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-probe-panel",
+  "description": "隔离面板仅允许本次探针操作，不授予正常业务和系统能力",
+  "windows": ["desktop-probe-panel"],
+  "permissions": ["allow-desktop-probe-set-ratio", "allow-desktop-probe-set-tint", "allow-desktop-probe-action", "allow-desktop-probe-observe"]
+}

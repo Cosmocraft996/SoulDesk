@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-probe-widgets",
+  "description": "仅隔离探针容器复用普通组件消息桥，不授予正常应用管理或系统权限",
+  "windows": ["desktop-probe-clock", "desktop-probe-card", "desktop-probe-panel"],
+  "permissions": ["core:event:default", "allow-desktop-widget-open-session", "allow-desktop-widget-close-session", "allow-desktop-widget-widget-request", "allow-desktop-widget-view", "allow-desktop-widget-activate"]
+}

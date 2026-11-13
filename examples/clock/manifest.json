@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "local.example.clock",
+  "name": "此刻 · 时钟",
+  "version": "0.1.1",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": { "width": 360, "height": 240 },
+  "minSize": { "width": 240, "height": 120 },
+  "capabilities": ["storage.instance"],
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string", "title": "标题", "default": "此刻", "maxLength": 24 },
+      "showSeconds": { "type": "boolean", "title": "显示秒", "default": true }
+    },
+    "additionalProperties": false,
+    "required": ["title", "showSeconds"]
+  }
+}

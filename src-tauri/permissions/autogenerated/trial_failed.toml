@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-trial-failed"
+description = "Enables the trial_failed command without any pre-configured scope."
+commands.allow = ["trial_failed"]
+
+[[permission]]
+identifier = "deny-trial-failed"
+description = "Denies the trial_failed command without any pre-configured scope."
+commands.deny = ["trial_failed"]

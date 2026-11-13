@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-probe-trials",
+  "description": "两个固定隐藏容器仅进行原包隔离试加载",
+  "windows": ["desktop-probe-trial-0", "desktop-probe-trial-1"],
+  "permissions": ["allow-desktop-widget-open-session", "allow-desktop-widget-close-session", "allow-desktop-widget-widget-request", "allow-desktop-widget-trial-failed"]
+}

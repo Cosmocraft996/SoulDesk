@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "local.example.card",
+  "name": "示例卡片",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": { "width": 320, "height": 180 },
+  "minSize": { "width": 240, "height": 120 },
+  "capabilities": ["storage.instance"],
+  "settingsSchema": {
+    "type": "object",
+    "properties": { "message": { "type": "string", "maxLength": 100, "default": "你好，SoulDesk" } },
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-probe-set-tint"
+description = "Enables the desktop_probe_set_tint command without any pre-configured scope."
+commands.allow = ["desktop_probe_set_tint"]
+
+[[permission]]
+identifier = "deny-desktop-probe-set-tint"
+description = "Denies the desktop_probe_set_tint command without any pre-configured scope."
+commands.deny = ["desktop_probe_set_tint"]

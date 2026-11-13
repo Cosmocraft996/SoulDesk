@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-probe-fixtures",
+  "description": "平台夹具可报告就绪和打开探针面板，不能改比例或登记观察",
+  "windows": ["desktop-probe-clock", "desktop-probe-card"],
+  "permissions": ["allow-desktop-probe-action"]
+}

@@ -1,0 +1,9 @@
+# 文本默认使用 LF，避免不同工具反复改写行尾
+* text=auto eol=lf
+
+# Markdown 允许行尾空格表示换行，其他空白检查保持启用
+*.md whitespace=-blank-at-eol
+
+# Windows 批处理保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
