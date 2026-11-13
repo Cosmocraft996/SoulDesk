@@ -489,6 +489,7 @@ pub fn persistent_acrylic(w: &WebviewWindow) -> Result<(), String> {
     apply_accent(handle(w)? as HWND)
 }
 fn apply_accent(h: HWND) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::E_INVALIDARG;
     use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
     if unsafe { IsWindow(h) } == 0 || pid(h) != std::process::id() {
         return Err("拒绝向失效或其他进程窗口应用材质".into());
@@ -502,7 +503,9 @@ fn apply_accent(h: HWND) -> Result<(), String> {
             4,
         )
     };
-    if hr < 0 {
+    // 该可选属性从Windows 11 22H2才支持；旧系统没有这层材质可清除。
+    // 只接受“不支持属性”的结果，后续Accent调用仍核对真实返回值。
+    if hr < 0 && hr != E_INVALIDARG {
         return Err(format!("关闭系统背景材质失败：HRESULT={hr:#x}"));
     }
     set_accent(h, true)

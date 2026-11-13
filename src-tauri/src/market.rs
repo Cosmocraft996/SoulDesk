@@ -343,12 +343,18 @@ impl Feed {
             .count())
     }
     pub fn source_now(&self) -> Option<u64> {
+        self.source_now_at(Instant::now())
+    }
+    fn source_now_at(&self, now: Instant) -> Option<u64> {
         self.source_clock
             .lock()
             .ok()?
             .as_ref()
-            .filter(|(_, at)| at.elapsed() < Duration::from_secs(900))
-            .map(|(utc, at)| utc.saturating_add(at.elapsed().as_millis() as u64))
+            .and_then(|(utc, at)| {
+                let elapsed = now.checked_duration_since(*at)?;
+                (elapsed < Duration::from_secs(900))
+                    .then(|| utc.saturating_add(elapsed.as_millis() as u64))
+            })
     }
     fn status(&self, status: &str, error: Option<String>) {
         if let Ok(mut s) = self.state.lock() {
@@ -775,8 +781,12 @@ mod tests {
         assert!(feed.source_now().is_none());
         *feed.source_clock.lock().unwrap() = Some((1_700_000_000_000, Instant::now()));
         assert!(feed.source_now().unwrap() >= 1_700_000_000_000);
-        *feed.source_clock.lock().unwrap() = Some((1, Instant::now() - Duration::from_secs(901)));
-        assert!(feed.source_now().is_none());
+        // 向未来推进观测点，避免新启动的Windows虚拟机不能回拨15分钟。
+        let at = Instant::now();
+        *feed.source_clock.lock().unwrap() = Some((1, at));
+        assert!(feed.source_now_at(at + Duration::from_secs(899)).is_some());
+        assert!(feed.source_now_at(at + Duration::from_secs(900)).is_none());
+        assert!(feed.source_now_at(at + Duration::from_secs(901)).is_none());
         {
             let mut s = feed.state.lock().unwrap();
             s.status = "connected".into();
