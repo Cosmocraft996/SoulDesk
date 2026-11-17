@@ -94,11 +94,41 @@ async fn try_install(app: &AppHandle, staged: StagedPackage) -> AppResult<widget
     for (settings, storage) in contexts {
         trial_once(app, &staged, settings, storage).await?;
     }
-    widgets::activate_sessions(
-        &app.state::<Core>().store,
-        &app.state::<Core>().sessions,
-        &staged,
-    )
+    let core = app.state::<Core>();
+    let result = {
+        let _native = core.store.native_actions.lock().map_err(err)?;
+        // 升级提交前撤销助手网页授权；失败时保留旧包和登录资料，可由控制卡重新打开。
+        if staged.manifest.id == crate::pomodoro_window::PACKAGE {
+            for (id, _, _) in &staged.instances {
+                core.pomodoro_windows.service.revoke(id)?;
+            }
+        }
+        if staged.manifest.id == crate::job_protocol::PACKAGE {
+            for (id, _, _) in &staged.instances {
+                core.jobs.revoke(id)?;
+            }
+        }
+        if staged.manifest.id == crate::assistant_host::PACKAGE {
+            for (id, _, _) in &staged.instances {
+                core.assistant.cancel(id)?;
+            }
+        }
+        widgets::activate_sessions(&core.store, &core.sessions, &staged)
+    };
+    if staged.manifest.id == crate::assistant_host::PACKAGE {
+        for (id, _, _) in &staged.instances {
+            core.assistant.kick(app, id);
+        }
+    }
+    if staged.manifest.id == crate::job_protocol::PACKAGE {
+        for (id, _, _) in &staged.instances {
+            core.jobs.kick(app, id);
+        }
+    }
+    if staged.manifest.id == crate::pomodoro_window::PACKAGE {
+        core.pomodoro_windows.tick(app);
+    }
+    result
 }
 
 async fn trial_once(

@@ -34,7 +34,7 @@ impl NetworkConfig {
             }
         }
     }
-    fn proxy_url(&self) -> Option<String> {
+    pub(crate) fn proxy_url(&self) -> Option<String> {
         match self {
             Self::Direct => None,
             Self::Http { host, port } => Some(format!("http://{host}:{port}")),
@@ -57,6 +57,57 @@ pub async fn http_get(
     }
     let client = builder.build().map_err(err)?;
     tokio::select! { biased; _=cancel.cancelled()=>Err("CANCELLED".into()), result=async { client.get(url).send().await.map_err(err)?.error_for_status().map_err(err)?.text().await.map_err(err) }=>result }
+}
+
+/// 公开内容读取：固定上层地址，限制体积、总超时并禁止重定向。
+pub async fn http_get_bounded(
+    config: &NetworkConfig,
+    url: &str,
+    max_bytes: usize,
+) -> AppResult<Vec<u8>> {
+    http_get_bounded_headers(config, url, max_bytes, &[]).await
+}
+
+/// 请求头由宿主固定来源定义，不从组件消息接收。
+pub async fn http_get_bounded_headers(
+    config: &NetworkConfig,
+    url: &str,
+    max_bytes: usize,
+    headers: &[(&str, &str)],
+) -> AppResult<Vec<u8>> {
+    config.validate()?;
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(8));
+    if let Some(proxy) = config.proxy_url() {
+        builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(err)?);
+    }
+    let mut request = builder.build().map_err(err)?.get(url);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let mut response = request.send().await.map_err(err)?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "DATA_UNAVAILABLE: 内容源HTTP {}",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|n| n > max_bytes as u64)
+    {
+        return Err("LIMIT: 内容源响应过大".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(err)? {
+        if chunk.len() > max_bytes.saturating_sub(bytes.len()) {
+            return Err("LIMIT: 内容源响应过大".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 
 async fn tcp(config: &NetworkConfig, host: &str, port: u16) -> AppResult<TcpStream> {
@@ -214,6 +265,70 @@ mod tests {
     use super::*;
     use futures_util::SinkExt;
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn fixed_public_source_headers_are_sent_by_the_bounded_reader() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                assert!(request.len() < 4096);
+                request.push(stream.read_u8().await.unwrap());
+            }
+            let text = String::from_utf8(request).unwrap().to_ascii_lowercase();
+            assert!(text.contains("x-custom-referer: push2.eastmoney.com\r\n"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .unwrap();
+        });
+        let body = http_get_bounded_headers(
+            &NetworkConfig::Direct,
+            &format!("http://{address}/quote"),
+            100,
+            &[("x-custom-referer", "push2.eastmoney.com")],
+        )
+        .await
+        .unwrap();
+        assert_eq!(body, b"{}");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn public_content_limits_streamed_bytes_and_never_follows_redirects() {
+        async fn serve(response: &'static [u8]) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(stream.read_u8().await.unwrap());
+                }
+                stream.write_all(response).await.unwrap();
+            });
+            format!("http://127.0.0.1:{port}/")
+        }
+        let url = serve(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n3\r\ndef\r\n0\r\n\r\n").await;
+        assert!(http_get_bounded(&NetworkConfig::Direct, &url, 5)
+            .await
+            .unwrap_err()
+            .contains("LIMIT"));
+        let url = serve(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/private\r\nContent-Length: 0\r\n\r\n").await;
+        assert!(http_get_bounded(&NetworkConfig::Direct, &url, 100)
+            .await
+            .unwrap_err()
+            .contains("302"));
+        let url = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").await;
+        assert_eq!(
+            http_get_bounded(&NetworkConfig::Direct, &url, 100)
+                .await
+                .unwrap(),
+            b"{}"
+        );
+    }
 
     #[test]
     fn secure_endpoints_prefer_https_system_proxy() {

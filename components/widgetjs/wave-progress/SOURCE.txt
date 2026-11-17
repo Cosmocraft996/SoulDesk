@@ -1,0 +1,17 @@
+波浪进度 · SoulDesk 移植版
+
+原组件：cn.widgetjs.widgets.wave_progress
+来源：https://github.com/widget-js/widgets
+固定提交：714802e66336133396ab55463eb5a26d08fc0788
+原文件：src/widgets/wave-progress/WaveProgressWidget.vue、WaveProgressConfigView.vue、
+model/WaveProgressData.ts
+原作者：WidgetJS 项目贡献者（Neo Fu / rtugeek 等）
+适用许可：GPL v2，全文见 LICENSE.txt。
+
+按原源码的双层贝塞尔波浪、时段配色、剩余百分比和自定义事项配置移植。
+移植修改：Vue/dayjs/WidgetJS 接口替换为独立 JavaScript、浏览器日期 API 和 SoulDesk 消息桥；
+配置按实例持久保存；波浪采用30帧上限、高分屏Canvas及尺寸观察；
+自定义时间校验起点早于终点，完成后的百分比保持0%，不产生负百分比。
+周以周一开始，采用本地日历边界；页面仅负责展示，不启动后台提醒。
+本包包含未压缩的完整运行源码。工程对应 components/widgetjs/wave-progress/、
+components/widgetjs/progress-common/、sdk/host.js；打包入口 scripts/build-widgetjs.mjs。

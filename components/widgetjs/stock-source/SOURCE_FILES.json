@@ -1,0 +1,66 @@
+{
+  "repository": "https://github.com/rtugeek/stock",
+  "revision": "0f5157961908bb3fdec71d443117783a3496571f",
+  "files": [
+    {
+      "path": "src/widgets/stock/stock-widget-view.tsx",
+      "bytes": 7046,
+      "sha256": "aca0666f37f2b172b966ab733a8856293ba86164abfe8d8fced1e1ca11db8e2b"
+    },
+    {
+      "path": "src/widgets/stock/stock-item.tsx",
+      "bytes": 6692,
+      "sha256": "399cf3c8c0e9d40750e9db7161f40c90c7b40a81e3ed3b8e8dd71f64f21abb63"
+    },
+    {
+      "path": "src/widgets/stock/stock-config-view.tsx",
+      "bytes": 15024,
+      "sha256": "7c48a3828dad9f16b6e71042be1dfedca23dd69b4cdeb0fdfc1c3802e104259d"
+    },
+    {
+      "path": "src/widgets/stock/stock-widget.widget.ts",
+      "bytes": 930,
+      "sha256": "715a86003bb6064a237a557f0e4193b54a712237a419a3310fb736ea1db064f2"
+    },
+    {
+      "path": "src/api/eastmoney-stock-api.ts",
+      "bytes": 19284,
+      "sha256": "dc150c93418d9a5a53569c0c038df7410d3eff1f5abab088300869bb0c7bd9cd"
+    },
+    {
+      "path": "src/data/self-select-stock-repository.ts",
+      "bytes": 3126,
+      "sha256": "2ec13ad64c43bf5119b8875c49724dab4887690a6cc02a42f29799a3201b7272"
+    },
+    {
+      "path": "src/store/use-self-select-stock-store.ts",
+      "bytes": 3070,
+      "sha256": "18c811b7d0cb4db6f791b9c3c25e612b4704bc07a3983cc316c558be287940bf"
+    },
+    {
+      "path": "src/store/use-stock-color-store.ts",
+      "bytes": 1739,
+      "sha256": "22d12c26d4bd7f67bfef5314dfb13c73798b9eb26dd01af0e3ba3e38e8f3a6dc"
+    },
+    {
+      "path": "src/components/exchange-tag.tsx",
+      "bytes": 2699,
+      "sha256": "6c04b6c88a2c3c2c0a8d8eb83c2827d32ec0f882c838bdd39eb93634b1f75b8c"
+    },
+    {
+      "path": "src/model/Stock.ts",
+      "bytes": 940,
+      "sha256": "55c30873524bf7bde22dedd4c3271b25e7cbec3843a8c664cd92751477e2ac9e"
+    },
+    {
+      "path": "src/lib/utils.ts",
+      "bytes": 1184,
+      "sha256": "a1bd98fe0dc9e516884f34bdd0199c655276a1b6d7ea8aecbd401fa593f49af9"
+    },
+    {
+      "path": "src/assets/main.css",
+      "bytes": 8420,
+      "sha256": "8f2063805d6b6961d403be65d7f99d1d2b8e54e50017025e4e9bae2e2f08ea81"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "revision": "58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f",
+  "components": [
+    "JobAnalysisView-DVV9mC5g.js:PaginationScrollbar",
+    "JobAnalysisView-DVV9mC5g.js:JobCard",
+    "JobAnalysisView-DVV9mC5g.js:PieChart",
+    "JobAnalysisView-DVV9mC5g.js:KnowledgePieChart",
+    "JobAnalysisView-DVV9mC5g.js:JobAnalysisView",
+    "JobView-DmmzGjQr.js:AiConfigForm",
+    "JobView-DmmzGjQr.js:SettingsDialog",
+    "JobView-DmmzGjQr.js:JobSearchConfig",
+    "JobView-DmmzGjQr.js:LogPanel",
+    "JobView-DmmzGjQr.js:BossWebView",
+    "JobView-DmmzGjQr.js:JobView",
+    "KnowledgeView-Cjfd7KFs.js:Markdown",
+    "KnowledgeView-Cjfd7KFs.js:ChatBox",
+    "KnowledgeView-Cjfd7KFs.js:ChatInput",
+    "KnowledgeView-Cjfd7KFs.js:InterviewSection",
+    "KnowledgeView-Cjfd7KFs.js:MarkdownSection",
+    "KnowledgeView-Cjfd7KFs.js:MarkdownMap",
+    "KnowledgeView-Cjfd7KFs.js:ContextMenu",
+    "KnowledgeView-Cjfd7KFs.js:MindMapSection",
+    "KnowledgeView-Cjfd7KFs.js:KnowledgeView",
+    "Window-li_yC5Al.js:WindowTitleBar",
+    "Window-li_yC5Al.js:Window"
+  ],
+  "removed": [
+    "原站入口和路由启动",
+    "OpenAI默认客户端",
+    "原Dexie实例",
+    "Electron浏览器桥",
+    "组件原setup副作用"
+  ],
+  "preserved": "原组件compiled render、props、emits、作用域标记、CSS、图标和原部署字节"
+}

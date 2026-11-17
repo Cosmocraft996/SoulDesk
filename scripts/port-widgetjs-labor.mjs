@@ -1,0 +1,6 @@
+// 固定历史组件及原表情资源；只从Git对象读出，不执行上游构建或脚本。
+import{readFileSync,writeFileSync,mkdirSync,existsSync}from'node:fs';import{join,dirname}from'node:path';import{spawnSync}from'node:child_process';import{createHash}from'node:crypto';
+const repo='artifacts/widgetjs-upstream/common-history',revision='714802e66336133396ab55463eb5a26d08fc0788',target='components/widgetjs/labor-source';
+const listing=spawnSync('git',['-C',repo,'ls-tree','-r','--name-only',revision,'src/widgets/labor-progress','LICENSE'],{encoding:'utf8'});if(listing.status!==0)throw new Error('未找到固定历史源码');const files=[];
+for(const path of listing.stdout.trim().split('\n')){const result=spawnSync('git',['-C',repo,'show',revision+':'+path],{maxBuffer:4*1024*1024});if(result.status!==0)throw new Error('读取原组件失败');const out=path==='LICENSE'?'LICENSE.txt':path.replace('src/widgets/labor-progress/','original/');mkdirSync(dirname(join(target,out)),{recursive:true});if(!existsSync(join(target,out)))writeFileSync(join(target,out),result.stdout,{flag:'wx'});files.push({source:path,target:out,sha256:createHash('sha256').update(result.stdout).digest('hex')});}
+writeFileSync(join(target,'SOURCE_FILES.json'),JSON.stringify({repository:'widget-js/widgets',revision,files},null,2)+'\n');console.log(JSON.stringify({revision,files:files.length}));

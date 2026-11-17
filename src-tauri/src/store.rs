@@ -17,9 +17,34 @@ pub fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+pub(crate) fn panel_groups(db: &Connection) -> AppResult<crate::panel::Groups> {
+    let raw: Option<String> = db
+        .query_row(
+            "SELECT value FROM app_settings WHERE key='panel_groups'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(err)?;
+    let mut groups: crate::panel::Groups = raw
+        .map(|raw| serde_json::from_str(&raw).map_err(err))
+        .transpose()
+        .map(|groups| groups.unwrap_or_default())?;
+    groups.prepare_colors()?;
+    Ok(groups)
+}
+
+pub(crate) fn save_panel_groups(db: &Connection, groups: &crate::panel::Groups) -> AppResult<()> {
+    db.execute("INSERT INTO app_settings VALUES('panel_groups',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [serde_json::to_string(groups).map_err(err)?]).map_err(err)?;
+    Ok(())
+}
+
 pub struct Store {
     pub root: PathBuf,
     pub db: Mutex<Connection>,
+    /// 原生提醒/计时操作与共享切源串行；通知调用期间不持SQLite锁。
+    pub(crate) native_actions: Mutex<()>,
     log_lock: Mutex<()>,
 }
 
@@ -177,6 +202,7 @@ impl Store {
         Ok(Self {
             root,
             db: Mutex::new(db),
+            native_actions: Mutex::new(()),
             log_lock: Mutex::new(()),
         })
     }
@@ -198,7 +224,9 @@ impl Store {
             .map(|r| { let (id,package_id,settings,floating,width,height,location,visible,pinned)=r.map_err(err)?; Ok(json!({"id":id,"packageId":package_id,"settings":serde_json::from_str::<Value>(&settings).map_err(err)?,"floating":floating,"width":width,"height":height,"location":location,"visible":visible,"pinned":pinned})) }).collect::<AppResult<Vec<_>>>()?;
         let mut events = db.prepare("SELECT id,created,completed,notification,sound,view_count FROM test_events ORDER BY created DESC LIMIT 30").map_err(err)?;
         let events = events.query_map([], |r| Ok(json!({"id":r.get::<_,String>(0)?,"created":r.get::<_,u64>(1)?,"completed":r.get::<_,Option<u64>>(2)?,"notification":r.get::<_,String>(3)?,"sound":r.get::<_,String>(4)?,"viewCount":r.get::<_,Option<u64>>(5)?}))).map_err(err)?.collect::<Result<Vec<_>,_>>().map_err(err)?;
-        Ok(json!({"packages":packages,"instances":instances,"events":events}))
+        Ok(
+            json!({"packages":packages,"instances":instances,"events":events,"panelGroups":panel_groups(&db)?}),
+        )
     }
 
     pub fn preference(&self, key: &str) -> Option<String> {
@@ -240,6 +268,35 @@ impl Store {
     pub fn save_preference(&self, key: &str, value: &str) -> AppResult<()> {
         self.db.lock().map_err(err)?.execute("INSERT INTO app_settings VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,value]).map_err(err)?;
         Ok(())
+    }
+
+    pub fn panel_groups(&self) -> AppResult<crate::panel::Groups> {
+        let db = self.db.lock().map_err(err)?;
+        panel_groups(&db)
+    }
+
+    pub fn change_panel_groups(
+        &self,
+        change: crate::panel::GroupChange,
+    ) -> AppResult<crate::panel::Groups> {
+        let db = self.db.lock().map_err(err)?;
+        let mut groups = panel_groups(&db)?;
+        if let crate::panel::GroupChange::Move { instance, .. } = &change {
+            let location: Option<String> = db
+                .query_row(
+                    "SELECT location FROM widget_instances WHERE id=?1",
+                    [instance],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(err)?;
+            if location.as_deref() != Some("panel") {
+                return Err("CONFLICT: 组件不存在或已移出面板，请刷新后重试".into());
+            }
+        }
+        groups.change(change)?;
+        save_panel_groups(&db, &groups)?;
+        Ok(groups)
     }
 
     pub fn panel_layouts(&self) -> AppResult<Value> {
@@ -324,6 +381,138 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn panel_groups_keep_instances_layout_and_selection_across_restart_and_deletion() {
+        use crate::panel::GroupChange;
+        let root = std::env::temp_dir().join(format!("souldesk-groups-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let package = crate::widgets::stage_bytes(
+            &store,
+            crate::presets::find("local.example.clock")
+                .unwrap()
+                .unwrap()
+                .archive()
+                .unwrap(),
+        )
+        .unwrap();
+        crate::widgets::activate(&store, &package).unwrap();
+        let id = crate::widgets::create_instance(&store, "local.example.clock").unwrap();
+        assert_eq!(
+            store.panel_groups().unwrap(),
+            crate::panel::Groups::default()
+        );
+        let groups = store
+            .change_panel_groups(GroupChange::Create {
+                name: "工作".into(),
+            })
+            .unwrap();
+        let group = groups.active.unwrap();
+        let automatic = groups.groups[0].auto_color.clone();
+        store
+            .change_panel_groups(GroupChange::Color {
+                group: Some(group.clone()),
+                color: Some("#123abc".into()),
+            })
+            .unwrap();
+        store
+            .change_panel_groups(GroupChange::Color {
+                group: None,
+                color: Some("#fffefd".into()),
+            })
+            .unwrap();
+        let move_to_group = || GroupChange::Move {
+            instance: id.clone(),
+            group: Some(group.clone()),
+        };
+        assert!(store.change_panel_groups(move_to_group()).is_err());
+        store.presentation(&id, "panel", true, false).unwrap();
+        let layout = crate::panel::Layout {
+            x: 20.,
+            y: 60.,
+            width: 360.,
+            height: 220.,
+        };
+        store.save_panel_layout(&id, layout).unwrap();
+        let original = store.snapshot().unwrap()["instances"].clone();
+        store.change_panel_groups(move_to_group()).unwrap();
+        assert!(store
+            .change_panel_groups(GroupChange::Move {
+                instance: "missing".into(),
+                group: None
+            })
+            .is_err());
+        assert!(store
+            .change_panel_groups(GroupChange::Move {
+                instance: id.clone(),
+                group: Some("missing".into())
+            })
+            .is_err());
+        assert_eq!(store.snapshot().unwrap()["instances"], original);
+        drop(store);
+        let store = Store::open(root).unwrap();
+        let groups = store.panel_groups().unwrap();
+        assert_eq!(groups.active.as_ref(), Some(&group));
+        assert_eq!(groups.groups[0].auto_color, automatic);
+        assert_eq!(groups.groups[0].color.as_deref(), Some("#123ABC"));
+        assert_eq!(groups.ungrouped_color.as_deref(), Some("#FFFEFD"));
+        assert_eq!(groups.membership.get(&id), Some(&group));
+        assert_eq!(
+            store.panel_layouts().unwrap()[&id],
+            serde_json::to_value(layout).unwrap()
+        );
+        let sessions = crate::widgets::Sessions::default();
+        store
+            .change_panel_groups(GroupChange::Select { group: None })
+            .unwrap();
+        assert!(
+            crate::widgets::open_display_session(&store, &sessions, "panel", &id, None).is_err()
+        );
+        store
+            .change_panel_groups(GroupChange::Select {
+                group: Some(group.clone()),
+            })
+            .unwrap();
+        assert!(
+            crate::widgets::open_display_session(&store, &sessions, "panel", &id, None).is_ok()
+        );
+        store
+            .change_panel_groups(GroupChange::Remove { id: group })
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap()["instances"], original);
+        assert!(store.panel_groups().unwrap().contains(&id));
+        let group = store
+            .change_panel_groups(GroupChange::Create {
+                name: "生活".into(),
+            })
+            .unwrap()
+            .active;
+        store
+            .change_panel_groups(GroupChange::Move {
+                instance: id.clone(),
+                group,
+            })
+            .unwrap();
+        crate::widgets::remove_instance(&store, &sessions, &id).unwrap();
+        assert!(store.panel_groups().unwrap().membership.is_empty());
+    }
+
+    #[test]
+    fn panel_group_save_failure_does_not_publish_unpersisted_selection() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-groups-save-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root).unwrap();
+        store
+            .change_panel_groups(crate::panel::GroupChange::Create {
+                name: "原有分组".into(),
+            })
+            .unwrap();
+        let before = store.panel_groups().unwrap();
+        store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_groups BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试保存失败'); END;").unwrap();
+        assert!(store
+            .change_panel_groups(crate::panel::GroupChange::Select { group: None })
+            .is_err());
+        assert_eq!(store.panel_groups().unwrap(), before);
+    }
     #[test]
     fn panel_layout_survives_restart_without_changing_desktop_geometry() {
         let root = std::env::temp_dir().join(format!("souldesk-panel-{}", uuid::Uuid::new_v4()));

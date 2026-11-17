@@ -1,0 +1,17 @@
+{
+  "source": "SoulDesk项目生成的隔离验收图片，不含用户照片",
+  "images": [
+    {
+      "name": "a.png",
+      "width": 64,
+      "height": 32,
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAYAAACinX6EAAAASElEQVR4nO3QwQ0AMAgCQPZf2sYpaOJJ/MNlkmn+BwEAAAAAAAAAAAAAAAAAAADOAZT3b4H2AQAAAAAAAAAAAAAAAAAAANcAHnVr9KbdqOBTAAAAAElFTkSuQmCC"
+    },
+    {
+      "name": "b.png",
+      "width": 32,
+      "height": 64,
+      "data": "iVBORw0KGgoAAAANSUhEUgAAACAAAABACAYAAAB7jnWuAAAARklEQVR4nO3OwQ0AMAgCQPZf2sYZaOLnJH7hMsk0/yEAAAAAAAAAAAAAAAAAAADHgHJ/C9oDAAAAAAAAAAAAAAAAAAC4BTwbK/Smi2/VgAAAAABJRU5ErkJggg=="
+    }
+  ]
+}

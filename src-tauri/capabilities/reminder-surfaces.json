@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"reminder-surfaces","description":"灵动通知与显式休息页只接受固定桥接及失败报告，无实例管理、通用窗口和输入命令","windows":["island-*","break-*"],"permissions":["core:event:default","allow-open-session","allow-close-session","allow-widget-request","allow-surface-failed"]}

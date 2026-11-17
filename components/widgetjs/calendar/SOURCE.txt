@@ -1,0 +1,8 @@
+来源：iTime公开部署，目录条目itime.fun.calendar，作者目录登记为LYP。
+入口：https://itime.fun/web/ ，固定构建index-BJrdQu13.js。
+展示脚本：https://itime.fun/web/assets/CalendarWidgetView-CyWpVHUb.js
+展示SHA-256：ecc1caa391c917c613de62b9c59351e26b367c3adf086e53869ad09b9ebf3095
+保留原纯历法模块index-foMHgrIw.js、Solar/SolarMonth分周算法、农历/节日、休班徽章和黄历详情；公开黄历来源固定为https://itime.fun/api/v2/event/public/calendar。
+原展示、设置、样式、导航图标和历法模块逐字节保存在calendar-source/original，版本与散列见SOURCE_FILES.json。未执行或导入WidgetJS宿主入口。
+设置改用SoulDesk实例配置及组件内显式保存；跨日高亮/月份更新和跨年月份识别修正；缺少黄历不推测休班，联网失败保留旧数据并明确提示。
+公开部署未附许可声明，按用户明确的自用范围移植并保留来源，不推定为GPL；不接入原登录、统计或其他远程脚本。

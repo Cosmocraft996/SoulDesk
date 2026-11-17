@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from './host';
 import { WidgetFrame } from './WidgetFrame';
-import { WidgetSurface } from './WidgetSurface';
-import { changeLayout, initialLayouts, type PanelLayout, type PanelWidget, type PanelPackage } from './panel-layout';
-import type { IconName } from './Icon';
+import { WidgetSurface, type SurfaceAction } from './WidgetSurface';
+import { changeLayout, initialLayouts, type PanelLayout, type PanelWidget, type PanelPackage, type SnapEdge, type SnapMatch } from './panel-layout';
 
-export function PanelCanvas({ instances, packages, saved, version, items, onError }: {
+export function PanelCanvas({ group, instances, packages, saved, version, items, onError }: {
+  group: string | null;
   instances: PanelWidget[]; packages: PanelPackage[]; saved: Record<string, PanelLayout>;
   version: (id: string) => string | undefined;
-  items: (id: string) => { label: string; icon: IconName; action: () => void; disabled?: boolean }[];
+  items: (id: string) => SurfaceAction[];
   onError: (message: string) => void;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -17,8 +17,11 @@ export function PanelCanvas({ instances, packages, saved, version, items, onErro
   const [active, setActive] = useState<string>();
   const [saving, setSaving] = useState<string>();
   const [front, setFront] = useState<string>();
+  const [snapEdges, setSnapEdges] = useState<Record<string, SnapEdge[]>>({});
   const drag = useRef<{ id: string; pointer: number; x: number; y: number; scroll: number; resize: boolean; start: PanelLayout; current: PanelLayout } | null>(null);
   const layouts = initialLayouts(instances, packages, { ...saved, ...draft }, available);
+  useEffect(() => { setSnapEdges({}); }, [group]);
+  useEffect(() => { if (viewport.current) { viewport.current.scrollTop = 0; viewport.current.scrollLeft = 0; } }, [group]);
   useLayoutEffect(() => {
     const node = viewport.current;
     if (!node) return;
@@ -50,7 +53,7 @@ export function PanelCanvas({ instances, packages, saved, version, items, onErro
       // 快速点击已抬起时不进入拖动，仍释放后台保护。
       if (drag.current === state && target.hasPointerCapture(pointer)) setActive(id);
       else await invoke('window_action', { action: 'interaction-end' });
-    } catch (error) { drag.current = null; setActive(undefined); onError(String(error)); void invoke('window_action', { action: 'interaction-end' }).catch(() => {}); }
+    } catch (error) { drag.current = null; setActive(undefined); setSnapEdges({}); onError(String(error)); void invoke('window_action', { action: 'interaction-end' }).catch(() => {}); }
   };
   const move = (event: PointerEvent) => {
     const state = drag.current;
@@ -58,13 +61,24 @@ export function PanelCanvas({ instances, packages, saved, version, items, onErro
     const pack = packages.find(p => p.id === instances.find(i => i.id === state.id)?.packageId);
     if (!pack) return;
     const dy = event.clientY - state.y + (viewport.current?.scrollTop ?? 0) - state.scroll;
-    state.current = changeLayout(state.start, event.clientX - state.x, dy, state.resize, available, pack.minSize);
+    const node = viewport.current;
+    const peers = Object.entries(layouts).filter(([id]) => id !== state.id);
+    const matches: SnapMatch[] = [];
+    state.current = changeLayout(state.start, event.clientX - state.x, dy, state.resize, available, pack.minSize,
+      peers.map(([, layout]) => layout),
+      node ? { top: node.scrollTop, bottom: node.scrollTop + Math.max(0, node.clientHeight - 24) } : undefined, matches);
+    const edges: Record<string, SnapEdge[]> = {};
+    for (const match of matches) {
+      (edges[state.id] ??= []).push(match.edge);
+      if (match.peer !== undefined) (edges[peers[match.peer][0]] ??= []).push(match.peerEdge);
+    }
+    setSnapEdges(edges);
     setDraft(current => ({ ...current, [state.id]: state.current }));
   };
   const finish = async (event: PointerEvent, canceled = false) => {
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
-    drag.current = null; setActive(undefined); setSaving(state.id);
+    drag.current = null; setActive(undefined); setSnapEdges({}); setSaving(state.id);
     try {
       if (!canceled) {
         setDraft(current => ({ ...current, [state.id]: state.current }));
@@ -83,7 +97,7 @@ export function PanelCanvas({ instances, packages, saved, version, items, onErro
   return <div ref={viewport} className={`panel-scroll${active ? ' manipulating' : ''}`} onPointerMove={move} onPointerUp={event => void finish(event)} onPointerCancel={event => void finish(event, true)} onLostPointerCapture={event => void finish(event, true)}>
     <div className="panel-canvas" style={{ height, width }}>
       {instances.map(instance => { const g = layouts[instance.id]; return g && <article className="panel-widget" key={instance.id} onPointerDownCapture={() => setFront(instance.id)} style={{ left: g.x, top: g.y, width: g.width, height: g.height, zIndex: front === instance.id ? 2 : 1 }}>
-        <WidgetSurface instance={instance.id} inPanel items={items(instance.id)} onError={onError} onDrag={event => void begin(event, instance.id, false)} onResize={event => void begin(event, instance.id, true)}>
+        <WidgetSurface instance={instance.id} inPanel snapEdges={snapEdges[instance.id]} items={items(instance.id)} onError={onError} onDrag={event => void begin(event, instance.id, false)} onResize={event => void begin(event, instance.id, true)}>
           <WidgetFrame key={version(instance.id)} instance={instance.id} />
         </WidgetSurface>
       </article>; })}

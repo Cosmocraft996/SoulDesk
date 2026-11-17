@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"local.souldesk.widgetjs.dynamic-island","name":"灵动通知（原目录久坐提醒）","version":"0.1.0","hostApiMajor":1,"loadCheck":1,"entry":"dist/index.html","defaultSize":{"width":370,"height":340},"minSize":{"width":300,"height":230},"capabilities":["notifications.island"],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}}

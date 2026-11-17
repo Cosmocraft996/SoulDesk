@@ -1,0 +1,9 @@
+来源：https://github.com/rtugeek/fun
+固定提交：07051c2c84a403593e89c182ab02aec66ceb6207
+原始标识：widget.js.fun.hitler（目录标题：仪表盘）
+原文件：src/widgets/hitler/HitlerWidgetView.vue、HitlerConfigView.vue、MonitorType.ts；src/utils/MonitorUtils.ts；src/assets/{speedometer,hitler_hand,hitler_body}.png。
+保留原三层图片、-80到0度指针/一秒缓动、四舍五入百分比、CPU/内存/GPU选择、三秒轮询及主题。
+将WidgetJS的硬件传感器桥替换为受限system.metrics接口：CPU系统时间差分、物理内存、Windows GPU性能计数器。
+GPU按物理适配器/引擎汇总进程后取最繁忙引擎，不冒称与原LibreHardwareMonitor首个Load传感器完全相同；多处理器组CPU和驱动不支持时明确提示。
+配置按实例独立保存。预览不读取硬件；采样预热、过期/未来时间、错误和不可用读数不显示虚构零值。
+个人自用；来源树未附许可证，保留来源事实。本包包含未压缩运行源码；原生实现见src-tauri/src/hardware.rs。

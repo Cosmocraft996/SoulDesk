@@ -1,0 +1,101 @@
+{
+  "repository": "widget-js/widgets",
+  "revision": "714802e66336133396ab55463eb5a26d08fc0788",
+  "files": [
+    {
+      "source": "LICENSE",
+      "target": "LICENSE.txt",
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "source": "src/widgets/labor-progress/LaborProgress.widget.ts",
+      "target": "original/LaborProgress.widget.ts",
+      "sha256": "732fc2aacfcd4170aa4b4ecdb797157b2e1da498ce952d8e0e8e074c86eb56e4"
+    },
+    {
+      "source": "src/widgets/labor-progress/LaborProgressConfigView.vue",
+      "target": "original/LaborProgressConfigView.vue",
+      "sha256": "e8b47733d56cf24abb1185394cdb32070b97733f0ef59a0381843e16ef594497"
+    },
+    {
+      "source": "src/widgets/labor-progress/LaborProgressRoutes.ts",
+      "target": "original/LaborProgressRoutes.ts",
+      "sha256": "92fe0a1a1e6e6d41eb8532d3e33bc046b34c14cdb8f525d6dca9e494e63b7ddc"
+    },
+    {
+      "source": "src/widgets/labor-progress/LaborProgressWidget.vue",
+      "target": "original/LaborProgressWidget.vue",
+      "sha256": "9490a68c0d4284c8ea0f2c0f85d04e930059722d4cb2803cbe9093d05f2ab511"
+    },
+    {
+      "source": "src/widgets/labor-progress/LaborProgressWidgetView.vue",
+      "target": "original/LaborProgressWidgetView.vue",
+      "sha256": "1b1bacb765fb21029d0fc8e94637fbe0d0f5f80bbbd9179938865ab6a129e146"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/face_holding_back_tears_3d.png",
+      "target": "original/images/face_holding_back_tears_3d.png",
+      "sha256": "432e7884fc088687592d457baee5f33562226f6dc69dd8ae836e938c1b867834"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/face_with_rolling_eyes_3d.png",
+      "target": "original/images/face_with_rolling_eyes_3d.png",
+      "sha256": "88ec263ab003c70a85326a4cb5301e64ee52dd3a93d9a5745d035792aa4fa146"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/face_with_spiral_eyes_3d.png",
+      "target": "original/images/face_with_spiral_eyes_3d.png",
+      "sha256": "92c2c6164bb03074bc87529158050bff151f70a895ed79f9003883d439d715b4"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/face_with_steam_from_nose_3d.png",
+      "target": "original/images/face_with_steam_from_nose_3d.png",
+      "sha256": "88c3d94fd9b654f7e390387f2727a24e4857dfd5919e2a8c8d26c84cda7222b6"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/knocked-out_face_3d.png",
+      "target": "original/images/knocked-out_face_3d.png",
+      "sha256": "7e9bdb2eceb7bdea7079683a1be05cc7c7d2f41e03fccc97fa900cf0171e9e49"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/partying_face_3d.png",
+      "target": "original/images/partying_face_3d.png",
+      "sha256": "9a5b0981f0096057cf002640e17f81947e37c165b528a6e4fd9b5af22e4a18b3"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/sleeping_face_3d.png",
+      "target": "original/images/sleeping_face_3d.png",
+      "sha256": "3301c511c1478118de909464fc0770170e5bb41d80939d70249a3344e9cf359d"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/sleepy_face_3d.png",
+      "target": "original/images/sleepy_face_3d.png",
+      "sha256": "ce3e71c2c651db38261eac09b6df70b98f18bb881ec8f9298fe15d22fe6cda44"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/smiling_face_with_sunglasses_3d.png",
+      "target": "original/images/smiling_face_with_sunglasses_3d.png",
+      "sha256": "5b166a5c21808c6ab50af0209a2bc1e3aabdabde4e6d8275c59983171606760f"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/star-struck_3d.png",
+      "target": "original/images/star-struck_3d.png",
+      "sha256": "82f1f3601f7d6726cf80ecc44f08025a7740322b9ed52d52858bfc2a416fdcd7"
+    },
+    {
+      "source": "src/widgets/labor-progress/images/yawning_face_3d.png",
+      "target": "original/images/yawning_face_3d.png",
+      "sha256": "79abf3207cd1132ea07d09fa5f6078af36c535b98acf5937d31930b4b5bdea3c"
+    },
+    {
+      "source": "src/widgets/labor-progress/model/EmojiTimeline.ts",
+      "target": "original/model/EmojiTimeline.ts",
+      "sha256": "a144a8b183e85b2c60644bc75e0938f95d185961745eae0c2087b4f07262c660"
+    },
+    {
+      "source": "src/widgets/labor-progress/model/LaborProgressData.ts",
+      "target": "original/model/LaborProgressData.ts",
+      "sha256": "b4926f72ecdedfab24d5dc5e233b8617a77cfd93571e252095a6f95925396deb"
+    }
+  ]
+}

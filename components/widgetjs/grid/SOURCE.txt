@@ -1,0 +1,10 @@
+来源：https://github.com/rtugeek/grid
+固定提交：4e752cc5020af15fc3a10b4add67ee2ba6298cac
+原始标识：widgetjs.cn.grid.default
+原文件：src/widgets/grid/*、src/composition/useFileSort.ts、src/db/SystemFileRepository.ts、src/db/IconRepository.ts、src/components/FileFormatCheckGroup.vue及原图标。
+原项目未附许可证，按用户明确的本机自用范围移植并保留来源。
+保留原网格/标题/排序/编辑布局，主目录和额外文件/目录，名称或创建/更新时间、递增/递减、文件夹优先、大小写敏感格式过滤及七组快捷格式。原Vue/Element Plus/Dexie改为原生DOM、SoulDesk实例设置和宿主私有授权；不增加前端依赖。
+Windows Shell提供实际缩略图或系统图标，按可见项目惰性读取、同时最多4项，保留原file.ico/file_fail.ico/delete.png等资源。刷新图标清除当前视图缓存并重新读取。修复多点文件名与带点文件夹的截断，以及原视频格式组中.mkv的空格笔误。
+选择目录、文件或额外目录均由原生对话框进行。仅列主目录直接子项目，主目录最多4096项、额外项目1024项、排除记录4096项；不可用项目显示错误。用户点击后通过固定open动作交给系统，不接受任意路径、命令或参数。排除及恢复只修改本实例记录；清除主目录保留额外项目；删除实例清除授权，原文件不改动。路径与版本均由宿主核对，失效会话及试加载不能读取或启动文件。
+原设置中“删除排除记录”对额外文件存在丢失原记录的问题，移植后恢复显示会保留用户选择的额外文件授权。没有创建、移动、重命名或删除磁盘文件的功能。
+实际原生选择、图片/图标画面、文件关联打开及完整桌面操作仍待验收。

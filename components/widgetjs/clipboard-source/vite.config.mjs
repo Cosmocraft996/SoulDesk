@@ -1,0 +1,3 @@
+import{defineConfig}from'vite';import vue from'@vitejs/plugin-vue';import{fileURLToPath}from'node:url';
+import aiConfig from'../ai-source/vite.config.mjs';
+export default defineConfig({root:fileURLToPath(new URL('.',import.meta.url)),base:'./',publicDir:false,plugins:[vue(),...aiConfig.plugins.filter(p=>p.name==='固定AI依赖来源')],build:{target:'es2022',outDir:'../clipboard-bundle',emptyOutDir:false,assetsInlineLimit:0,cssCodeSplit:false,modulePreload:false,rollupOptions:{output:{inlineDynamicImports:true,entryFileNames:'app.js',assetFileNames:asset=>asset.names?.some(name=>name.endsWith('.css'))?'style.css':'[name][extname]'}}}});

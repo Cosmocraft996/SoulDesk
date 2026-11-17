@@ -1,0 +1,10 @@
+来源：https://github.com/widget-js/widgets
+固定提交：714802e66336133396ab55463eb5a26d08fc0788；目录标识：cn.widgetjs.widgets.labor_progress。
+原文件：src/widgets/labor-progress/{LaborProgressWidget.vue,LaborProgressWidgetView.vue,LaborProgressConfigView.vue,model/LaborProgressData.ts,model/EmojiTimeline.ts,images/*.png}；原GPL v2随包保留。
+保留11张原3D表情、原粉黄进度条/棕色轮廓、0.5秒移动、七天表情、阶段阈值/飘字与速度、一位向下截断百分比、当前时间和上下班设置。原版没有工资、工作日筛选或PhoneReminder开关的实际设置，不新增这些业务。
+核心reminders.labor能力提供同一系统本地日期的上下班区间、原始时间和提醒状态；隐藏页面后继续倒计时，预览不注册。夜班跨零点接前一班，下班后至下一夜班开始前保持100%；日班当天上班前为0%，下班后为100%。相同上下班时间明确无效。Windows动态时区双向转换并检查本地日期回转，不存在的跳时日期明确报错。
+下班前5分钟倒计时迁移到既有Windows通知渠道：显示一次后通过数据绑定静默更新真实分秒，不重复弹窗；到期、改班次或系统时间倒退清理旧通知，清除/失败后同一结束时刻不重发。程序重启仅尝试更新已存在的通知，不再次展示同一班次。
+原灵动岛常驻外观及模拟百分秒不复制为新的强制置顶窗口；通知弹出时长由系统决定，真实分秒在通知中心更新。整套灵动岛通知容器仍按原目录单独待取舍，本组件不接管其他通知。
+每次首次发送前持久化目标与标识；接受/失败/被清除/未确定区分，系统接受不代表用户看到。删除实例在事务中删除状态并排队清除自己的通知；通知自身也设置结束时刻过期。闲置读取不重复写库。
+修正原表情仅初始化一天和跨午夜夜班重算错误；页面过期/缺失不显示伪造0%，保存失败保留表单。Core只开放固定业务，没有任意通知文字、任意日程或脚本能力。
+独立源码在components/widgetjs/labor-source与src-tauri/src/labor.rs，SOURCE_FILES.json保留原文件散列；包内为构建资源。真实Windows通知显示/更新、桌面表情与设置点击仍待验，不以模拟系统返回代替。

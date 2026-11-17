@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"local.souldesk.widgetjs.sit-reminder","name":"久坐提醒","version":"0.1.0","hostApiMajor":1,"loadCheck":1,"entry":"dist/index.html","defaultSize":{"width":390,"height":420},"minSize":{"width":310,"height":310},"capabilities":["reminders.sit"],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}}

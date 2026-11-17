@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"clipboard-surfaces","description":"固定剪切板弹窗及工具仅使用受限桥接与失败报告，不授予窗口/快捷键/输入通用命令","windows":["clipboard-history-*","clipboard-search-*","clipboard-tool-*"],"permissions":["core:event:default","allow-open-session","allow-close-session","allow-widget-request","allow-surface-failed"]}

@@ -1,0 +1,8 @@
+// 固定上游头像、录音与歌词，来源见SOURCE_FILES.json。
+import hangupUrl from'./original/public/audio/hangup.m4a';import ringtoneUrl from'./original/public/audio/ringtone.m4a';
+export{hangupUrl,ringtoneUrl};
+import squidwardAvatar from'./original/public/images/zhangyuge.jpg';import squidwardAudio from'./original/public/audio/voice/squidward.m4a';
+import teaAvatar from'./original/public/images/avatar/elvis.png';import teaAudio from'./original/public/audio/voice/elvis.mp3';
+import pillAvatar from'./original/public/images/avatar/mrs_pan.jpg';import pillAudio from'./original/public/audio/voice/mrs_pan.m4a';
+import studyAvatar from'./original/public/images/avatar/jackie_chan.jpg';import studyAudio from'./original/public/audio/voice/jackie_chan.wav';
+export const presets={squidward:{name:"章鱼哥",title:"下班提醒",avatar:squidwardAvatar,audio:squidwardAudio,lyric:"[00:00.00]5\n[00:00.90]4\n[00:01.80]3\n[00:02.80]2\n[00:03.50]1\n[00:04.50]我下班了，蟹老板\n[00:06.20]我要说的是\n[00:07.30]如果有一天\n[00:08.30]我真的实现了\n[00:09.70]我生命中的梦想\n[00:11.20]我永远也不会让\n[00:13.50]我的双脚\n[00:14.50]站在这油污的地板上"},tea:{name:"饮茶哥",title:"饮茶提醒",avatar:teaAvatar,audio:teaAudio,lyric:"[00:00.10]喂！三点几咧！\n[00:02.36]做做撚啊做！\n[00:04.40]饮茶先啊！\n[00:05.50]3点几，饮饮茶先啊！\n[00:07.96]做咁多都冇用嘅！\n[00:09.20]老细唔惜你嘅咧！\n[00:10.96]喂！饮下茶先啊！\n[00:12.73]3点几咧！\n[00:14.33]做椂㞗啊做！"},pill:{name:"潘金莲",title:"吃药提醒",avatar:pillAvatar,audio:pillAudio,lyric:"[00:00.40]大郎\n[00:02.50]该吃药了\n[00:05.06]今日新又抓的\n[00:06.93]专治大郎的病"},study:{name:"成龙",title:"学习提醒",avatar:studyAvatar,audio:studyAudio,lyric:"[00:00.06]游戏里的你\n[00:01.50]再强大也是假的\n[00:03.60]不是真的\n[00:05.00]所以不要贪玩迷恋\n[00:08.00]努力学习\n[00:09.00]坚持不懈\n[00:10.10]梦想一定会成真"}};

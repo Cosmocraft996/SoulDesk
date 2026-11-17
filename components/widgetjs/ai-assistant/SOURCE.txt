@@ -1,0 +1,15 @@
+名称：WidgetJS 网页AI助手 → SoulDesk 标准预置组件
+来源：https://github.com/rtugeek/ai
+固定提交：0160f55feabd19421953c687eba033a707a8c3c2
+原入口：src/widgets/ai/AiWidgetView.vue、AiConfigView.vue、component/BaseWebview.vue、AiSelect.vue、SettingHeader.vue、Tip.vue
+固定文件及散列：components/widgetjs/ai-source/SOURCE_FILES.json
+
+保留原六份Vue模板与SCSS、机器人和八平台图标、1/2/4布局、每格选站、左右位置、四档宽度、置顶、代理、使用说明与侧边滑动。原Electron webview/全局状态替换为SoulDesk固定能力、原生子视图、专用本机壳、独立登录资料和事务配置。外部网页不是普通iframe，也没有SoulDesk宿主令牌或IPC权限。
+
+后台入口和置顶按用户确认改为默认关闭。各平台由用户手动登录，不读取/导出密码或Cookie，不代付，不注入任意网页脚本。浏览器使用实际WebView2标识，未照搬原过时Chrome版本伪装。原滚动条脚本样式不再注入远程页面；原主视图已注释的DuelWebview批量脚本分支不作为有效原功能扩展。平台品牌外链改由本来源文件保留。
+
+导航结果只显示载入状态，不宣称账号已登录。系统默认代理或手动HTTP/HTTPS/SOCKS4/SOCKS5可选；切代理先释放本实例旧网页/登录窗，再使用相同资料目录重建。真实窗口、网页登录/验证码、代理、焦点、多屏和系统快捷键需手动验收。
+
+许可：原LICENSE为GPL v2，原package.json另声明MIT；两份原事实保留在固定来源中，随包保留原LICENSE。THIRD_PARTY_LICENSES.txt由实际构建模块提取。本组件为用户已确认的自用移植。
+
+0.1.1：递增补丁版本，修正历史同版本不同ZIP导致的升级拒绝；当前视图与宿主接口不变，保留实例配置、私有内容及共享绑定，不接入原云能力。

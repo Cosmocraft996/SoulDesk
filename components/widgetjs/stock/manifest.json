@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.stock",
+  "name": "股票 · 自选持仓",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {
+    "width": 400,
+    "height": 430
+  },
+  "minSize": {
+    "width": 360,
+    "height": 300
+  },
+  "capabilities": [
+    "storage.instance",
+    "content.read"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "upColorRed",
+      "background",
+      "foreground",
+      "primary",
+      "border",
+      "radius",
+      "title",
+      "refreshMs"
+    ],
+    "properties": {
+      "upColorRed": {
+        "type": "boolean",
+        "title": "红涨绿跌",
+        "default": true
+      },
+      "background": {
+        "type": "string",
+        "title": "背景",
+        "maxLength": 7,
+        "default": "#202026"
+      },
+      "foreground": {
+        "type": "string",
+        "title": "文字",
+        "maxLength": 7,
+        "default": "#f4f0e8"
+      },
+      "primary": {
+        "type": "string",
+        "title": "主色",
+        "maxLength": 7,
+        "default": "#a6adc8"
+      },
+      "border": {
+        "type": "string",
+        "title": "边框",
+        "maxLength": 7,
+        "default": "#41444d"
+      },
+      "radius": {
+        "type": "integer",
+        "title": "圆角",
+        "minimum": 0,
+        "maximum": 40,
+        "default": 16
+      },
+      "title": {
+        "type": "string",
+        "title": "组件标题",
+        "maxLength": 8,
+        "default": "自选股票"
+      },
+      "refreshMs": {
+        "type": "integer",
+        "title": "刷新间隔毫秒",
+        "minimum": 30000,
+        "maximum": 600000,
+        "default": 60000
+      }
+    }
+  }
+}

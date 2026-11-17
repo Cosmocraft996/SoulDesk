@@ -1,0 +1,6 @@
+来源：https://github.com/rtugeek/ai/tree/0160f55feabd19421953c687eba033a707a8c3c2
+保留原MindMapWidgetView.vue、MarkdownMap.vue、提示词、额外说明、图标/主题与Markmap真实缩放/适应/折叠、节点复制/继续展开、PNG导出。固定原文件89份与字节散列见components/widgetjs/ai-source/SOURCE_FILES.json。原LICENSE为GPL v2，package.json另声明MIT，均保留事实；本次按用户自用授权移植，不发布。
+WidgetJS运行时与窗口API改SoulDesk固定AI网关/标准外框；凭据由当前Windows用户/实例DPAPI保护，普通存储仅本实例输入/结果/最多20份且总2MiB历史。默认无连接，显式启用并点击生成才请求自填模型服务。SSE流式结果、UUID请求回执/取消/配置版本保护，失败/中断保留真实部分文本，不重复发送已登记请求；原图形仅内容，不执行外部脚本/链接/配置。无需WidgetJS或Electron。
+未将离线DOM测量桩或假密钥回环当作真实模型/桌面/PNG验收。原控件Element Plus 2.12.0、IconPark 1.4.2；Markmap lib/view 0.18.12、common 0.18.9、Mermaid 11.12.2为固定上游版本，项目锁文件纳入。相应依赖保留自身许可证。
+
+0.1.2：递增补丁版本，修正历史同版本不同ZIP导致的升级拒绝；当前视图与宿主接口不变，保留实例配置、私有内容及共享绑定，不接入原云能力。

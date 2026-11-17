@@ -1,0 +1,16 @@
+{
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.stock-small","name":"股票 · 分时","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "entry":"dist/index.html","defaultSize":{"width":320,"height":300},"minSize":{"width":240,"height":220},
+  "capabilities":["storage.instance","content.read"],
+  "settingsSchema":{"type":"object","additionalProperties":false,"required":["code","marketId","name","upColorRed","background","foreground","primary","border","radius"],"properties":{
+    "code":{"type":"string","title":"证券代码","maxLength":32,"default":"01810"},
+    "marketId":{"type":"integer","title":"东方财富市场标识","minimum":0,"maximum":157,"default":116},
+    "name":{"type":"string","title":"证券名称","maxLength":128,"default":"小米集团"},
+    "upColorRed":{"type":"boolean","title":"红涨绿跌","default":true},
+    "background":{"type":"string","title":"背景","maxLength":7,"default":"#202026"},
+    "foreground":{"type":"string","title":"文字","maxLength":7,"default":"#f4f0e8"},
+    "primary":{"type":"string","title":"主色","maxLength":7,"default":"#a6adc8"},
+    "border":{"type":"string","title":"边框","maxLength":7,"default":"#41444d"},
+    "radius":{"type":"integer","title":"圆角","minimum":0,"maximum":40,"default":16}
+  }}
+}

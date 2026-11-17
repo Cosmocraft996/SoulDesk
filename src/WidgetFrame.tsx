@@ -1,17 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from './host';
 import { widgetEntryUrl } from './widget-url';
+import { framePermissions } from './widget-permissions';
 
-interface Session { token: string; instanceId: string; packageId: string; entry: string; resourcePath: string; version: string; digest: string; verify: boolean; role?: string; preview?: boolean }
-export function WidgetFrame({ instance, probe = false, page }: { instance: string; probe?: boolean; page?: string }) {
+interface Session { token: string; instanceId: string; packageId: string; entry: string; resourcePath: string; version: string; digest: string; verify: boolean; verificationMode?: string; role?: string; preview?: boolean; capabilities?: string[] }
+export function WidgetFrame({ instance, probe = false, page, assistantShell = false, jobShell = false }: { instance: string; probe?: boolean; page?: string; assistantShell?: boolean; jobShell?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [permissions, setPermissions] = useState(framePermissions());
   useEffect(() => {
-    const call = <T,>(name: string, args: Record<string, unknown>) => invoke<T>(probe ? `desktop_widget_${name}` : name, args);
+    if (probe) return;
+    const stop = listen<string>('host:reload-instance', event => {
+      if (event.payload !== instance) return;
+      // 相同资源地址不会触发iframe导航；先卸载旧页面，再重新握手。
+      setUrl(''); setReady(false); setError(''); setRevision(value => value + 1);
+    });
+    const stopError = listen<{ instance: string; message: string }>('host:instance-error', event => {
+      if (event.payload.instance === instance) setError(event.payload.message);
+    });
+    const stopPomodoro = new URLSearchParams(location.search).has('pomodoroWindow') ? listen<unknown>('host:pomodoro-window', event => {
+      const iframe = frame.current;
+      if (iframe?.contentWindow && iframe.src) iframe.contentWindow.postMessage({ type: 'souldesk:pomodoro-window', surface: event.payload }, new URL(iframe.src).origin);
+    }) : undefined;
+    return () => { void stop.then(off => off()); void stopError.then(off => off()); void stopPomodoro?.then(off => off()); };
+  }, [instance, probe]);
+  useEffect(() => {
+    const call = <T,>(name: string, args: Record<string, unknown>) => invoke<T>(jobShell ? `job_${name}` : assistantShell ? `assistant_${name}` : probe ? `desktop_widget_${name}` : name, args);
     let disposed = false;
     let session: Session | undefined;
     let channel: MessageChannel | undefined;
@@ -20,7 +39,7 @@ export function WidgetFrame({ instance, probe = false, page }: { instance: strin
     const fail = (message: string) => {
       if (disposed) return;
       setError(message);
-      if (!probe) void invoke('surface_failed', { instance, message }).catch(() => {});
+      if (!probe) void invoke(jobShell ? 'job_surface_failed' : assistantShell ? 'assistant_surface_failed' : 'surface_failed', { instance, message }).catch(() => {});
     };
     const timeout = setTimeout(() => fail('组件未在 10 秒内完成握手，可重新加载。'), 10_000);
     void call<Session>('open_session', { instance }).then(s => {
@@ -28,7 +47,7 @@ export function WidgetFrame({ instance, probe = false, page }: { instance: strin
       if (disposed) { void call('close_session', { token: s.token }); return; }
       const resource = widgetEntryUrl(convertFileSrc(s.resourcePath, 'widget'));
       resource.searchParams.set('hostOrigin', location.origin);
-      if (s.verify) resource.searchParams.set('verify', '1');
+      if (s.verify) resource.searchParams.set('verify', s.verificationMode ?? '1');
       if (s.role) resource.searchParams.set('role', s.role);
       if (page) resource.searchParams.set('page', page);
       let handshake = 0;
@@ -89,6 +108,7 @@ export function WidgetFrame({ instance, probe = false, page }: { instance: strin
         clearTimeout(timeout); setReady(true); setError('');
       };
       window.addEventListener('message', listener);
+      setPermissions(framePermissions(s.capabilities, s.preview === true));
       setUrl(resource.href);
     }).catch(cause => { clearTimeout(timeout); fail(String(cause)); });
     return () => {
@@ -98,9 +118,9 @@ export function WidgetFrame({ instance, probe = false, page }: { instance: strin
       channel?.port1.close(); channel?.port2.close();
       if (session) void call('close_session', { token: session.token });
     };
-  }, [instance, revision, probe, page]);
+  }, [instance, revision, probe, page, assistantShell, jobShell]);
   return <div className="frame-wrap">
-    {url && <iframe ref={frame} title="独立组件" src={url} sandbox="allow-scripts allow-same-origin allow-forms" referrerPolicy="no-referrer" />}
+    {url && <iframe ref={frame} title="独立组件" src={url} sandbox={permissions.sandbox} allow={permissions.allow} allowFullScreen={permissions.allowFullScreen} referrerPolicy="no-referrer" />}
     {error ? <div className="frame-message error">{error}<button onClick={() => { setError(''); setReady(false); setUrl(''); setRevision(v => v + 1); }}>重新加载</button></div> : !ready && <div className="frame-message">正在连接组件…</div>}
   </div>;
 }

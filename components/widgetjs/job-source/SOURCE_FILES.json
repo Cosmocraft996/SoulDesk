@@ -1,0 +1,194 @@
+{
+  "entry": "https://widgetjs.cn/ai/job/",
+  "revision": "58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f",
+  "versionType": "固定公开部署入口SHA-256（未取得Git源码提交）",
+  "license": "公开部署未附项目LICENSE；原资源及其内嵌第三方声明完整保留，按用户已确认的自用范围移植",
+  "files": [
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/deepseek-D6inQfCg.png",
+      "path": "original/assets/deepseek-D6inQfCg.png",
+      "bytes": 4646,
+      "sha256": "6bf2674321033cdddf2a475affaccb0795ebce87efcc5176b40ffe4d84c58749"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/el-popover-CQ0ksq8c.js",
+      "path": "original/assets/el-popover-CQ0ksq8c.js",
+      "bytes": 8086,
+      "sha256": "7a32850359bb0af978e0c372f0cf48b26315428051a7209e6b91d273189d8a2d"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/el-popover-DI3WUaix.css",
+      "path": "original/assets/el-popover-DI3WUaix.css",
+      "bytes": 3109,
+      "sha256": "f1e01e0bd1ec8935eb27b07476b9adbf0bd055bf686969398d5a83c25f03596b"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/EmojiLogo-BAGZ5CzN.css",
+      "path": "original/assets/EmojiLogo-BAGZ5CzN.css",
+      "bytes": 11639,
+      "sha256": "6801e76d6db33d6c4130c0f059ecadc5089b72a997bfba428d3e1ce0b931ee65"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/EmojiLogo-D7FxcKNK.js",
+      "path": "original/assets/EmojiLogo-D7FxcKNK.js",
+      "bytes": 12043,
+      "sha256": "62d00b84671d9278227fa1f48292211b2ef116f02efaf0e770812005439b3653"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/exploding_head_3d-Cysscfe9.png",
+      "path": "original/assets/exploding_head_3d-Cysscfe9.png",
+      "bytes": 47230,
+      "sha256": "a915d5b325dbe3130fed54ebaf793777ab88b54c130560f8f3c17ad1af2bcdaf"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/face_with_monocle_3d-D6ZXuWSF.png",
+      "path": "original/assets/face_with_monocle_3d-D6ZXuWSF.png",
+      "bytes": 45911,
+      "sha256": "de447e866d16da68cf6c87e88a35b3312b76b20492056604259bd16e2148570e"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/import-wrapper-prod-BFgxI22s.css",
+      "path": "original/assets/import-wrapper-prod-BFgxI22s.css",
+      "bytes": 31686,
+      "sha256": "403b1739f5324456d8b9da1bc715512f0f0e5e2495ecb7dc1a952dbde79376cc"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/import-wrapper-prod-C2Nb81Sd.js",
+      "path": "original/assets/import-wrapper-prod-C2Nb81Sd.js",
+      "bytes": 206198,
+      "sha256": "154eb2a498f1df98418daf1494ff4f7f2d7e5dc89ae3e7dd8520b0110b8ac8c5"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/index-Bfkv8pFi.js",
+      "path": "original/assets/index-Bfkv8pFi.js",
+      "bytes": 862886,
+      "sha256": "58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/index-Cg2VDAf6.css",
+      "path": "original/assets/index-Cg2VDAf6.css",
+      "bytes": 194421,
+      "sha256": "a0b22f5d17c632b6bf0c6b49fc5a2aceb8c496b37cac9681a6835ec2f9a2d6ed"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobAnalysisView-Bo0vpQPJ.css",
+      "path": "original/assets/JobAnalysisView-Bo0vpQPJ.css",
+      "bytes": 4970,
+      "sha256": "90265cf3f06f11bf2c48da072484e84624212f7998206f0c61c6a6d229001d5d"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobAnalysisView-DVV9mC5g.js",
+      "path": "original/assets/JobAnalysisView-DVV9mC5g.js",
+      "bytes": 1055188,
+      "sha256": "ddef64cbdd20a307975f67f1422572987b781989b74e0dd49936f581f2cbd4fe"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobDetailView-Br05UTzA.js",
+      "path": "original/assets/JobDetailView-Br05UTzA.js",
+      "bytes": 1473,
+      "sha256": "ceaeece1ba559ce738b09580c3e87715a1372fb2a8382f288bf7a8ca684d539e"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobDetailView-BuFwIac0.css",
+      "path": "original/assets/JobDetailView-BuFwIac0.css",
+      "bytes": 71,
+      "sha256": "76779ab6ab5522feb712b0e892c3d4ec619548eac1592dbcb6a5609ceea7d971"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobRepository-CvsTQyXb.js",
+      "path": "original/assets/JobRepository-CvsTQyXb.js",
+      "bytes": 36973,
+      "sha256": "1fb79592e9e95a249d0ed08e4871d77b216e50d6a3ad9dd006fa3d63c2be7e0b"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobRepository-DoXn81mp.css",
+      "path": "original/assets/JobRepository-DoXn81mp.css",
+      "bytes": 14531,
+      "sha256": "49e89d67065cf4b5029b190098cb612cd3e3869bdc3a6c970fe52e546e117ade"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobView-D1Np4MHw.css",
+      "path": "original/assets/JobView-D1Np4MHw.css",
+      "bytes": 12379,
+      "sha256": "f146a4d286bc40e70d594b5cbb6ffe56c179a33013e43d63188e67807f5594a8"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/JobView-DmmzGjQr.js",
+      "path": "original/assets/JobView-DmmzGjQr.js",
+      "bytes": 59172,
+      "sha256": "27083bab509b02a6a83669658b14a93794c5d3f509ea69d7c444f31f167c6c58"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/KnowledgeView-Cjfd7KFs.js",
+      "path": "original/assets/KnowledgeView-Cjfd7KFs.js",
+      "bytes": 868188,
+      "sha256": "eaa5773262501260e18f9af06d8c9649b011eff59e8db58cea23bf6fd9b03440"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/KnowledgeView-CsDGurR-.css",
+      "path": "original/assets/KnowledgeView-CsDGurR-.css",
+      "bytes": 32323,
+      "sha256": "930245883e014f83539f5549d57cac44dd9d6a0640d9a589c60835234e5f6893"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/LandingPage-cZvqpnb_.js",
+      "path": "original/assets/LandingPage-cZvqpnb_.js",
+      "bytes": 253,
+      "sha256": "d8fcc693b7df8caa1fc0dc59bd035e5d2811ad1f9ea4ad26c20a50d52d4a9192"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/magnifying_glass_tilted_left_3d-QorywRbH.png",
+      "path": "original/assets/magnifying_glass_tilted_left_3d-QorywRbH.png",
+      "bytes": 35247,
+      "sha256": "e8fea91e4652a36486aa9392a67873c987a13389afdae06bbcdae78ab30b4f4f"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/open-book-WP0Z2C7s.png",
+      "path": "original/assets/open-book-WP0Z2C7s.png",
+      "bytes": 14654,
+      "sha256": "5fd3e85d83a8db95f6c2e2970ce4101560c9aa288ba58a589c820addb257f330"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/page_with_curl_3d-OYr4Aw17.png",
+      "path": "original/assets/page_with_curl_3d-OYr4Aw17.png",
+      "bytes": 27920,
+      "sha256": "64441859deece3ff29976c702ac13626b1f6cc94f3bbf9cf62c77f49607fdb85"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/qian_wen-D4M3cMdw.png",
+      "path": "original/assets/qian_wen-D4M3cMdw.png",
+      "bytes": 4287,
+      "sha256": "acb38a1625cccd84a34ed632b5eea26484d7ffa82ba88b8119a671fb631de0e2"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/robot_3d-fGSEHVzB.png",
+      "path": "original/assets/robot_3d-fGSEHVzB.png",
+      "bytes": 43362,
+      "sha256": "3f9b5a00b53c8bddda36b6a3f68d00718d9d7d8c04f986a3248e55ae93a7961b"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/spark-BQm4DXkW.png",
+      "path": "original/assets/spark-BQm4DXkW.png",
+      "bytes": 5757,
+      "sha256": "544cb5edffbb91cdc5acbbdfcb3d1d3e904ed6e27cf3f4a97106e1d3bfcf0acc"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/tencent-BiqmWx96.png",
+      "path": "original/assets/tencent-BiqmWx96.png",
+      "bytes": 4271,
+      "sha256": "26668f1cc297eb5c1f7aa7b1145beacda82e685b7c11de89118d34837148694f"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/Window-2xNBPQKy.css",
+      "path": "original/assets/Window-2xNBPQKy.css",
+      "bytes": 1142,
+      "sha256": "deb881acbb64b880393934c05dcfe80f7688a94231a3cc1ae21c963476b031ad"
+    },
+    {
+      "url": "https://widgetjs.cn/ai/job/assets/Window-li_yC5Al.js",
+      "path": "original/assets/Window-li_yC5Al.js",
+      "bytes": 225082,
+      "sha256": "c54c4d4d5fcd2e4f9eb09e16fa758b4c091fe37ed4ac919b0c776b3014ec7767"
+    }
+  ]
+}

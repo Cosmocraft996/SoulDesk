@@ -1,0 +1,2321 @@
+{
+  "source": "https://widget-js.github.io/widgets/#/widget/search",
+  "capturedAt": "2026-11-14",
+  "apiTotal": 61,
+  "items": [
+    {
+      "upstreamId": "cn.stocks.widget.coin_medium",
+      "title": "主流虚拟币",
+      "package": "cn.stocks.widget",
+      "path": "/widget/coin_medium",
+      "configPagePath": "/widget/config/coin_medium?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.coin-medium",
+      "notes": "原14币种网页推送、共享连接及原始时间保留；面板仅释放目标会话，最后消费者仍取消连接。2026-11-16用户确认隐藏一个实例不影响另一个画面、面板重开及移位平滑；此前其他手动项正常。完整程序化宿主、自定义代理及正常安装仍未全验。",
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-coins-smooth-checks.json",
+        "complete": false,
+        "status": "source-verified-and-user-manual-smooth-acceptance-passed",
+        "currentCompiledSha256": "d7f8e774ccb060ce2371ae9d8e38b365a2a375b3889807255e5569b840c1e2f3",
+        "manualFeedback": "artifacts/widgetjs-coins-smooth-manual-feedback-20261116.json"
+      },
+      "manualAcceptance": {
+        "report": "artifacts/widgetjs-coins-smooth-manual-feedback-20261116.json",
+        "status": "passed",
+        "sha256": "d7f8e774ccb060ce2371ae9d8e38b365a2a375b3889807255e5569b840c1e2f3",
+        "scope": [
+          "隐藏一个面板主流虚拟币时，另一个保持画面",
+          "收起重开面板、移入面板/放回桌面时价格和曲线不再清空"
+        ]
+      }
+    },
+    {
+      "upstreamId": "cn.stocks.widget.coin_small",
+      "title": "虚拟币",
+      "package": "cn.stocks.widget",
+      "path": "/widget/coin_small",
+      "configPagePath": "/widget/config/coin_small?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.coin-small",
+      "notes": "已实现按实例/币种/有效网络恢复48个真实采样，后台更新及单点圆点。2026-11-16用户确认移位、面板收起重开时价格/曲线不清空；此前其他手动项正常。215核心/207前端通过；完整程序化宿主、自定义代理及正常安装仍未全验。",
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-coins-smooth-checks.json",
+        "complete": false,
+        "status": "source-verified-and-user-manual-smooth-acceptance-passed",
+        "currentCompiledSha256": "d7f8e774ccb060ce2371ae9d8e38b365a2a375b3889807255e5569b840c1e2f3",
+        "manualFeedback": "artifacts/widgetjs-coins-smooth-manual-feedback-20261116.json"
+      },
+      "manualAcceptance": {
+        "report": "artifacts/widgetjs-coins-smooth-manual-feedback-20261116.json",
+        "status": "passed",
+        "sha256": "d7f8e774ccb060ce2371ae9d8e38b365a2a375b3889807255e5569b840c1e2f3",
+        "scope": [
+          "隐藏一个面板主流虚拟币时，另一个保持画面",
+          "收起重开面板、移入面板/放回桌面时价格和曲线不再清空"
+        ]
+      }
+    },
+    {
+      "upstreamId": "cn.stocks.widget.gold",
+      "title": "黄金价格",
+      "package": "cn.stocks.widget",
+      "path": "/widget/gold",
+      "configPagePath": "/widget/config/gold?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.gold",
+      "notes": "固定Au99.99与东方财富原报价/分时、5秒刷新和主题；精确涨跌、单点/大价差图形、报价和分时独立失败及日期校验；检索被robots拒绝，真实宿主联网/桌面待验"
+    },
+    {
+      "upstreamId": "cn.stocks.widget.metal",
+      "title": "国际贵金属价格",
+      "package": "cn.stocks.widget",
+      "path": "/widget/metal",
+      "configPagePath": "/widget/config/metal?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.metal",
+      "notes": "保留原BiQuote四种中间价/涨跌/30秒刷新，严格十进制与来源/交易所/报价时间/过期状态；原接口检索被robots拒绝，真实宿主联网及桌面待验"
+    },
+    {
+      "upstreamId": "cn.stocks.widget.stock",
+      "title": "股票",
+      "package": "cn.stocks.widget",
+      "path": "/widget/stock",
+      "configPagePath": "/widget/config/stock?transparent=false&frame=true&height=700&width=800",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "hostname": "widgetjs.cn",
+        "base": "/stock"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.stock",
+      "notes": "固定原行四列、自选顺序/拖动、主题/间隔及涨跌幅/收益率/收益额；手工成本和份额按实例十进制保存，无账户/交易。原公式曲线明确仅示意。新增东方财富固定公开搜索与报价，原接口HTTP200证据、5项协议和7项前端专项通过；真实桌面/原生联网/正常安装待验。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "manual_holdings",
+        "status": "approved"
+      },
+      "partialAcceptance": {
+        "complete": false,
+        "status": "built-offline-checked-raw-public-api-available-awaiting-native-desktop",
+        "report": "artifacts/widgetjs-stock-full-checks-20261116.json"
+      }
+    },
+    {
+      "upstreamId": "cn.stocks.widget.stock_medium",
+      "title": "大A指数",
+      "package": "cn.stocks.widget",
+      "path": "/widget/stock_medium",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.stock-medium",
+      "notes": "原百度三大指数/60秒/涨跌色，完整指数身份和逐行失败保留；源无时间时明确标注，接口403，真实宿主及桌面待验"
+    },
+    {
+      "upstreamId": "cn.stocks.widget.stock_small",
+      "title": "股票",
+      "package": "cn.stocks.widget",
+      "path": "/widget/stock_small",
+      "configPagePath": "/widget/config/stock_small?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/stock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/stock",
+        "base": "/stock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/stock",
+      "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
+      "souldeskId": "local.souldesk.widgetjs.stock-small",
+      "notes": "原百度搜索和东方财富分时/末点/涨跌/每分钟/主题；保留代码+市场身份、无随机图或虚构0价；百度检索403，真实联网/时区/桌面待验"
+    },
+    {
+      "upstreamId": "widgetjs.cn.utilities.convert",
+      "title": "图片格式转换",
+      "package": "widgetjs.cn.utilities",
+      "path": "/widget/convert",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/utilities"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/utilities",
+        "hash": true,
+        "base": "/utilities",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/utilities",
+      "sourceRevision": "3d733215bac3e9c1e58125518f100c1601650828",
+      "souldeskId": "local.souldesk.widgetjs.convert",
+      "notes": "原HEIC解码、五种输出/尺寸比例/批量ZIP；12项真实宿主程序化交互通过，两阶段自然退出0，核对真实解码/像素/透明度、内存ZIP、双实例设置与重启。原生选择/保存、实际鼠标拖放仍待验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-convert-checks.json",
+        "nativeChecks": 12,
+        "sha256": "3ff458759edea2ece9df03efe108b2171e348627f1d7b8e8c46549e0b4dd690d",
+        "scope": "真实宿主与WebView中的程序化拖放、真实图片编解码、内存ZIP、独立设置和重启；不等于原生文件选择/保存或实际鼠标",
+        "heicVerified": true,
+        "nativeFileFlowVerified": false
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.utilities.key_stroke",
+      "title": "键盘演示",
+      "package": "widgetjs.cn.utilities",
+      "path": "/widget/key_stroke",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/utilities"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/utilities",
+        "hash": true,
+        "base": "/utilities",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [
+        "keyboard"
+      ],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/utilities",
+      "sourceRevision": "3d733215bac3e9c1e58125518f100c1601650828",
+      "souldeskId": "local.souldesk.widgetjs.key-stroke",
+      "notes": "已按显式启用建议移植原快捷键/CapsLock彩色键帽及450×240无焦点置顶穿透叠加层，默认关闭；只显示修饰组合，不记录普通文字。多个启用实例共用监听器与叠加层，隐藏控制卡不停止，隐藏全部/最后消费者/退出停止。离线检查通过，真实Windows按键、焦点、鼠标穿透及多屏待人工验收。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "background_interaction",
+        "status": "approved",
+        "implementation": "implemented-awaiting-manual"
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.utilities.forex",
+      "title": "汇率换算",
+      "package": "widgetjs.cn.utilities",
+      "path": "/widget/forex",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/utilities"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/utilities",
+        "hash": true,
+        "base": "/utilities",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/utilities",
+      "sourceRevision": "3d733215bac3e9c1e58125518f100c1601650828",
+      "souldeskId": "local.souldesk.widgetjs.forex",
+      "notes": "原14币种、十进制双向输入与主题保存已实现；12项宿主表单/错误/独立性及重启检查通过，两阶段退出0。真实百度USD/CNY接口返回403，实时跨币种换算未通过，未改来源或伪造报价。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-forex-checks.json",
+        "nativeChecks": 12,
+        "sha256": "1a6c399117336b0f6eefcf513b2fac8c9af23a63b37e405a0b83a54c7c31c6f5",
+        "realSourceAvailable": false,
+        "scope": "程序化表单/金额输入、错误显示和持久恢复；实时跨币种换算未通过"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.note",
+      "title": "快速便签",
+      "package": "widgetjs.cn.utilities",
+      "path": "/widget/note",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/stocks-desktop"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/utilities",
+        "hash": true,
+        "base": "/utilities",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/utilities",
+      "sourceRevision": "3d733215bac3e9c1e58125518f100c1601650828",
+      "souldeskId": "local.souldesk.widgetjs.note",
+      "notes": "保留原横线纸、Ctrl＋滚轮、自动保存及失败重试；12项真实宿主检查与两阶段自然退出0通过，覆盖连续输入、超限保留、双实例和重启；实际鼠标及桌面视觉仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-note-checks.json",
+        "nativeChecks": 12,
+        "sha256": "fa30d347022e5d77224ce90c85acc639009eaa61a2e8f61958f89d0756a617b6",
+        "scope": "真实宿主与WebView中的程序化输入/滚轮/自动保存；不等于实际鼠标和桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.utilities.water_reminder",
+      "title": "喝水提醒",
+      "package": "widgetjs.cn.utilities",
+      "path": "/widget/water_reminder",
+      "configPagePath": "/widget/config/water_reminder?transparent=false&frame=true&width=600&height=500",
+      "sourceLinks": [
+        "https://github.com/rtugeek/utilities"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/utilities",
+        "hash": true,
+        "base": "/utilities",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/utilities",
+      "sourceRevision": "3d733215bac3e9c1e58125518f100c1601650828",
+      "souldeskId": "local.souldesk.widgetjs.water-reminder",
+      "notes": "保留水波球、按日杯数/目标、提醒开关/间隔和主题；16项宿主检查通过，两阶段自然退出0；覆盖程序化杯数/去重/表单、双实例和核心历史恢复，零视图正式后台调度及系统请求接受。到期时间来自隔离夹具；真实鼠标、通知显示和按钮仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-water-ui-checks.json",
+        "nativeChecks": 16,
+        "sha256": "38038c00920e1ae6449900bcf37bd394d737c20951eff6b0756ed224959d008c",
+        "scope": "正式宿主/消息桥/WebView程序化杯数与表单、双实例、按日历史、画布及重启；预置隔离到期时间后，在零视图下等待正式一秒后台循环；系统请求接受不等于用户看到或点击",
+        "notificationRequestAccepted": true,
+        "actualNotificationDisplayVerified": false,
+        "actualNotificationButtonVerified": false
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.bangumi",
+      "title": "B站新番时间表",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/bangumi",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-bangumi",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-bangumi-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili",
+      "title": "bilibili热搜",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/bilibili",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-bilibili",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-bilibili-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili_rcmd",
+      "title": "B站推荐",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/bilibili_rcmd",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-bilibili-rcmd-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.cls_telegraph",
+      "title": "财联社电报",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/cls_telegraph",
+      "configPagePath": null,
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-cls-telegraph",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-cls-telegraph-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.douyin",
+      "title": "抖音热榜",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/douyin",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-douyin",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-douyin-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.tou_tiao",
+      "title": "头条热榜",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/tou_tiao",
+      "configPagePath": null,
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-tou-tiao",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-tou-tiao-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": true,
+        "sourceErrors": [],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.world_cup",
+      "title": "2026世界杯",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/world_cup",
+      "configPagePath": "/widget/config/world_cup?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-world-cup",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-world-cup-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": false,
+        "sourceErrors": [
+          "DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway"
+        ],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clock.default",
+      "title": "时钟",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/clock",
+      "configPagePath": "/widget/config/clock?frame=true&transparent=false&width=500&height=500",
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.clock",
+      "notes": "实例配置、包内字体及图像",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.flip_clock",
+      "title": "翻页时钟",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/flip_clock",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.flip-clock",
+      "notes": "实例配置、包内字体及图像；最新46项预置构建的双实例保存、重启及共用退出动作12项通过，真实点击添加和置顶画面通过；真实设置与托盘点击待验，见13-WidgetJS组件移植",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clock.glitch",
+      "title": "故障时钟",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/glitch",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.glitch-clock",
+      "notes": "实例配置、包内字体及图像",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clock.mickey_clock",
+      "title": "米奇表盘",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/mickey_clock",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.mickey-clock",
+      "notes": "实例配置、包内字体及图像",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clock.text_clock",
+      "title": "文本时钟",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/text_clock",
+      "configPagePath": "/widget/config/text_clock?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.text-clock",
+      "notes": "实例配置、包内字体及图像",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clock.trump_clock",
+      "title": "川普表盘",
+      "package": "cn.widgetjs.widgets.clock",
+      "path": "/widget/trump_clock",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/clock"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clock",
+        "hash": true,
+        "base": "/clock",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clock",
+      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
+      "souldeskId": "local.souldesk.widgetjs.trump-clock",
+      "notes": "实例配置、包内字体及图像",
+      "offlineRender": {
+        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
+        "status": "passed",
+        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.mindmap.default",
+      "title": "思维导图",
+      "package": "widgetjs.cn.mindmap",
+      "path": "/",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/mindmap"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/mindmap",
+        "hash": true,
+        "base": "/mindmap",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": "rtugeek/mindmap",
+      "sourceRevision": "9e8ff6ace455e7930117dec3816821ada51c48ab",
+      "souldeskId": "local.souldesk.widgetjs.mindmap",
+      "notes": "本地编辑器与标准包已实现并预置，保留原节点/连线/拖拽/折叠/勾选/分组/表情/主题/快捷键，串行实例保存和原生导出。按已确认范围，固定源码中的原云账户、同步与付费AI仍单列未接入，整项不计全部实现。 0.2.1仅修正已确认状态文案，数据和宿主接口兼容0.2.0，可独立导入升级。",
+      "localImplementation": {
+        "status": "实现待验",
+        "scope": "完整AntV X6本地编辑、实例保存、可选本地共享及用户文件导入导出；原云与付费AI未接入",
+        "pending": [
+          "微信/云账户登录",
+          "云同步",
+          "付费额度与AI生成"
+        ]
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "sharedLibrary": {
+        "version": "0.2.1",
+        "status": "implemented-offline-checked-awaiting-manual",
+        "scope": "主动选择本地共享；默认私有、断开恢复、偏好独立、版本冲突拒绝覆盖",
+        "report": "artifacts/widgetjs-shared-library-checks-20261116.json",
+        "cloudSyncComplete": false
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "originalCloudAudit": {
+        "provider": "widgetjs",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.ai.assistant.chatgpt",
+      "title": "AI助手",
+      "package": "cn.widgetjs.widgets.ai.assistant",
+      "path": "/widget/chatgpt",
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/ai"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/ai",
+        "hash": true,
+        "base": "/ai",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": true,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/ai",
+      "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
+      "souldeskId": "local.souldesk.widgetjs.ai-assistant",
+      "notes": "已接通原八站图标/六份Vue模板与SCSS、1/2/4网格、每格选站、手动登录、代理、左右/四档宽度/置顶、说明和专用侧边窗；后台默认关闭。核心470通过/2忽略、前端333、最终63预置专项及Release通过；缓存隔离补丁后51项助手专项通过。真实窗口/网页登录/代理/快捷键未调用，仍待手动，不以导航结束冒称已登录。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-ai-generators-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "stateChecks": 14,
+        "viewChecks": 17,
+        "nativeDriverCompiled": true,
+        "nativeCallsExercised": false,
+        "originalVue": true,
+        "standardPackage": true,
+        "plan": "docs/superpowers/plans/2026-11-17-widgetjs-ai-assistant.md",
+        "report": "artifacts/widgetjs-assistant-checks-20261117.json",
+        "hostChecks": 20
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-assistant-checks-20261117.json",
+        "coreAllPass": 470,
+        "coreIgnored": 2,
+        "profileFixAssistantPass": 51,
+        "webAllPass": 333,
+        "finalResourcePresetPass": 5,
+        "presets": 63,
+        "desktopLaunched": false,
+        "realLogin": false,
+        "realProxy": false,
+        "realShortcut": false,
+        "manualLauncher": "artifacts/verify-widgetjs-assistant.cmd"
+      },
+      "packageUpgrade": {
+        "version": "0.1.1",
+        "fromVersion": "0.1.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.ai.assistant.mind_map",
+      "title": "思维导图",
+      "package": "cn.widgetjs.widgets.ai.assistant",
+      "path": "/widget/mind_map",
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/ai"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/ai",
+        "hash": true,
+        "base": "/ai",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/ai",
+      "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
+      "souldeskId": "local.souldesk.widgetjs.ai-mindmap",
+      "notes": "保留原Vue/提示词/图标/主题及真实Markmap节点、缩放/适应/折叠、复制/继续展开/PNG；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-ai-generators-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-ai-generators.md",
+        "standardPackage": true,
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json"
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json",
+        "coreAllPass": 328,
+        "coreIgnored": 2,
+        "webAllPass": 287,
+        "desktopLaunched": false,
+        "realModel": false,
+        "actualPng": false,
+        "scope": "原Vue执行、真实图形引擎/离线DOM结构及事件（测量用桩）、假媒体/画布保存协议、DPAPI隔离库和HTTP回环；不替代真实服务或桌面"
+      },
+      "souldeskVersion": "0.1.1",
+      "compatibilityPatch": {
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "dataSchemaChanged": false,
+        "report": "artifacts/widgetjs-assistant-checks-20261117.json"
+      },
+      "packageUpgrade": {
+        "version": "0.1.2",
+        "fromVersion": "0.1.1",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.ai.assistant.mermaid",
+      "title": "Mermaid图表",
+      "package": "cn.widgetjs.widgets.ai.assistant",
+      "path": "/widget/mermaid",
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/ai"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/ai",
+        "hash": true,
+        "base": "/ai",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/ai",
+      "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
+      "souldeskId": "local.souldesk.widgetjs.ai-mermaid",
+      "notes": "保留原Vue/提示词/图标、11图表/源码编辑、真实Mermaid/缩放平移适应/复制/PNG/主题与显式全屏；自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-ai-generators-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-ai-generators.md",
+        "standardPackage": true,
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json"
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json",
+        "coreAllPass": 328,
+        "coreIgnored": 2,
+        "webAllPass": 287,
+        "desktopLaunched": false,
+        "realModel": false,
+        "actualPng": false,
+        "scope": "原Vue执行、真实图形引擎/离线DOM结构及事件（测量用桩）、假媒体/画布保存协议、DPAPI隔离库和HTTP回环；不替代真实服务或桌面"
+      },
+      "souldeskVersion": "0.1.1",
+      "compatibilityPatch": {
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "dataSchemaChanged": false,
+        "report": "artifacts/widgetjs-assistant-checks-20261117.json"
+      },
+      "packageUpgrade": {
+        "version": "0.1.2",
+        "fromVersion": "0.1.1",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.ai.assistant.translate",
+      "title": "AI翻译",
+      "package": "cn.widgetjs.widgets.ai.assistant",
+      "path": "/widget/translate",
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/ai"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/ai",
+        "hash": true,
+        "base": "/ai",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/ai",
+      "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
+      "souldeskId": "local.souldesk.widgetjs.ai-translate",
+      "notes": "保留原Vue/提示词/图标、20语言双向翻译/复制/主题和本地有限历史；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-ai-generators-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-ai-generators.md",
+        "standardPackage": true,
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json"
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-ai-generators-checks-20261116.json",
+        "coreAllPass": 328,
+        "coreIgnored": 2,
+        "webAllPass": 287,
+        "desktopLaunched": false,
+        "realModel": false,
+        "actualPng": false,
+        "scope": "原Vue执行、真实图形引擎/离线DOM结构及事件（测量用桩）、假媒体/画布保存协议、DPAPI隔离库和HTTP回环；不替代真实服务或桌面"
+      },
+      "souldeskVersion": "0.1.1",
+      "compatibilityPatch": {
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "dataSchemaChanged": false,
+        "report": "artifacts/widgetjs-assistant-checks-20261117.json"
+      },
+      "packageUpgrade": {
+        "version": "0.1.2",
+        "fromVersion": "0.1.1",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.excalidraw.default",
+      "title": "画板",
+      "package": "widgetjs.cn.excalidraw",
+      "path": "/",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/excalidraw"
+      ],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "base": "/excalidraw"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/excalidraw",
+      "sourceRevision": "5771e20a9eb40365d75170589b1d7a8ab1cb1af4",
+      "souldeskId": "local.souldesk.widgetjs.excalidraw",
+      "notes": "完整Excalidraw 0.18.0、原234字体/工作线程、图形库/图片/文件导入导出、实例自动保存及失败重试；原生文件对话框/剪贴板/嵌入与桌面行为待验"
+    },
+    {
+      "upstreamId": "itime.fun.birthday_list",
+      "title": "生日列表",
+      "package": "itime.fun",
+      "path": "/widget/birthday_list",
+      "configPagePath": "/widget/config/birthday_list?frame=true&transparent=false&width=600&height=400",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/BirthdayListWidgetView-Cw7wpXUS.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:c46b27a6aed5958b94a36dd22ca75e648db50e69e0daaa812cd46f7a46a02737",
+      "souldeskId": "local.souldesk.widgetjs.birthday-list",
+      "notes": "整项不计完全实现；原账户/云同步仍未实现。已修正农历年界和跨日缓存，原非闰年2月29日按3月1日。用户2026-11-16确认目标年无出生同名闰月时按普通同月计算，有闰月仍保留，出生身份不改写；本地共享库0.2.0已实现待真实双窗口验收。",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "localImplementation": "原气球/蛋糕与生日列表、公历/农历编辑、今日高亮、排序/拖动/删除和独立持久化已实现；云端未实现；本地共享已实现待验，非同名闰月目标年按用户确认的普通同月规则",
+      "verification": {
+        "nativeReport": "artifacts/desktop-integration-widgetjs-birthday-explorer-20261115.json",
+        "nativeChecks": 12,
+        "phaseExitCodes": [
+          0,
+          0
+        ],
+        "scope": "本地部分程序化WebView交互及原图片加载",
+        "visual": "未验证"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "sharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-offline-checked-awaiting-manual",
+        "scope": "主动选择本地共享；默认私有、断开恢复、偏好独立、版本冲突拒绝覆盖",
+        "report": "artifacts/widgetjs-shared-library-checks-20261116.json",
+        "cloudSyncComplete": false
+      },
+      "birthdayLeapMonthPolicy": {
+        "answer": "按当年的普通同名月份计算",
+        "status": "implemented-offline-checked",
+        "keepsBirthLeapMonth": true
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "packageUpgrade": {
+        "version": "0.2.1",
+        "fromVersion": "0.2.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.calendar",
+      "title": "日历",
+      "package": "itime.fun",
+      "path": "/widget/calendar",
+      "configPagePath": "/widget/config/calendar?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/CalendarWidgetView-CyWpVHUb.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:ecc1caa391c917c613de62b9c59351e26b367c3adf086e53869ad09b9ebf3095",
+      "souldeskId": "local.souldesk.widgetjs.calendar",
+      "notes": "保留原纯历法模块、分周/农历/节日、休班徽章和黄历详情；固定原公开API，实例周开始日/主题；读取失败保留旧数据、缺失不推测休班，桌面证据另记",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "verification": {
+        "nativeReport": "artifacts/desktop-integration-widgetjs-calendar-20261115.json",
+        "nativeChecks": 12,
+        "phaseExitCodes": [
+          0,
+          0
+        ],
+        "originalPublicApi": "通过",
+        "publicCalendarRows": 61,
+        "visual": "未验证"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.calendar_large",
+      "title": "大号日历",
+      "package": "itime.fun",
+      "path": "/widget/calendar_large",
+      "configPagePath": "/widget/config/calendar_large?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/CalendarLargeWidgetView-BWZiw04f.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:727c3e3a2e8d19d2967ca27bb40d4cc25bc4e20513785975b93b19307669299d",
+      "souldeskId": "local.souldesk.widgetjs.calendar-large",
+      "notes": "本地标准包已预置，原引擎、未来重复定义清理、网格边线、61条公开数据和双实例重启通过；实际桌面/指针和系统通知另待验 2026-11-16本地0.2.0已接入同类型可选共享库与原生去重提醒，默认私有、切源私有暂停、断开恢复；编辑/详情会话保护与共享删除提示已修正，真实双视图/通知/升级待验。原云同步仍未完成。",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "localImplementation": {
+        "source": "components/widgetjs/calendar-large-source/SOURCE_FILES.json",
+        "report": "artifacts/widgetjs-calendar-large-checks.json",
+        "coreCapability": "todos.manage",
+        "modelChecks": 5,
+        "sourceChecks": 1,
+        "vueChecks": 2,
+        "nativeChecks": 12,
+        "scope": "原FullCalendar月视图、农历/公开节气、重复日程、共用编辑器、实例设置及可选本地共享已接入；原云账户/同步未接入"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "editVersionGuard": {
+        "version": "0.1.1",
+        "status": "external-package-built-offline-checked",
+        "report": "artifacts/widgetjs-shared-edit-checks-20261116.json",
+        "scope": "编辑/删除固定打开版本，配置回执同步实际数据；原生共享源尚未接入",
+        "manualVerified": false
+      },
+      "localSharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-awaiting-manual",
+        "kind": "todo",
+        "report": "artifacts/widgetjs-native-shared-checks-20261116.json"
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "packageUpgrade": {
+        "version": "0.2.1",
+        "fromVersion": "0.2.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.countdown",
+      "title": "倒计时",
+      "package": "itime.fun",
+      "path": "/widget/countdown",
+      "configPagePath": "/?frame=true&transparent=false&width=400&height=700&tab=countdown",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/CountdownWidgetView-D_SCAd1B.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:ca2a4bdddaaceca26bd96e1daf08aa14872462ddc7b1ad0a91820c89ac2bbf8d",
+      "souldeskId": "local.souldesk.widgetjs.countdown",
+      "notes": "原源仓储确有账户隔离与云同步，整项不计完全实现；本地独立标准包已接入预置，真实宿主验收另记",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "localImplementation": "已实现本地单卡/列表、编辑、公历/农历、源重复和独立持久化；云账户/原云同步未实现；可选本地共享库已实现待验",
+      "verification": {
+        "nativeReport": "artifacts/desktop-integration-widgetjs-countdown-explorer-20261115.json",
+        "nativeChecks": 12,
+        "phaseExitCodes": [
+          0,
+          0
+        ],
+        "scope": "仅本地部分的程序化WebView交互",
+        "visual": "未验证"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "sharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-offline-checked-awaiting-manual",
+        "scope": "主动选择本地共享；默认私有、断开恢复、偏好独立、版本冲突拒绝覆盖",
+        "report": "artifacts/widgetjs-shared-library-checks-20261116.json",
+        "cloudSyncComplete": false
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "packageUpgrade": {
+        "version": "0.2.1",
+        "fromVersion": "0.2.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.countdown_list",
+      "title": "倒计时列表",
+      "package": "itime.fun",
+      "path": "/widget/countdown/list",
+      "configPagePath": "/widget/config/countdown/list?frame=true&transparent=false&width=600&height=400",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/CountdownListWidgetView-wrltC0IV.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:e406b49b0276e671cf2bcc263f728a65e0441cb65e2d46d5f0087957cfbf750a",
+      "souldeskId": "local.souldesk.widgetjs.countdown-list",
+      "notes": "原源仓储确有账户隔离与云同步，整项不计完全实现；本地独立标准包已接入预置，真实宿主验收另记",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "localImplementation": "已实现本地单卡/列表、编辑、公历/农历、源重复和独立持久化；云账户/原云同步未实现；可选本地共享库已实现待验",
+      "verification": {
+        "nativeReport": "artifacts/desktop-integration-widgetjs-countdown-list-explorer-20261115.json",
+        "nativeChecks": 12,
+        "phaseExitCodes": [
+          0,
+          0
+        ],
+        "scope": "仅本地部分的程序化WebView交互",
+        "visual": "未验证"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "sharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-offline-checked-awaiting-manual",
+        "scope": "主动选择本地共享；默认私有、断开恢复、偏好独立、版本冲突拒绝覆盖",
+        "report": "artifacts/widgetjs-shared-library-checks-20261116.json",
+        "cloudSyncComplete": false
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "packageUpgrade": {
+        "version": "0.2.1",
+        "fromVersion": "0.2.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.deadline",
+      "title": "Deadline",
+      "package": "itime.fun",
+      "path": "/widget/deadline",
+      "configPagePath": "/widget/config/deadline?width=400&height=700&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/DeadlineWidgetView-IuZHNBhI.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:f78274d47300d5c235347fb5efd9adbe496daad26946a7eca385cd8747ec7280",
+      "souldeskId": "local.souldesk.widgetjs.deadline",
+      "notes": "依据固定公开部署提取原SVG/动画，已移植为标准包；日期/主题按实例保存，当前时间缓存和越界已修正；桌面验收另记",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "verification": {
+        "nativeReport": "artifacts/desktop-integration-widgetjs-deadline-20261115.json",
+        "nativeChecks": 12,
+        "phaseExitCodes": [
+          0,
+          0
+        ],
+        "visual": "未验证"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.pomodoro",
+      "title": "番茄钟",
+      "package": "itime.fun",
+      "path": "/widget/pomodoro",
+      "configPagePath": "/settings?frame=true&transparent=false&width=400&height=700",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/PomodoroWidgetView-eY2LxrFN.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:cf1794c3877b13b270695db15750807340ef08de848c42cc36395cad6d5a5c8c",
+      "souldeskId": "local.souldesk.widgetjs.pomodoro",
+      "notes": "本地标准包已预置，原钟面/字体/WAV、场景/设置/月统计/分页历史、核心计时与正式提醒已接入；12项宿主检查和两阶段退出0通过。云账户/共享与强制大小/贴边隐藏/独立托盘/自动置顶待统一取舍，真实声音及通知未验。 2026-11-16本地0.2.0已接入可选原生共享库，复制不自动计时、私有和最后消费者暂停、显式恢复；详情草稿保护及共享删除提示已修正。原云同步/贴边/专用交互仍未完成，真实通知与升级待验。 2026-11-17专用窗0.3.0已接Core/原钟面/托盘及固定能力，显式许可默认关闭；切源拒旧菜单，后台不激活显示，业务故障仍可停用。离线检查通过，Release已构建且隔离入口已备好，真实桌面待手动验收，原云同步仍未完成。 2026-11-17用户反馈73c83c85隔离版“启用、贴边拖动、隐藏后计时、切源、停用退出”五项均正常；其他场景及新统一版不据此标为通过。",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "localImplementation": {
+        "source": "components/widgetjs/pomodoro-source/SOURCE_FILES.json",
+        "report": "artifacts/widgetjs-pomodoro-checks.json",
+        "coreCapability": "focus.pomodoro",
+        "coreChecks": 14,
+        "modelChecks": 5,
+        "vueChecks": 2,
+        "nativeChecks": 12,
+        "scope": "本地计时/场景统计、可选原生共享与0.3.0专用窗已接入；73c83c85隔离版五项手动通过，其他真实场景及原云同步仍未验或未实现"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "editVersionGuard": {
+        "version": "0.1.1",
+        "status": "external-package-built-offline-checked",
+        "report": "artifacts/widgetjs-shared-edit-checks-20261116.json",
+        "scope": "编辑/删除固定打开版本，配置回执同步实际数据；原生共享源尚未接入",
+        "manualVerified": false
+      },
+      "localSharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-awaiting-manual",
+        "kind": "pomodoro",
+        "report": "artifacts/widgetjs-native-shared-checks-20261116.json"
+      },
+      "dedicatedWindow": {
+        "version": "0.3.0",
+        "status": "user-manual-five-checks-passed",
+        "capability": "focus.pomodoro.window",
+        "defaultEnabled": false,
+        "report": "artifacts/widgetjs-pomodoro-window-checks-final-20261117.json",
+        "manualVerified": true,
+        "scope": "固定150、置顶/贴边、托盘与原场景菜单；当前源投影，不自动开始计时，原云未完成",
+        "program": "artifacts/widgetjs-pomodoro-window-program.json",
+        "manualScope": [
+          "启用",
+          "贴边拖动",
+          "隐藏后计时",
+          "切源",
+          "停用退出"
+        ],
+        "manualReport": "artifacts/widgetjs-pomodoro-window-manual-feedback-20261117.json",
+        "manualSha256": "73c83c85c9238acc994f81c1a7aa516cb800911ead81adecb2f8383dab38761b",
+        "manualRemaining": [
+          "多显示器与不同缩放",
+          "提示音及通知、完整专注与休息转换",
+          "所有焦点行为与异常恢复",
+          "新统一版3cd4f3de的实际运行",
+          "正常安装升级",
+          "原云同步已实现",
+          "61项全目录功能完成"
+        ]
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "manualAcceptance": {
+        "report": "artifacts/widgetjs-pomodoro-window-manual-feedback-20261117.json",
+        "status": "passed",
+        "complete": false,
+        "sha256": "73c83c85c9238acc994f81c1a7aa516cb800911ead81adecb2f8383dab38761b",
+        "scope": [
+          "启用",
+          "贴边拖动",
+          "隐藏后计时",
+          "切源",
+          "停用退出"
+        ],
+        "automatedChecksAdded": 0
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "itime.fun.todo_list",
+      "title": "待办事项（Pro）",
+      "package": "itime.fun",
+      "path": "/widget/todo_list",
+      "configPagePath": "/widget/todo_list/config?frame=true&transparent=false&width=600&height=500",
+      "sourceLinks": [
+        "https://itime.fun/web/assets/TodoListWidgetView-C14X2pAF.js"
+      ],
+      "remote": {
+        "entry": "https://itime.fun/web",
+        "base": "/web",
+        "hostname": "itime.fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "本地实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:d0330d157ac613f25b84480220768b6e982cb3e4d502350a99bfb836e17a16c1",
+      "souldeskId": "local.souldesk.widgetjs.todo",
+      "notes": "本地标准包已预置，12项宿主检查通过，两阶段退出0；实际指针拖动、可听音效、系统通知及按钮未验，云端/共享范围保留最后取舍 2026-11-16本地0.2.0已接入同类型可选共享库与原生去重提醒，默认私有、切源私有暂停、断开恢复；编辑/详情会话保护与共享删除提示已修正，真实双视图/通知/升级待验。原云同步仍未完成。",
+      "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
+      "coreImplementation": {
+        "capability": "todos.manage",
+        "source": "components/widgetjs/todo-source/SOURCE_FILES.json",
+        "report": "artifacts/widgetjs-todo-core-checks.json",
+        "checks": 14,
+        "scope": "实例事务、完成历史、重复及后台提醒已实现；原列表、音效、标准包和真实通知待接入验收"
+      },
+      "localImplementation": {
+        "capability": "todos.manage",
+        "source": "components/widgetjs/todo-source/SOURCE_FILES.json",
+        "report": "artifacts/widgetjs-todo-checks.json",
+        "coreChecks": 16,
+        "modelChecks": 8,
+        "vueChecks": 4,
+        "nativeChecks": 12,
+        "scope": "本地列表、完成历史/音效、编辑/排序/删除、重复、核心提醒及可选本地共享已接入；原云账户/Pro/同步未接入"
+      },
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "local_cloud_shared",
+        "status": "approved",
+        "cloudSync": "单列未完成"
+      },
+      "editVersionGuard": {
+        "version": "0.1.1",
+        "status": "external-package-built-offline-checked",
+        "report": "artifacts/widgetjs-shared-edit-checks-20261116.json",
+        "scope": "编辑/删除固定打开版本，配置回执同步实际数据；原生共享源尚未接入",
+        "manualVerified": false
+      },
+      "localSharedLibrary": {
+        "version": "0.2.0",
+        "status": "implemented-awaiting-manual",
+        "kind": "todo",
+        "report": "artifacts/widgetjs-native-shared-checks-20261116.json"
+      },
+      "approvedLocalImplementation": {
+        "status": "delivered-manual-deferred",
+        "scope": "默认私有、主动选择本地共享；原私有内容保留，切源和保存遵循已确认规则",
+        "report": "artifacts/widgetjs-approved-local-scope-audit-20261117.json",
+        "originalCloudImplemented": false
+      },
+      "packageUpgrade": {
+        "version": "0.2.1",
+        "fromVersion": "0.2.0",
+        "status": "core-fixture-upgrade-verified",
+        "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
+        "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
+      },
+      "originalCloudAudit": {
+        "provider": "itime",
+        "status": "deferred-by-user",
+        "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
+        "implemented": false,
+        "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      }
+    },
+    {
+      "upstreamId": "cn.example.widget.base_panel",
+      "title": "监控面板",
+      "package": "widget.js.monitor",
+      "path": "/widget/base_panel",
+      "configPagePath": "/widget/base_panel/config?frame=true&transparent=false&height=400",
+      "sourceLinks": [
+        "https://github.com/rtugeek/monitor"
+      ],
+      "remote": {
+        "base": "/monitor",
+        "hostname": "widgetjs.cn",
+        "hash": true
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/monitor",
+      "sourceRevision": "e8cba77deb4ba7beb1e35939601b912bbe6aadab",
+      "souldeskId": "local.souldesk.widgetjs.base-panel",
+      "notes": "保留原四列环形布局/渐变/三秒刷新/主题；逻辑处理器、内存总量、同适配器GPU主温度和网卡计数差分已接入原生接口；桌面和设置点击待验。2026-11-15新增12项真实宿主设置/显示/重启检查通过，两阶段退出0；原生数值和缺值理由分别记录，真实鼠标/完整桌面视觉仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-base-panel-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
+        "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "widget.js.monitor.energy_label",
+      "title": "打工能耗标识",
+      "package": "widget.js.monitor",
+      "path": "/widget/energy_label",
+      "configPagePath": "/widget/config/energy_label?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/monitor"
+      ],
+      "remote": {
+        "base": "/monitor",
+        "hostname": "widgetjs.cn",
+        "hash": true
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/monitor",
+      "sourceRevision": "e8cba77deb4ba7beb1e35939601b912bbe6aadab",
+      "souldeskId": "local.souldesk.widgetjs.energy-label",
+      "notes": "保留原蓝白标签/五档箭头/80%CPU与20%内存权重、三秒刷新、名称型号字体和过渡；缺失及旧数据明确提示，按实例持久化；桌面和配置点击待验。2026-11-15新增12项真实宿主设置/显示/重启检查通过，两阶段退出0；原生数值和缺值理由分别记录，真实鼠标/完整桌面视觉仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-energy-label-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
+        "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "widget.js.monitor.server",
+      "title": "服务器监控",
+      "package": "widget.js.monitor",
+      "path": "/widget/server",
+      "configPagePath": "/widget/config/server?width=400&height=700&frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/rtugeek/monitor"
+      ],
+      "remote": {
+        "base": "/monitor",
+        "hostname": "widgetjs.cn",
+        "hash": true
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/monitor",
+      "sourceRevision": "e8cba77deb4ba7beb1e35939601b912bbe6aadab",
+      "souldeskId": "local.souldesk.widgetjs.server",
+      "notes": "保留服务器编辑/同步、原三环和图标；12项真实宿主检查通过，两阶段退出0，正式HTTP回环固定夹具核对信息/指标、503保留、上传拉取合并/删除、外观、双实例和重启；不等于真实远端采样、同步持久化、剪贴板或鼠标验收。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-server-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "29f7b1db0c3f87d355c4271b064ec28160785011be8e9a17d9420855751eaafb",
+        "scope": "正式宿主消息桥、原生HTTP和真实WebView之间的程序化表单/绘图/同步/重启；远端为127.0.0.1固定数据夹具，不等于真实服务器监控",
+        "fixtureOnly": true,
+        "actualRemoteAgentVerified": false
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.photo.photo",
+      "title": "轮播相册",
+      "package": "widgetjs.cn.photo",
+      "path": "/widget/photo",
+      "configPagePath": "/widget/config/photo?width=600&height=400frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "base": "/photo",
+        "entry": "https://widgetjs.cn/photo"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/photo",
+      "sourceRevision": "84ab455aa34cd29cd14e8a999d50e714c8dae637",
+      "souldeskId": "local.souldesk.widgetjs.photo",
+      "notes": "保留裁切/圆角/淡出、前后循环与轮播；隔离目录预置测试授权，正式媒体读取、两种实际图片解码、损坏图保留、程序化切换/暂停、设置及重启12项通过，两阶段退出0；原生选目录/真实鼠标/完整动画仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-photo-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "2c7a3cac9bd3d1b223036386e99bcb2ca9ae2c4037b85c07fc7f1e513d9672ae",
+        "scope": "仅预置隔离目录授权，正式media.list/read与真实WebView；程序化切换、1秒轮播、鼠标移动后1.1秒保留当前图、配置和重启；不等于原生选目录或完整动画",
+        "nativeFileDialogVerified": false
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.photo.sticker",
+      "title": "大头贴",
+      "package": "widgetjs.cn.photo",
+      "path": "/widget/sticker",
+      "configPagePath": "/widget/config/sticker?width=600&height=400frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "base": "/photo",
+        "entry": "https://widgetjs.cn/photo"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/photo",
+      "sourceRevision": "84ab455aa34cd29cd14e8a999d50e714c8dae637",
+      "souldeskId": "local.souldesk.widgetjs.sticker",
+      "notes": "保留原折角和居中缩放；生成图片经实例文档存储保存、真实解码、无效地址及重试保留旧图、双实例和重启12项通过，两阶段退出0；原生文件选择、默认远程图片和真实鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-sticker-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "2c7a3cac9bd3d1b223036386e99bcb2ca9ae2c4037b85c07fc7f1e513d9672ae",
+        "scope": "项目生成图片经真实存储保存与WebView解码；程序化表单/失败重试/尺寸/重启，不等于原生文件选择或远程图片验证",
+        "nativeFileDialogVerified": false
+      }
+    },
+    {
+      "upstreamId": "ccn.widgetjs.widgets.hotspot.weibo",
+      "title": "微博热搜",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/weibo",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-weibo",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-weibo-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": false,
+        "sourceErrors": [
+          "DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden"
+        ],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.grid.default",
+      "title": "文件收纳盒",
+      "package": "widgetjs.cn.grid",
+      "path": "/widget/grid",
+      "configPagePath": "/widget/config/grid?width=600&height=700&frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "hash": true,
+        "base": "/grid"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/grid",
+      "sourceRevision": "4e752cc5020af15fc3a10b4add67ee2ba6298cac",
+      "souldeskId": "local.souldesk.widgetjs.grid",
+      "notes": "原主目录/额外项目/网格/排序/格式组及排除恢复；宿主按实例授权，真实Shell缩略图读取检查通过，原生选择/关联打开/桌面待验；原拖放为空处理"
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clipboard.search",
+      "title": "AI剪切板",
+      "package": "cn.widgetjs.widgets.clipboard",
+      "path": "/search",
+      "configPagePath": "/search/config?transparent=false&frame=true&width=550&height=600",
+      "sourceLinks": [
+        "https://github.com/rtugeek/clipboard"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clipboard",
+        "base": "/clipboard",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [
+        "clipboard"
+      ],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clipboard",
+      "sourceRevision": "2482fc6b238983f3fe8f2aecf042d92a9b29c9e2",
+      "souldeskId": "local.souldesk.widgetjs.clipboard-search",
+      "notes": "原700×54顶部条、三搜索平台和直接搜索快捷键；本地原AI导图/翻译、独立窗口/作业/加密文档，密钥不进URL，只预填不自动生成。默认关闭采集/快捷键，真实剪切板/模型/桌面待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-clipboard-source-audit.json",
+      "nativeFoundation": {
+        "status": "original-vue-local-ai-standard-package-offline-verified-awaiting-manual",
+        "historyChecks": 16,
+        "captureChecks": 10,
+        "standardPackage": true,
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-clipboard.md",
+        "report": "artifacts/widgetjs-clipboard-checks-20261117.json",
+        "hostChecks": 19,
+        "coreIntegrated": true,
+        "actionChecks": 15,
+        "nativeControlChecks": 8,
+        "productionActionEntry": true,
+        "surfaceChecks": 8,
+        "shortcutChecks": 6,
+        "popupLifecycle": true,
+        "originalVue": true,
+        "localAiToolEntry": true,
+        "toolChecks": 4,
+        "aiHostChecks": 18,
+        "clientChecks": 13
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.clipboard.list",
+      "title": "剪切板",
+      "package": "cn.widgetjs.widgets.clipboard",
+      "path": "/clipboard",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/rtugeek/clipboard"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/clipboard",
+        "base": "/clipboard",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/clipboard",
+      "sourceRevision": "2482fc6b238983f3fe8f2aecf042d92a9b29c9e2",
+      "souldeskId": "local.souldesk.widgetjs.clipboard",
+      "notes": "原文本历史、搜索/分页、收藏/三标签、编辑/删除/清理与12/24/48小时；DPAPI保护，受控复制/显式粘贴与UUID回执，草稿/未知结果/重启恢复离线检查通过，真实系统输入与桌面待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "background_interaction",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-clipboard-source-audit.json",
+      "nativeFoundation": {
+        "status": "original-vue-local-ai-standard-package-offline-verified-awaiting-manual",
+        "historyChecks": 16,
+        "captureChecks": 10,
+        "standardPackage": true,
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-clipboard.md",
+        "report": "artifacts/widgetjs-clipboard-checks-20261117.json",
+        "hostChecks": 19,
+        "coreIntegrated": true,
+        "actionChecks": 15,
+        "nativeControlChecks": 8,
+        "productionActionEntry": true,
+        "surfaceChecks": 8,
+        "shortcutChecks": 6,
+        "popupLifecycle": true,
+        "originalVue": true,
+        "localAiToolEntry": false,
+        "toolChecks": 4,
+        "aiHostChecks": 18,
+        "clientChecks": 13
+      }
+    },
+    {
+      "upstreamId": "widgetjs.cn.ai.job.boss",
+      "title": "AI直聘",
+      "package": "widgetjs.cn.ai.job",
+      "path": "/",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://widgetjs.cn/ai/job/assets/index-Bfkv8pFi.js",
+        "https://widgetjs.cn/ai/job/assets/JobView-DmmzGjQr.js"
+      ],
+      "remote": {
+        "base": "/ai/job",
+        "hostname": "widgetjs.cn",
+        "hash": true
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": null,
+      "sourceRevision": "deployed-sha256:58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f",
+      "souldeskId": "local.souldesk.widgetjs.ai-job",
+      "notes": "保留固定部署的原Vue渲染、样式与图标；手动BOSS登录、完整分页采集/评分、筛选统计/重评/真实详情、百科/导图/面试均经固定宿主能力。知识窗口只读已存内容，显式生成/发送后才请求；按完整知识上下文隔离，后台默认关闭。已完成标准包与预置、编译和离线检查；真实登录、职位采集、模型费用、代理、窗口与实际释放待用户手动验收。",
+      "sourceEvidence": "components/widgetjs/job-source/SOURCE_FILES.json",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-ai-job-checks-final-20261117.json",
+        "complete": false,
+        "status": "source-and-offline-checked-awaiting-user-account-model-and-desktop"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.hotspot.zhihu",
+      "title": "知乎",
+      "package": "cn.widgetjs.widgets.hotspot",
+      "path": "/widget/zhihu",
+      "configPagePath": null,
+      "sourceLinks": [
+        "https://github.com/widget-js/hotspot"
+      ],
+      "remote": {
+        "entry": "https://widgetjs.cn/hotspot",
+        "hash": true,
+        "base": "/hotspot",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/hotspot",
+      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
+      "souldeskId": "local.souldesk.widgetjs.hotspot-zhihu",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-hotspot-zhihu-ui-checks.json",
+        "nativeChecks": 10,
+        "sharedBatchChecks": 2,
+        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
+        "batchNativeChecks": 92,
+        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
+        "sourceAvailable": false,
+        "sourceErrors": [
+          "DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized"
+        ],
+        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.dynamic_island",
+      "title": "久坐提醒",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/dynamic_island",
+      "configPagePath": "/widget/config/dynamic_island?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "714802e66336133396ab55463eb5a26d08fc0788",
+      "souldeskId": "local.souldesk.widgetjs.dynamic-island",
+      "notes": "保留原灵动通知胶囊、八类显示、双按钮与倒计时；默认关闭，多个容器共用顶部无焦点层，不接管币安行情警报。目录原名误标久坐提醒已明确区分。 2026-11-16原模板/纯核心/隔离库/原媒体检查通过；真实鼠标、音频、焦点/全屏、多实例和重启仍待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "background_interaction",
+        "status": "approved"
+      },
+      "previousSourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
+      "sourceEvidence": "artifacts/widgetjs-reminder-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-reminders.md",
+        "standardPackage": true
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-reminders-checks-20261116.json",
+        "coreAllPass": 298,
+        "coreIgnored": 2,
+        "webAllPass": 268,
+        "desktopLaunched": false,
+        "desktopAcceptance": false,
+        "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.labor_progress",
+      "title": "打工进度",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/labor_progress",
+      "configPagePath": "/widget/config/labor_progress?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "714802e66336133396ab55463eb5a26d08fc0788",
+      "souldeskId": "local.souldesk.widgetjs.labor",
+      "notes": "保留原11表情、渐变进度、当前时间及上下班设置；16项真实宿主检查通过，两阶段退出0，核对原图解码/夜班/进度/双实例/重启。零视图系统通知发送、静默更新及按专属分组移除通过，修复空分组清理参数错误；真实鼠标、完整动画和通知显示仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-labor-ui-checks.json",
+        "nativeChecks": 16,
+        "sha256": "8fb268236ddb2bc9c635fb4378af7f6834cde5af6aa24768a666601276bbba57",
+        "scope": "真实宿主和WebView中的程序化工作时段/夜班/进度/11张原图、双实例与重启；零视图正式调度及WinRT发送/更新/按专属分组标签移除，不等于视觉或实际鼠标",
+        "notificationUpdateAccepted": true,
+        "notificationHistoryRemovalVerified": true,
+        "actualNotificationDisplayVerified": false
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.phone_reminder",
+      "title": "来电提醒",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/phone_reminder",
+      "configPagePath": "/widget/config/phone_reminder?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "714802e66336133396ab55463eb5a26d08fc0788",
+      "souldeskId": "local.souldesk.widgetjs.phone-reminder",
+      "notes": "保留四种固定原头像/录音/歌词、工作日与第一时刻/章鱼哥提前7秒、试听与来电接听挂断；默认关闭，日槽先SQLite预留不补播，实际显示后才尝试播放，失败可重试。 2026-11-16原模板/纯核心/隔离库/原媒体检查通过；真实鼠标、音频、焦点/全屏、多实例和重启仍待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "background_interaction",
+        "status": "approved"
+      },
+      "sourceEvidence": "artifacts/widgetjs-reminder-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-reminders.md",
+        "standardPackage": true
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-reminders-checks-20261116.json",
+        "coreAllPass": 298,
+        "coreIgnored": 2,
+        "webAllPass": 268,
+        "desktopLaunched": false,
+        "desktopAcceptance": false,
+        "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.sit_reminder",
+      "title": "久坐提醒",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/sit_reminder",
+      "configPagePath": "/widget/config/sit_reminder?frame=true&transparent=false",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "714802e66336133396ab55463eb5a26d08fc0788",
+      "souldeskId": "local.souldesk.widgetjs.sit-reminder",
+      "notes": "保留原10秒鼠标位置活动口径、三滑块和确认后的全屏休息/Esc；默认关闭，坐标仅内存；隐藏控制卡不停止显式后台。 2026-11-16原模板/纯核心/隔离库/原媒体检查通过；真实鼠标、音频、焦点/全屏、多实例和重启仍待手动。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "background_interaction",
+        "status": "approved"
+      },
+      "previousSourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
+      "sourceEvidence": "artifacts/widgetjs-reminder-source-audit.json",
+      "nativeFoundation": {
+        "status": "host-and-standard-package-implemented-awaiting-manual",
+        "plan": "docs/superpowers/plans/2026-11-16-widgetjs-reminders.md",
+        "standardPackage": true
+      },
+      "acceptance": {
+        "report": "artifacts/widgetjs-reminders-checks-20261116.json",
+        "coreAllPass": 298,
+        "coreIgnored": 2,
+        "webAllPass": 268,
+        "desktopLaunched": false,
+        "desktopAcceptance": false,
+        "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.time_progress",
+      "title": "时间进度",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/time_progress",
+      "configPagePath": "/widget/config/time_progress?frame=true&transparent=false&width=600&height=400",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
+      "souldeskId": "local.souldesk.widgetjs.time-progress",
+      "notes": "实例配置及部分后台提醒"
+    },
+    {
+      "upstreamId": "cn.widgetjs.widgets.wave_progress",
+      "title": "波浪进度",
+      "package": "cn.widgetjs.widgets",
+      "path": "/widget/wave_progress",
+      "configPagePath": "/widget/config/wave_progress?frame=true&transparent=false&width=600&height=390",
+      "sourceLinks": [
+        "https://github.com/widget-js/widgets"
+      ],
+      "remote": null,
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "widget-js/widgets",
+      "sourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
+      "souldeskId": "local.souldesk.widgetjs.wave-progress",
+      "notes": "实例配置及部分后台提醒"
+    },
+    {
+      "upstreamId": "widget.js.fun.hitler",
+      "title": "仪表盘",
+      "package": "widget.js.fun",
+      "path": "/widget/hitler",
+      "configPagePath": "/widget/config/hitler?width=600&height=500&frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "entry": "https://widgetjs.cn/fun",
+        "base": "/fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/fun",
+      "sourceRevision": "07051c2c84a403593e89c182ab02aec66ceb6207",
+      "souldeskId": "local.souldesk.widgetjs.dashboard",
+      "notes": "保留原图片仪表/指针和三种监控；新增system.metrics，Windows CPU/内存/GPU原生采样通过；GPU明确为最繁忙引擎，桌面与设置待验。2026-11-15新增12项真实宿主设置/显示/重启检查通过，两阶段退出0；原生数值和缺值理由分别记录，真实鼠标/完整桌面视觉仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-dashboard-ui-checks.json",
+        "nativeChecks": 12,
+        "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
+        "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
+      }
+    },
+    {
+      "upstreamId": "widget.js.fun.wooden_fish",
+      "title": "电子木鱼",
+      "package": "widget.js.fun",
+      "path": "/widget/wooden_fish",
+      "configPagePath": "/widget/config/wooden_fish?width=600&height=400&frame=true&transparent=false",
+      "sourceLinks": [],
+      "remote": {
+        "hostname": "widgetjs.cn",
+        "entry": "https://widgetjs.cn/fun",
+        "base": "/fun"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/fun",
+      "sourceRevision": "07051c2c84a403593e89c182ab02aec66ceb6207",
+      "souldeskId": "local.souldesk.widgetjs.wooden-fish",
+      "notes": "保留原图片、两段音频、功德和飘字；12项宿主检查与两阶段自然退出0通过，主题与音乐偏好重启保留，功德按原行为重建归零。测试音频静音，实际听感/鼠标仍未验。",
+      "acceptance": {
+        "report": "artifacts/widgetjs-wooden-fish-checks.json",
+        "nativeChecks": 12,
+        "sha256": "88b088c0e6e0eea7289de24890dc8c37f5ce80b9ddc2b8502880f4b78d3d27c0",
+        "scope": "真实宿主与WebView程序化交互，音频明确静音；不代表实际听感/鼠标验收"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widget.weather.medium",
+      "title": "和风天气组件",
+      "package": "cn.widgetjs.widget.weather",
+      "path": "/widget/medium",
+      "configPagePath": "/widget/config/small?transparent=false&frame=true",
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/weather",
+        "hash": true,
+        "base": "/weather",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/weather",
+      "sourceRevision": "1d5b717b085c82a5b81bfc2f0969bb8518123570",
+      "souldeskId": "local.souldesk.widgetjs.weather-medium",
+      "notes": "原三款Vue、72张本地图片和固定和风来源；自填专属Host/Key显式启用，按实例DPAPI密文，城市字母数字ID/时区保留，局部失败与过期单列。离线/本地回环检查通过；未配置真实凭据，真实天气/额度/服务权限与桌面待验；v7实况/预报弃用风险保留。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-weather-checks-20261116.json",
+        "complete": false,
+        "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widget.weather.small",
+      "title": "天气组件",
+      "package": "cn.widgetjs.widget.weather",
+      "path": "/widget/small",
+      "configPagePath": "/widget/config/small?transparent=false&frame=true",
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/weather",
+        "hash": true,
+        "base": "/weather",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/weather",
+      "sourceRevision": "1d5b717b085c82a5b81bfc2f0969bb8518123570",
+      "souldeskId": "local.souldesk.widgetjs.weather-small",
+      "notes": "原三款Vue、72张本地图片和固定和风来源；自填专属Host/Key显式启用，按实例DPAPI密文，城市字母数字ID/时区保留，局部失败与过期单列。离线/本地回环检查通过；未配置真实凭据，真实天气/额度/服务权限与桌面待验；v7实况/预报弃用风险保留。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-weather-checks-20261116.json",
+        "complete": false,
+        "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
+      }
+    },
+    {
+      "upstreamId": "cn.widgetjs.widget.weather.large",
+      "title": "和风天气组件",
+      "package": "cn.widgetjs.widget.weather",
+      "path": "/widget/large",
+      "configPagePath": "/widget/config/small?transparent=false&frame=true",
+      "sourceLinks": [],
+      "remote": {
+        "entry": "https://widgetjs.cn/weather",
+        "hash": true,
+        "base": "/weather",
+        "hostname": "widgetjs.cn"
+      },
+      "permissions": [],
+      "webviewTag": false,
+      "status": "实现待验",
+      "sourceRepository": "rtugeek/weather",
+      "sourceRevision": "1d5b717b085c82a5b81bfc2f0969bb8518123570",
+      "souldeskId": "local.souldesk.widgetjs.weather-large",
+      "notes": "原三款Vue、72张本地图片和固定和风来源；自填专属Host/Key显式启用，按实例DPAPI密文，城市字母数字ID/时区保留，局部失败与过期单列。离线/本地回环检查通过；未配置真实凭据，真实天气/额度/服务权限与桌面待验；v7实况/预报弃用风险保留。",
+      "scopeDecision": {
+        "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
+        "group": "credentials",
+        "status": "approved"
+      },
+      "partialAcceptance": {
+        "report": "artifacts/widgetjs-weather-checks-20261116.json",
+        "complete": false,
+        "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
+      }
+    }
+  ],
+  "personalUseAuthorized": true,
+  "statusLegend": {
+    "实现待验": "已确认范围的实现已交付，实际服务和桌面验证按用户决定留到日常使用，不表示已经验收",
+    "本地实现待验": "已批准的本地能力和共享已交付，手动验收后置；原云账户/同步继续后置且未实现"
+  },
+  "delivery": {
+    "date": "2026-11-17",
+    "status": "approved-local-scope-delivered",
+    "implementedCatalogItems": 61,
+    "archives": 61,
+    "presets": 64,
+    "report": "artifacts/widgetjs-local-delivery-final-20261117.json",
+    "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json",
+    "manualAcceptance": {
+      "status": "deferred-by-user",
+      "countedAsPassed": false,
+      "blocksCurrentLocalDelivery": false
+    },
+    "originalCloud": {
+      "status": "deferred-by-user",
+      "items": 7,
+      "implemented": false,
+      "blocksCurrentLocalDelivery": false
+    }
+  }
+}

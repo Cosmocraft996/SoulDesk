@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.hotspot-cls-telegraph",
+  "name": "财联社电报",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {
+    "width": 360,
+    "height": 420
+  },
+  "minSize": {
+    "width": 260,
+    "height": 220
+  },
+  "capabilities": [
+    "storage.instance",
+    "content.read",
+    "links.open"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "background",
+      "foreground",
+      "radius"
+    ],
+    "properties": {
+      "background": {
+        "type": "string",
+        "title": "背景颜色",
+        "maxLength": 7,
+        "default": "#faf7f2"
+      },
+      "foreground": {
+        "type": "string",
+        "title": "文字颜色",
+        "maxLength": 7,
+        "default": "#494644"
+      },
+      "radius": {
+        "type": "integer",
+        "title": "圆角",
+        "minimum": 0,
+        "maximum": 40,
+        "default": 16
+      }
+    }
+  }
+}

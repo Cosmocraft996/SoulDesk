@@ -1,0 +1,313 @@
+{
+  "repository": "https://github.com/rtugeek/clipboard",
+  "revision": "2482fc6b238983f3fe8f2aecf042d92a9b29c9e2",
+  "license": "该固定树未提供许可证，package.json未声明；保留事实，不补造授权。用户已明确自用并授权移植。",
+  "files": [
+    {
+      "source": "README.md",
+      "path": "original/README.md",
+      "bytes": 917,
+      "sha256": "f520cca9410f19cbf03ad67638372109ad711c19b646ba29a4f627b12acff676"
+    },
+    {
+      "source": "index.html",
+      "path": "original/index.html",
+      "bytes": 612,
+      "sha256": "cb00605b321e3f7c67ad7761e928ad6d8ad63e124852a123b2b2c8ca3f2a2ef5"
+    },
+    {
+      "source": "package.json",
+      "path": "original/package.json",
+      "bytes": 1858,
+      "sha256": "3e9c497246b9a66332d3b40c17387bcfd993d16a0773dcb1265d271459ba2396"
+    },
+    {
+      "source": "pnpm-lock.yaml",
+      "path": "original/pnpm-lock.yaml",
+      "bytes": 228290,
+      "sha256": "a942a0d87ff00eda6798162eacf41d456c5090a2a96b32e281432678d38228d1"
+    },
+    {
+      "source": "public/cn.widgetjs.widgets.clipboard.json",
+      "path": "original/public/cn.widgetjs.widgets.clipboard.json",
+      "bytes": 2985,
+      "sha256": "49ef208d6d68d1f446e08f73eadae20499904c6579b4630456d3ba6439cecac3"
+    },
+    {
+      "source": "public/favicon.ico",
+      "path": "original/public/favicon.ico",
+      "bytes": 4286,
+      "sha256": "db74ab0b78338c1f778f8398c45f4103c99aea0e845a3118a7750b4eeafd3445"
+    },
+    {
+      "source": "public/images/logo/baidu.png",
+      "path": "original/public/images/logo/baidu.png",
+      "bytes": 9801,
+      "sha256": "ae29f75a063c1af67cb0bb2b5bb3e812d0d6decbf06b5cc689236d8d0544ba61"
+    },
+    {
+      "source": "public/images/logo/bing.png",
+      "path": "original/public/images/logo/bing.png",
+      "bytes": 13278,
+      "sha256": "d2e0d34002b0710cb21a84727a8704c348051700c1ab9758e130c404cd5d02c6"
+    },
+    {
+      "source": "public/images/logo/google.png",
+      "path": "original/public/images/logo/google.png",
+      "bytes": 10181,
+      "sha256": "f72db18382a4f4c028bc8d01bfae62acee98d9a854eef0e88dc9de2d83f35820"
+    },
+    {
+      "source": "public/images/preview_clipboard.png",
+      "path": "original/public/images/preview_clipboard.png",
+      "bytes": 26472,
+      "sha256": "7bc71f7268131482dbb2aeaf534728570b6030b28817e5597daf8c4986151b34"
+    },
+    {
+      "source": "public/images/preview_search.png",
+      "path": "original/public/images/preview_search.png",
+      "bytes": 28752,
+      "sha256": "bd9a0fa7aaf32b02066343b5a168eedf889b356282a0339bae9165f8bc97c28f"
+    },
+    {
+      "source": "public/widget.json",
+      "path": "original/public/widget.json",
+      "bytes": 2985,
+      "sha256": "49ef208d6d68d1f446e08f73eadae20499904c6579b4630456d3ba6439cecac3"
+    },
+    {
+      "source": "src/App.vue",
+      "path": "original/src/App.vue",
+      "bytes": 197,
+      "sha256": "5a529744de953fdc7bd8ce9d4166841f083efdce8922335d391acbbb54289c6e"
+    },
+    {
+      "source": "src/assets/element.scss",
+      "path": "original/src/assets/element.scss",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "src/assets/logo.svg",
+      "path": "original/src/assets/logo.svg",
+      "bytes": 276,
+      "sha256": "277e0e97813ffd3af7f70f14474967a1f535de3033efaeb3e746e9ece04f8cc9"
+    },
+    {
+      "source": "src/assets/main.scss",
+      "path": "original/src/assets/main.scss",
+      "bytes": 788,
+      "sha256": "bd36790a2e05519d2ae3bf646d700015ab858c98932394e99a3188458c91ae23"
+    },
+    {
+      "source": "src/assets/theme.scss",
+      "path": "original/src/assets/theme.scss",
+      "bytes": 451,
+      "sha256": "41d752a52f9e8e387e4d7bb9a198b7b84b922ee9d87fac79daadb34f4f521d67"
+    },
+    {
+      "source": "src/components/CircleButton.vue",
+      "path": "original/src/components/CircleButton.vue",
+      "bytes": 1115,
+      "sha256": "710b00e5ed7332ac3034b4614be161697f1146f89e827521e42ec6d3c659902a"
+    },
+    {
+      "source": "src/components/ClipboardItem.vue",
+      "path": "original/src/components/ClipboardItem.vue",
+      "bytes": 2348,
+      "sha256": "ebd62d5025c166c17a79cbbc958a1aab777fb7d8c6a4c673acf82e2c60fbf343"
+    },
+    {
+      "source": "src/components/FavoriteButton.vue",
+      "path": "original/src/components/FavoriteButton.vue",
+      "bytes": 804,
+      "sha256": "dcd9e48afd46f9b44f01d6f04e6e824dd4824fa9d75b627d023548ea157fac54"
+    },
+    {
+      "source": "src/components/Labels.vue",
+      "path": "original/src/components/Labels.vue",
+      "bytes": 1639,
+      "sha256": "f59199f603020c378fab4fd0a2c0e12ef13887d19d534fb3e0b6ee13e9df4a83"
+    },
+    {
+      "source": "src/components/SearchBox.vue",
+      "path": "original/src/components/SearchBox.vue",
+      "bytes": 1303,
+      "sha256": "39a4abc8f2b8dc954b65c1e7d1e6c5a87b698a8432588456028ce827e94380a5"
+    },
+    {
+      "source": "src/components/Spin.vue",
+      "path": "original/src/components/Spin.vue",
+      "bytes": 3937,
+      "sha256": "fe705e082d8b01fb876b82f17964855714788c893d421f89bbaf36abda0f2065"
+    },
+    {
+      "source": "src/main.ts",
+      "path": "original/src/main.ts",
+      "bytes": 889,
+      "sha256": "a082c0fb088fa75e57048c50d6e446843f213be9ad45195640b32c937c1d6c4b"
+    },
+    {
+      "source": "src/model/ClipboardData.ts",
+      "path": "original/src/model/ClipboardData.ts",
+      "bytes": 946,
+      "sha256": "882dd01c71fd2aceb2d0533d7a1b52c7e3e7d14dc99df6869a8b29fe6a7dc6a9"
+    },
+    {
+      "source": "src/model/ClipboardDataRepository.ts",
+      "path": "original/src/model/ClipboardDataRepository.ts",
+      "bytes": 8170,
+      "sha256": "8958772a8dadcef84b85f65f5acc3b5913462d6b9f75c12bf6e98b10d3b5a951"
+    },
+    {
+      "source": "src/router/index.ts",
+      "path": "original/src/router/index.ts",
+      "bytes": 853,
+      "sha256": "a408bd605f38ad0663c93fc7a89d11f63761785ab8e9bab8b24a8e4efe9d113d"
+    },
+    {
+      "source": "src/stores/clipboard.ts",
+      "path": "original/src/stores/clipboard.ts",
+      "bytes": 3577,
+      "sha256": "cf53db19dcdc2c105f985dde2138d35024d818ae9b32d8a0a8d78dce9530a39f"
+    },
+    {
+      "source": "src/stores/clipboardWindowStore.ts",
+      "path": "original/src/stores/clipboardWindowStore.ts",
+      "bytes": 2472,
+      "sha256": "a8306a8c597a7228220fb97d0d9038d1e8df6f6ca8fb0e1618b73e62423fcc86"
+    },
+    {
+      "source": "src/stores/searchWindowsStore.ts",
+      "path": "original/src/stores/searchWindowsStore.ts",
+      "bytes": 2045,
+      "sha256": "4cdfa9b2664c048a9a8f29b635aae426adfa4f49a26c2ca022c61652ebad1c0f"
+    },
+    {
+      "source": "src/stores/settings.ts",
+      "path": "original/src/stores/settings.ts",
+      "bytes": 366,
+      "sha256": "bf7c87f33595bec0fd1256a28e2b56f28aac7a974a9474e0a225e329596b06a1"
+    },
+    {
+      "source": "src/stores/useAiConfigStore.ts",
+      "path": "original/src/stores/useAiConfigStore.ts",
+      "bytes": 1088,
+      "sha256": "dc55c9beca4866aeacdb014af32b002980d1f9a87c2dc63cd243321ef505d2e1"
+    },
+    {
+      "source": "src/stores/useConfigStore.ts",
+      "path": "original/src/stores/useConfigStore.ts",
+      "bytes": 116,
+      "sha256": "57d36a919ec4dcc4fb8f3ccb258dcd6be92c72befe0b2750c3dd6e8877f5bf8d"
+    },
+    {
+      "source": "src/utils/SearchUtils.ts",
+      "path": "original/src/utils/SearchUtils.ts",
+      "bytes": 503,
+      "sha256": "8e0c00570222dfdf786bbad6c7ffae9f7fd96a26392a0f2114c595ac4b46a503"
+    },
+    {
+      "source": "src/utils/TimeUtils.ts",
+      "path": "original/src/utils/TimeUtils.ts",
+      "bytes": 95,
+      "sha256": "a72d045e3a71e0f2c78b27782ab3e136565ca30db79d9c4f6a698733636a185e"
+    },
+    {
+      "source": "src/views/TransaltePage.vue",
+      "path": "original/src/views/TransaltePage.vue",
+      "bytes": 98,
+      "sha256": "a883868c16a3de9f56155eab941a5c121e00d43df9837e3b1fc98dd60aa3a134"
+    },
+    {
+      "source": "src/widgets/clipboard/Clipboard.widget.ts",
+      "path": "original/src/widgets/clipboard/Clipboard.widget.ts",
+      "bytes": 696,
+      "sha256": "08fa5171fca1b477fd1f645b44d624431dbd7d3031b735bcd74a4c859923ceee"
+    },
+    {
+      "source": "src/widgets/clipboard/ClipboardView.vue",
+      "path": "original/src/widgets/clipboard/ClipboardView.vue",
+      "bytes": 2609,
+      "sha256": "a4aab53917684516eb9a80a6a936417c40a0c8089ee9020f60f80e0db72777bf"
+    },
+    {
+      "source": "src/widgets/clipboard/layout/ClipboardDetail.vue",
+      "path": "original/src/widgets/clipboard/layout/ClipboardDetail.vue",
+      "bytes": 2216,
+      "sha256": "d2cb70fb12329d2bbd57cc7c148f8d24d0ad8ef3acccaa42d5a834864dd91459"
+    },
+    {
+      "source": "src/widgets/clipboard/layout/ClipboardList.vue",
+      "path": "original/src/widgets/clipboard/layout/ClipboardList.vue",
+      "bytes": 4351,
+      "sha256": "39201df66599e32112edd04b4a221c192025999c572895f27ea1540af0536ed3"
+    },
+    {
+      "source": "src/widgets/clipboard/layout/Header.vue",
+      "path": "original/src/widgets/clipboard/layout/Header.vue",
+      "bytes": 1529,
+      "sha256": "08c27378da22e699523e12f5758ffe688a2ce6263e34103a12a873de910bcfac"
+    },
+    {
+      "source": "src/widgets/clipboard/layout/Settings.vue",
+      "path": "original/src/widgets/clipboard/layout/Settings.vue",
+      "bytes": 1664,
+      "sha256": "0168946dfe34adc0bbcd00a1792e224d8e100bee6a175c2df1854116b44b0bcc"
+    },
+    {
+      "source": "src/widgets/search/ClipboardSearch.widget.ts",
+      "path": "original/src/widgets/search/ClipboardSearch.widget.ts",
+      "bytes": 863,
+      "sha256": "9164d2ce1ea5141cd351bbd5a8b07461e0f38dde34a9bcb53ad340345f18e81b"
+    },
+    {
+      "source": "src/widgets/search/SearchConfigView.vue",
+      "path": "original/src/widgets/search/SearchConfigView.vue",
+      "bytes": 1962,
+      "sha256": "5c93b08783b272c623f4a69944faa35fa69c4f418027c32abe788a96794e65fc"
+    },
+    {
+      "source": "src/widgets/search/SearchWidgetRoutes.ts",
+      "path": "original/src/widgets/search/SearchWidgetRoutes.ts",
+      "bytes": 672,
+      "sha256": "9ae0006e9c8248ec16ffc35e154b77da939f1345bbb403090a05d2c9d6d1162b"
+    },
+    {
+      "source": "src/widgets/search/SearchWidgetView.vue",
+      "path": "original/src/widgets/search/SearchWidgetView.vue",
+      "bytes": 4309,
+      "sha256": "90fab84bf4715828f5b2208baddeed558b5299a0e88640a1e3cf2afe3c28fbd0"
+    },
+    {
+      "source": "src/widgets/search/components/ActionIcon.vue",
+      "path": "original/src/widgets/search/components/ActionIcon.vue",
+      "bytes": 927,
+      "sha256": "df70cc949540f53c59a77135223c715d3935860ecf4880bf828784300e2cfedb"
+    },
+    {
+      "source": "src/widgets/search/model/ClipboardAction.ts",
+      "path": "original/src/widgets/search/model/ClipboardAction.ts",
+      "bytes": 1221,
+      "sha256": "c35e5f5fc1a1769d75bd25d5ff861548367eb43c7c0cb36621b55812ba8ec595"
+    },
+    {
+      "source": "src/widgets/widget-router.ts",
+      "path": "original/src/widgets/widget-router.ts",
+      "bytes": 310,
+      "sha256": "d4bd8c298452aaf401e78194ec6cabd4772daff2b849813d483708ac5f87b513"
+    },
+    {
+      "source": "vite.config.ts",
+      "path": "original/vite.config.ts",
+      "bytes": 936,
+      "sha256": "e6ea359036b2743df0603e12a3643725a4befac7cf140b6db2be61a9c797942f"
+    },
+    {
+      "source": "widget.package.ts",
+      "path": "original/widget.package.ts",
+      "bytes": 746,
+      "sha256": "c796009273c991ca0482bdcd1fb246843361b26639ca08e072925eefdb75cf33"
+    }
+  ]
+}

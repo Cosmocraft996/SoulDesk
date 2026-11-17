@@ -1,0 +1,170 @@
+{
+  "entry": "https://itime.fun/web/",
+  "deployment": "index-BJrdQu13.js",
+  "entrySha256": "79ba25621b91084bb06fa4a3e78888eee28f03767949ac7049ab19b7dee5cf06",
+  "upstreamId": "itime.fun.pomodoro",
+  "license": "公开部署未附完整许可声明，按用户明确自用范围保留来源",
+  "files": [
+    {
+      "path": "original/AddPomodoroSceneView-BxTlap1d.js",
+      "url": "https://itime.fun/web/assets/AddPomodoroSceneView-BxTlap1d.js",
+      "kind": "deployed-asset",
+      "bytes": 152243,
+      "sha256": "fd3941ab31aff3bb4a6938839ab721dcf53a8a18b17d9997b3d5940a521e0d35"
+    },
+    {
+      "path": "original/AddPomodoroSceneView-CPDZBRpa.css",
+      "url": "https://itime.fun/web/assets/AddPomodoroSceneView-CPDZBRpa.css",
+      "kind": "deployed-asset",
+      "bytes": 1146,
+      "sha256": "944bebffeafa122893416a27499ad300949b4e7e4ed4f83fe10e5e7da6b85835"
+    },
+    {
+      "path": "original/PomodoroDetailView-CbUxPMAA.css",
+      "url": "https://itime.fun/web/assets/PomodoroDetailView-CbUxPMAA.css",
+      "kind": "deployed-asset",
+      "bytes": 286,
+      "sha256": "94b211add025abacf599f8d1d45b79bcb9c9aa3f6a70e043e91195eb78b96ac7"
+    },
+    {
+      "path": "original/PomodoroDetailView-D-0rglaJ.js",
+      "url": "https://itime.fun/web/assets/PomodoroDetailView-D-0rglaJ.js",
+      "kind": "deployed-asset",
+      "bytes": 185131,
+      "sha256": "35fdcf2c42537149fcab1041a33943f972f42a4e1c99f20191bce57bbd28aeb4"
+    },
+    {
+      "path": "original/PomodoroHistoryView-DRxnlNd8.js",
+      "url": "https://itime.fun/web/assets/PomodoroHistoryView-DRxnlNd8.js",
+      "kind": "deployed-asset",
+      "bytes": 3328,
+      "sha256": "10a3e813bbbb4d16226bdf2979f5de4c3e1a637ffe0785f445dc400611085d11"
+    },
+    {
+      "path": "original/PomodoroList-BrTCKG4R.css",
+      "url": "https://itime.fun/web/assets/PomodoroList-BrTCKG4R.css",
+      "kind": "deployed-asset",
+      "bytes": 55,
+      "sha256": "4a81af24cf954c600af6eb5c2cbaadaf312b5145e6919d7e3f7ba51918f5925c"
+    },
+    {
+      "path": "original/PomodoroList-DImp2zoI.js",
+      "url": "https://itime.fun/web/assets/PomodoroList-DImp2zoI.js",
+      "kind": "deployed-asset",
+      "bytes": 7331,
+      "sha256": "5781e6874b20edfba38d6aae6ba70439be9f1985c6c82ec3dee7400fa5a8c0bf"
+    },
+    {
+      "path": "original/PomodoroSettings-CtReDoo-.js",
+      "url": "https://itime.fun/web/assets/PomodoroSettings-CtReDoo-.js",
+      "kind": "deployed-asset",
+      "bytes": 130,
+      "sha256": "e4b5e48f964edd499d47b7e364f4127e074b0c1e738b3cc91e2780b8564042fc"
+    },
+    {
+      "path": "original/PomodoroUtils-DL6MYgeX.js",
+      "url": "https://itime.fun/web/assets/PomodoroUtils-DL6MYgeX.js",
+      "kind": "deployed-asset",
+      "bytes": 669,
+      "sha256": "f8fba96635daa5874478c9aff616bbf7b506bc13a0db4f736ce00faabee91852"
+    },
+    {
+      "path": "original/PomodoroWidgetView-M92tUwNB.css",
+      "url": "https://itime.fun/web/assets/PomodoroWidgetView-M92tUwNB.css",
+      "kind": "deployed-asset",
+      "bytes": 3306,
+      "sha256": "41feafe1921f92c71637b29662b1254b5c2432f4562e7596866216ebe29afaf7"
+    },
+    {
+      "path": "original/PomodoroWidgetView-eY2LxrFN.js",
+      "url": "https://itime.fun/web/assets/PomodoroWidgetView-eY2LxrFN.js",
+      "kind": "deployed-asset",
+      "bytes": 10401,
+      "sha256": "cf1794c3877b13b270695db15750807340ef08de848c42cc36395cad6d5a5c8c"
+    },
+    {
+      "path": "original/Rubik-Regular.ttf",
+      "url": "https://fonts.gstatic.font.im/s/rubik/v31/iJWZBXyIfDnIV5PNhY1KTN7Z-Yh-B4iFV0Uw.ttf",
+      "kind": "deployed-asset",
+      "bytes": 47496,
+      "sha256": "fafa7be932d568b5266a5cb8ec54cfd71b4fc00b531d902bda48a13a181c51b8"
+    },
+    {
+      "path": "original/Settings-I3PDcVfZ.js",
+      "url": "https://itime.fun/web/assets/Settings-I3PDcVfZ.js",
+      "kind": "deployed-asset",
+      "bytes": 25853,
+      "sha256": "75dd9ff51938a736ba5cb73b18741f94aab81e3cc9b0a4b3b78d846032fdc878"
+    },
+    {
+      "path": "original/check-Bcr9P__C.js",
+      "url": "https://itime.fun/web/assets/check-Bcr9P__C.js",
+      "kind": "deployed-asset",
+      "bytes": 151,
+      "sha256": "51144437fc245730f3a11a83a79caef458bbf18a0ba70771b3a708d94fbcdb57"
+    },
+    {
+      "path": "original/chevron-right-Db1pJddY.js",
+      "url": "https://itime.fun/web/assets/chevron-right-Db1pJddY.js",
+      "kind": "deployed-asset",
+      "bytes": 162,
+      "sha256": "edc377627a8acc78780d72f4675af335c1323d5ebd041f2eb9232560629b26e7"
+    },
+    {
+      "path": "original/main-style-excerpts.css",
+      "url": "https://itime.fun/web/assets/index-DITefphd.css",
+      "kind": "verbatim-excerpt",
+      "bytes": 45,
+      "sha256": "0e9fcd1205f1545d4a4c4c6970779961613a39236a9e037c1fe7e986e03ad15b"
+    },
+    {
+      "path": "original/main-window-constants-excerpt.js",
+      "url": "https://itime.fun/web/assets/index-BJrdQu13.js",
+      "kind": "verbatim-excerpt",
+      "bytes": 31,
+      "sha256": "0f48cbc82f87b6facc657b08c440413da794a796b4c3c7038011c9d819ed926b"
+    },
+    {
+      "path": "original/plus-BN9Q8hJ9.js",
+      "url": "https://itime.fun/web/assets/plus-BN9Q8hJ9.js",
+      "kind": "deployed-asset",
+      "bytes": 185,
+      "sha256": "4d01cacc8b767710a46920696369b1fb12a0dd4e2363638aaabea7ebd8e0abb3"
+    },
+    {
+      "path": "original/pomodoro-ding-B0KYEUFy.js",
+      "url": "https://itime.fun/web/assets/pomodoro-ding-B0KYEUFy.js",
+      "kind": "deployed-asset",
+      "bytes": 65,
+      "sha256": "b1692be206fcdb47af6033dee9376697a91fe01d29afa7a8c59962622129cda1"
+    },
+    {
+      "path": "original/pomodoro-ding-BPamOesd.wav",
+      "url": "https://itime.fun/web/assets/pomodoro-ding-BPamOesd.wav",
+      "kind": "deployed-asset",
+      "bytes": 141164,
+      "sha256": "ae7f531396d5bcbadf43405cb65ca6f46877d22f69a55af06f5f8b29371a65c3"
+    },
+    {
+      "path": "original/pomodoro.ico",
+      "url": "https://itime.fun/web/pomodoro.ico",
+      "kind": "deployed-asset",
+      "bytes": 1381,
+      "sha256": "6505c41f648ac13a56cad0f6b6731509910ec1034264b1a6d27dae4f520f462c"
+    },
+    {
+      "path": "original/rubik-font.css",
+      "url": "https://fonts.font.im/css?family=Rubik",
+      "kind": "deployed-asset",
+      "bytes": 196,
+      "sha256": "74db63171e2b0eefde47c1cc600d3792dccc5a52ccc7d452d79186181e50cbfa"
+    },
+    {
+      "path": "original/usePomodoroStore-zRXr_uyv.js",
+      "url": "https://itime.fun/web/assets/usePomodoroStore-zRXr_uyv.js",
+      "kind": "deployed-asset",
+      "bytes": 6094,
+      "sha256": "d0d66215b4e87f0c4338a5c0d462481ed3c5b8f7cbd24e9c1765ec076d576d02"
+    }
+  ]
+}

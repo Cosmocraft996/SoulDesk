@@ -1,0 +1,11 @@
+{
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.dashboard","name":"仪表盘","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "entry":"dist/dashboard/index.html","defaultSize":{"width":240,"height":240},"minSize":{"width":180,"height":180},
+  "capabilities":["storage.instance","system.metrics"],
+  "settingsSchema":{"type":"object","additionalProperties":false,"required":["monitorType","background","color","radius"],"properties":{
+    "monitorType":{"type":"string","title":"监控类型","maxLength":6,"default":"memory"},
+    "background":{"type":"string","title":"背景颜色","maxLength":7,"default":"#000000"},
+    "color":{"type":"string","title":"文字颜色","maxLength":7,"default":"#ffffff"},
+    "radius":{"type":"integer","title":"圆角","minimum":0,"maximum":60,"default":24}
+  }}
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.stock-medium","name":"大A指数","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "entry":"dist/index.html","defaultSize":{"width":460,"height":300},"minSize":{"width":360,"height":240},
+  "capabilities":["storage.instance","content.read"],
+  "settingsSchema":{"type":"object","additionalProperties":false,"required":["upColorRed"],"properties":{"upColorRed":{"type":"boolean","title":"红涨绿跌","default":true}}}
+}

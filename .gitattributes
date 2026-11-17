@@ -7,3 +7,6 @@
 # Windows 批处理保持 CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# WidgetJS 来源散列及预置包按原始字节校验，禁止 Git 改写换行。
+components/widgetjs/** -text

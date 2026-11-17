@@ -2,21 +2,53 @@
 /* 桌面与面板共享组件外壳；工具栏按需出现，内容保留组件自身样式。 */
 .desktop-shell{padding:0;border:0;background:transparent;border-radius:12px}
 .widget-surface{height:100%;position:relative;padding-top:24px;overflow:hidden;border:1px solid #ffffff25;border-radius:12px;background:#202020}
+.snap-highlights{position:absolute;inset:0;z-index:20;border-radius:inherit;pointer-events:none;overflow:hidden}
+.snap-highlight{position:absolute;opacity:0;transition:opacity .18s ease-out;pointer-events:none}
+.snap-highlight.active{opacity:1}
+.snap-highlight-left,.snap-highlight-right{top:9px;bottom:9px;width:2px}
+.snap-highlight-top,.snap-highlight-bottom{left:9px;right:9px;height:2px}
+.snap-highlight-left{left:0}.snap-highlight-right{right:0}.snap-highlight-top{top:0}.snap-highlight-bottom{bottom:0}
+.snap-highlight i{display:block;width:100%;height:100%;background:#8beaf1;box-shadow:0 0 6px 2px #57dbea80}
+.snap-highlight.active i{animation:snap-edge-glow 1.1s ease-in-out infinite}
+@keyframes snap-edge-glow{0%,100%{filter:brightness(1);box-shadow:0 0 5px 1px #57dbea70}50%{filter:brightness(1.35);box-shadow:0 0 9px 3px #57dbeaaa}}
+@media(prefers-reduced-motion:reduce){.snap-highlight{transition:none}.snap-highlight.active i{animation:none}}
 .icon-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:30px;height:30px;padding:0;border:0;border-radius:6px;background:transparent;flex-shrink:0;color:#c9c9c9}
 .icon-button:hover{background:#ffffff15;color:#fff}
 .surface-chrome{opacity:.25;background:#2229}
 .widget-surface:hover>.surface-chrome,.widget-surface:focus-within>.surface-chrome,.widget-surface.menu-open>.surface-chrome{opacity:1}
 .surface-chrome .icon-button{width:28px;height:24px;padding:0 6px;line-height:1}
 .surface-chrome .drag-handle{display:flex;justify-content:flex-start;touch-action:none;user-select:none}
+.surface-chrome .drag-handle{min-width:16px;width:auto;padding:0 4px}
+.surface-toolbar{display:flex;min-width:0;flex:0 1 auto;align-items:center}
+.surface-toolbar>.icon-button{min-width:16px;width:26px;padding:0 2px;flex-shrink:1}
+.surface-toolbar svg{width:16px;height:16px;flex-shrink:0}
 .surface-menu{top:27px;right:5px;padding:5px;z-index:10;background:#252525f5}
 .surface-actions{gap:2px;flex-wrap:wrap}
 .surface-actions .icon-button{font-size:inherit;padding:0;width:28px;height:28px}
 .resize-handle.icon-button{position:absolute;right:0;bottom:0;width:22px;height:22px;padding:1px;border-radius:5px 0 10px 0;background:#2229;opacity:.35;cursor:nwse-resize;touch-action:none}
 .widget-surface:hover>.resize-handle{opacity:1}
 .widget-surface>.notice{position:absolute;inset:auto 6px 8px;z-index:5;margin:0;font-size:11px}
-.panel-shell{position:relative}
-.panel-tools{position:absolute;top:5px;right:8px;height:30px;display:flex;gap:2px;z-index:5;border-radius:8px;background:#20202070}
-.panel-scroll{padding:43px 12px 12px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
+.panel-shell{position:relative;padding-right:12px}
+.panel-width-handle{position:absolute;left:0;top:12px;bottom:12px;width:6px;padding:0;border:0;border-radius:0;background:transparent;cursor:ew-resize;touch-action:none;z-index:26}
+.panel-width-handle:hover,.panel-width-handle:focus-visible,.resizing-width>.panel-width-handle{background:#b6c9c170}
+.panel-width-handle:disabled{opacity:1;cursor:ew-resize}
+.resizing-width,.resizing-width *{cursor:ew-resize!important;user-select:none}
+.resizing-width iframe{pointer-events:none}
+.panel-width-output{position:absolute;left:14px;top:50%;transform:translateY(-50%);padding:6px 9px;border:1px solid #ffffff30;border-radius:6px;background:#242424ef;color:#eee;font-variant-numeric:tabular-nums;pointer-events:none;z-index:27}
+.panel-preferences>.panel-width-hint{flex-basis:100%;margin:0;font-size:11px}
+.panel-edge-toggle{position:absolute;right:0;top:50%;transform:translateY(-50%);width:12px;height:100px;max-height:100%;z-index:25}
+.edge svg{pointer-events:none}
+.edge[aria-expanded=false] svg{transform:rotate(180deg)}
+.remove-instance-dialog{width:min(380px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;margin:auto;padding:18px;color:#e5e5e5;background:#242424;border:1px solid #ffffff35;border-radius:10px;box-shadow:0 12px 40px #0008}
+.remove-instance-dialog::backdrop{background:#0008}
+.remove-instance-dialog form{display:grid;gap:14px}
+.remove-instance-dialog h2{font-size:14px;overflow-wrap:anywhere}
+.remove-instance-dialog p{font-size:12px}
+.remove-instance-dialog .actions{justify-content:flex-end;position:sticky;bottom:-18px;background:#242424;padding:8px 0}
+.remove-instance-dialog button{padding:6px 10px}
+.panel-topbar{display:flex;align-items:center;gap:4px;flex-shrink:0;min-width:0;height:44px;padding:4px 8px 4px 12px;border-bottom:1px solid #ffffff14}
+.panel-tools{height:30px;display:flex;gap:2px;flex-shrink:0;margin-left:auto;border-radius:8px;background:#20202070}
+.panel-scroll{padding:12px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .panel-canvas{position:relative;min-height:180px}
 .panel-widget{position:absolute;margin:0;border:0;border-radius:12px;background:transparent;overflow:visible}
 .panel-widget .widget-surface{box-shadow:0 3px 14px #0002}
@@ -26,7 +58,9 @@
 .panel-settings-popover{position:absolute;top:41px;right:8px;z-index:20;width:min(340px,calc(100% - 16px));padding:16px;background:#242424f5;border:1px solid #ffffff30;border-radius:10px;box-shadow:0 10px 32px #0005;max-height:calc(100vh - 52px);overflow:auto}
 .panel-settings-popover>.icon-button{position:absolute;right:6px;bottom:6px}
 .panel-preferences{gap:16px}
-.panel-preferences>label:not(.panel-double-click){flex-basis:calc(50% - 16px);min-width:110px}
+.panel-preferences>.panel-tint,.panel-animation-row{flex-basis:100%;min-width:0}
+.panel-animation-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.panel-animation-row>label{min-width:0}
 .panel-preferences .panel-double-click{display:flex;align-items:center;gap:8px;flex-basis:100%;font-size:12px;grid-template-columns:none}
 .panel-preferences .panel-double-click input{width:auto;margin:0;padding:0}
 .panel-notice{position:absolute;inset:auto 12px 12px;z-index:30;pointer-events:none}
@@ -34,6 +68,50 @@
 .panel-empty{flex:1;min-height:0;gap:10px}
 .panel-empty>.icon-button{width:48px;height:48px;border:1px dashed #ffffff35;border-radius:12px}
 .panel-empty p{font-size:11px;color:#aaa}
+.panel-group-bar{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.panel-group-tabs{display:flex;align-items:center;gap:4px;min-width:0;flex:1;height:36px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;padding:0 2px}
+.panel-group-tabs button{display:flex;align-items:center;gap:7px;flex-shrink:0;max-width:180px;height:30px;padding:5px 10px;border:1px solid transparent;background:var(--group-bg);color:#f5f5f7;font-size:12px;border-radius:7px}
+.panel-group-tabs button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel-group-tabs button small{font-variant-numeric:tabular-nums;color:inherit;opacity:.85}
+.panel-group-tabs button:hover{background:var(--group-hover)}
+.panel-group-tabs button[aria-selected=true]{background:var(--group-active);border-color:var(--group-border);box-shadow:inset 0 -2px var(--group-border);font-weight:600}
+.panel-group-content{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+.panel-group-dialog{width:min(480px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;margin:auto;padding:18px;color:#e5e5e5;background:#242424;border:1px solid #ffffff35;border-radius:12px;box-shadow:0 12px 40px #0008}
+.panel-group-dialog::backdrop{background:#0008}
+.panel-group-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.panel-group-dialog p{font-size:12px;overflow-wrap:anywhere}
+.panel-group-dialog>.error{margin-top:12px}
+.panel-group-list{list-style:none;margin:14px 0;padding:0}
+.panel-group-list>li{padding:10px 0;border-bottom:1px solid #ffffff15}
+.panel-group-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.panel-group-name{flex:1;min-width:60px;overflow-wrap:anywhere}
+.panel-group-name small{display:block;margin-top:4px}
+.panel-group-row>button:not(.icon-button),.panel-group-rename button,.panel-group-remove button{padding:6px 8px;font-size:11px}
+.panel-group-rename,.panel-group-create>div{display:flex;gap:6px;flex-wrap:wrap}
+.panel-group-rename input,.panel-group-create input{flex:1;min-width:80px;width:0}
+.panel-group-create{display:grid;gap:8px;margin-top:16px;font-size:12px}
+.panel-group-create button{display:flex;align-items:center;gap:4px}
+.panel-group-remove{padding:10px;margin-top:8px;background:#ffffff06;border-radius:6px}
+.panel-group-remove .actions{justify-content:flex-end;margin-top:8px}
+.panel-color-editor{display:grid;gap:12px;margin-top:10px;padding:12px;background:#1c1c1e;border:1px solid #ffffff16;border-radius:10px}
+.panel-color-preview{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.panel-color-label{display:inline-flex;max-width:100%;padding:6px 10px;border:1px solid var(--group-border);border-radius:7px;color:#f5f5f7;background:var(--group-active);box-shadow:inset 0 -2px var(--group-border);overflow-wrap:anywhere}
+.panel-color-presets{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel-color-auto{height:28px;padding:4px 8px;font-size:11px}
+.panel-color-auto[aria-pressed=true]{border-color:#ddd;background:#3a3a3c}
+.panel-color-swatch{position:relative;flex-shrink:0;width:26px;height:26px;padding:0;border:3px solid #1c1c1e;border-radius:50%;background:var(--swatch);box-shadow:0 0 0 1px #ffffff30}
+.panel-color-swatch:hover{background:var(--swatch);border-color:#1c1c1e;box-shadow:0 0 0 2px #ffffff80}
+.panel-color-swatch[aria-pressed=true]{box-shadow:0 0 0 2px #eee}
+.panel-color-swatch[aria-pressed=true]::after{content:'';position:absolute;inset:6px;border:1px solid #fff;border-radius:50%;background:#111;box-shadow:0 0 0 1px #0007}
+.panel-color-custom{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.panel-color-custom label{display:flex;align-items:center;gap:8px;font-size:12px;color:#bbb}
+.panel-color-custom input[type=color]{width:36px;height:30px;padding:2px;cursor:pointer}
+.panel-color-custom input:not([type=color]){flex:1;min-width:90px;width:0;font-family:Consolas,monospace;font-size:12px}
+.panel-color-editor>.actions{justify-content:flex-end}
+.panel-group-move{display:grid;gap:14px;margin-top:18px}
+.panel-group-move label{overflow-wrap:anywhere}
+.panel-group-move select{width:100%}
+.panel-group-move .actions{justify-content:flex-end}
 .update-settings button{display:inline-flex;align-items:center;gap:7px}
 .update-settings .check{flex-wrap:wrap}
 .update-settings details{font-size:12px;margin:12px 0;color:#bbb}
@@ -42,3 +120,9 @@
 .update-progress{display:flex;gap:12px;align-items:center;margin:12px 0}
 .update-progress progress{height:6px;flex:1;accent-color:#b7cdbb}
 .update-settings .error{color:#f0b1a9}
+html[data-surface="keyboard"],html[data-surface="keyboard"] body,html[data-surface="keyboard"] #root,html[data-surface="keyboard"] .frame-wrap{background:transparent!important;border:0;box-shadow:none;outline:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden}html[data-surface="keyboard"] .frame-wrap iframe{border:0;border-radius:0;background:transparent}
+
+html[data-surface=reminder],html[data-surface=reminder] body,html[data-surface=reminder] #root,html[data-surface=reminder] .frame-wrap{background:transparent!important;border:0;box-shadow:none;outline:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden}html[data-surface=reminder] .frame-wrap iframe{border:0;border-radius:0;background:transparent}
+html[data-surface=clipboard],html[data-surface=clipboard] body,html[data-surface=clipboard] #root,html[data-surface=clipboard] .frame-wrap{background:transparent!important;border:0;box-shadow:none;outline:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden}html[data-surface=clipboard] .frame-wrap iframe{border:0;border-radius:0;background:transparent}
+
+html[data-surface=pomodoro],html[data-surface=pomodoro] body,html[data-surface=pomodoro] #root,html[data-surface=pomodoro] .frame-wrap{background:transparent!important;border:0;box-shadow:none;outline:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden}html[data-surface=pomodoro] .frame-wrap iframe{border:0;border-radius:0;background:transparent}

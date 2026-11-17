@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-manage-panel-group"
+description = "Enables the manage_panel_group command without any pre-configured scope."
+commands.allow = ["manage_panel_group"]
+
+[[permission]]
+identifier = "deny-manage-panel-group"
+description = "Denies the manage_panel_group command without any pre-configured scope."
+commands.deny = ["manage_panel_group"]

@@ -16,7 +16,6 @@ pub struct Visibility {
     pub monitors: String,
     pub ready: std::collections::HashMap<String, std::time::Instant>,
     pub editing: bool,
-    pub panel_manual: bool,
     pub interacting: bool,
     pub menus: std::collections::HashSet<String>,
     pub failed: std::collections::HashMap<String, String>,
@@ -44,6 +43,27 @@ pub fn dispatch(
     });
 }
 
+fn html_drop_for_window(store: &crate::store::Store, label: &str) -> AppResult<bool> {
+    if label != "panel" && !label.starts_with("float-") {
+        return Ok(false);
+    }
+    let db = store.db.lock().map_err(err)?;
+    let mut statement = db.prepare("SELECT p.manifest FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE ('float-'||i.id)=?1 OR (?1='panel' AND i.location='panel' AND i.visible=1)").map_err(err)?;
+    let mut rows = statement.query([label]).map_err(err)?;
+    while let Some(row) = rows.next().map_err(err)? {
+        let manifest: crate::widgets::Manifest =
+            serde_json::from_str(&row.get::<_, String>(0).map_err(err)?).map_err(err)?;
+        if manifest
+            .capabilities
+            .iter()
+            .any(|value| value == "documents.user")
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn build(
     app: &AppHandle,
     label: &str,
@@ -51,7 +71,13 @@ pub(crate) fn build(
     width: f64,
     height: f64,
 ) -> AppResult<WebviewWindow> {
-    let surface = label.starts_with("float-") || label == "panel";
+    let keyboard = label.starts_with("keyboard-");
+    let notice = label.starts_with("island-");
+    let rest = label.starts_with("break-");
+    let clipboard_tool = label.starts_with("clipboard-tool-");
+    let clipboard = label.starts_with("clipboard-") && !clipboard_tool;
+    let surface =
+        label.starts_with("float-") || label == "panel" || keyboard || notice || rest || clipboard;
     let mut builder = WebviewWindowBuilder::new(app,label,WebviewUrl::App(url.into()))
         .title(if label=="main" {"SoulDesk · 组件管理"} else if label=="panel" {"SoulDesk · 组件面板"} else {"SoulDesk · 组件"})
         .inner_size(width,height).min_inner_size(120.,80.).visible(false).focused(false)
@@ -61,6 +87,10 @@ pub(crate) fn build(
     let directory = app.state::<Core>().store.root.join("webview").join(label);
     std::fs::create_dir_all(&directory).map_err(err)?;
     builder = builder.data_directory(directory);
+    // 仅文档组件的正式容器使用HTML文件拖放；其他窗口保留现有处理器。
+    if html_drop_for_window(&app.state::<Core>().store, label)? {
+        builder = builder.disable_drag_drop_handler();
+    }
     if surface {
         builder = builder
             .decorations(false)
@@ -72,6 +102,24 @@ pub(crate) fn build(
     }
     if label == "panel" {
         builder = builder.always_on_top(true);
+    }
+    if notice {
+        builder = builder
+            .always_on_top(true)
+            .focusable(false)
+            .min_inner_size(120., 1.);
+    }
+    if rest {
+        builder = builder.always_on_top(true).focusable(true);
+    }
+    if keyboard {
+        builder = builder.always_on_top(true).focusable(false);
+    }
+    if clipboard {
+        builder = builder
+            .always_on_top(true)
+            .focusable(true)
+            .min_inner_size(120., 1.);
     }
     let w = builder.build().map_err(err)?;
     if surface {
@@ -189,6 +237,66 @@ pub fn save_all_geometry(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
+pub(crate) fn quit(app: &AppHandle) -> AppResult<()> {
+    let _ = app.state::<Core>().pomodoro_windows.service.stop();
+    if let Err(error) = app.state::<Core>().pomodoro_windows.cleanup(app) {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app
+        .state::<Core>()
+        .jobs
+        .shutdown(&app.state::<Core>().store)
+    {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app.state::<Core>().jobs.cleanup(app) {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app
+        .state::<Core>()
+        .assistant
+        .stop()
+        .and_then(|_| app.state::<Core>().assistant.cleanup(app))
+    {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app.state::<Core>().assistant.stop_shortcuts(app) {
+        app.state::<Core>().report(error);
+    }
+    save_all_geometry(app)?;
+    if let Err(error) = app.state::<Core>().coin_live.stop_all() {
+        app.state::<Core>().report(error);
+    }
+    app.state::<Core>()
+        .quitting
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    app.state::<Core>().reminders.stop();
+    app.state::<Core>().ai.stop();
+    if let Err(error) = app
+        .state::<Core>()
+        .clipboard
+        .stop(&app.state::<Core>().store)
+    {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app.state::<Core>().clipboard.stop_shortcuts(app) {
+        app.state::<Core>().report(error);
+    }
+    if let Err(error) = app.state::<Core>().keyboard.stop() {
+        app.state::<Core>().report(error);
+    }
+    crate::integration::trace_lifecycle(
+        app,
+        serde_json::json!({"event":"explicit-exit-start","code":0,"action":"tray-quit"}),
+    );
+    app.exit(0);
+    crate::integration::trace_lifecycle(
+        app,
+        serde_json::json!({"event":"explicit-exit-enqueued","code":0}),
+    );
+    Ok(())
+}
+
 // 只能从后台命令/窗口协调工作线程调用；destroy() 返回时管理器可能仍持有旧句柄。
 pub fn destroy_window(app: &AppHandle, label: &str) -> AppResult<()> {
     if let Some(window) = app.get_webview_window(label) {
@@ -260,7 +368,7 @@ pub fn set_autostart(_: bool) -> AppResult<()> {
     Err("当前平台未实现登录启动".into())
 }
 
-fn host_script(app: &AppHandle) -> String {
+pub(crate) fn host_script(app: &AppHandle) -> String {
     let core = app.state::<Core>();
     let mut origins = vec![
         "http://tauri.localhost".to_owned(),
@@ -313,6 +421,17 @@ fn instances(app: &AppHandle) -> AppResult<Vec<serde_json::Value>> {
         .ok_or("实例列表无效")?
         .clone())
 }
+fn active_panel_instances(app: &AppHandle) -> AppResult<Vec<serde_json::Value>> {
+    let groups = app.state::<Core>().store.panel_groups()?;
+    Ok(instances(app)?
+        .into_iter()
+        .filter(|i| {
+            i["visible"] == true
+                && i["location"] == "panel"
+                && i["id"].as_str().is_some_and(|id| groups.contains(id))
+        })
+        .collect())
+}
 pub(crate) fn hidden(app: &AppHandle) -> AppResult<bool> {
     Ok(app.state::<Core>().visibility.lock().map_err(err)?.hidden)
 }
@@ -321,31 +440,316 @@ pub fn changed(app: &AppHandle) -> AppResult<()> {
 }
 
 pub fn release(app: &AppHandle, label: &str) -> AppResult<()> {
-    let core = app.state::<Core>();
-    let mut sessions = core.sessions.0.lock().map_err(err)?;
+    release_surface(app, label, None)
+}
+fn take_surface_sessions(
+    sessions: &mut std::collections::HashMap<String, crate::widgets::Session>,
+    label: &str,
+    instance: Option<&str>,
+) -> std::collections::HashSet<String> {
     let removed = sessions
         .iter()
-        .filter(|(_, s)| s.window == label)
-        .map(|(t, _)| t.clone())
+        .filter(|(_, session)| {
+            session.window == label && instance.is_none_or(|id| session.instance == id)
+        })
+        .map(|(token, _)| token.clone())
         .collect::<std::collections::HashSet<_>>();
-    sessions.retain(|t, _| !removed.contains(t));
+    sessions.retain(|token, _| !removed.contains(token));
+    removed
+}
+fn release_surface(app: &AppHandle, label: &str, instance: Option<&str>) -> AppResult<()> {
+    let core = app.state::<Core>();
+    let mut sessions = core.sessions.0.lock().map_err(err)?;
+    let removed = take_surface_sessions(&mut sessions, label, instance);
+    core.coin_live.release_owners(&removed)?;
     core.business
         .subscriptions
         .lock()
         .map_err(err)?
         .retain(|_, s| !removed.contains(&s.owner));
     let mut state = core.visibility.lock().map_err(err)?;
-    state
-        .ready
-        .retain(|k, _| !k.starts_with(&format!("{label}/")));
-    state
-        .failed
-        .retain(|k, _| !k.starts_with(&format!("{label}/")));
+    let key = instance.map(|id| format!("{label}/{id}"));
+    let keep = |candidate: &String| {
+        key.as_ref().map_or_else(
+            || !candidate.starts_with(&format!("{label}/")),
+            |key| candidate != key,
+        )
+    };
+    state.ready.retain(|key, _| keep(key));
+    state.failed.retain(|key, _| keep(key));
+    if let Some(id) = instance {
+        state.menus.remove(id);
+    }
     Ok(())
 }
 fn dispose(app: &AppHandle, label: &str) -> AppResult<()> {
     release(app, label)?;
     destroy_window(app, label)
+}
+pub(crate) fn keyboard_close(app: &AppHandle, id: &str) -> AppResult<()> {
+    dispose(app, &format!("keyboard-{id}"))
+}
+pub(crate) fn clipboard_close(app: &AppHandle, label: &str) -> AppResult<()> {
+    if !label.starts_with("clipboard-") {
+        return Err("CAPABILITY_DENIED: 非剪切板窗口".into());
+    }
+    app.state::<Core>().clipboard.closed(label);
+    let core = app.state::<Core>();
+    core.ai.close_tool(&core.store, label)?;
+    dispose(app, label)
+}
+pub(crate) fn clipboard_tool_show(
+    app: &AppHandle,
+    p: &crate::clipboard_tools::Tool,
+) -> AppResult<()> {
+    let core = app.state::<Core>();
+    if !core.ai.current_tool(&core.store, &p.label, &p.instance) {
+        return Err("PRESENTATION_EXPIRED: 工具已撤销".into());
+    }
+    let result = (|| {
+        let (width, height, page) = match p.kind {
+            crate::clipboard_tools::Kind::Settings => (560., 560., "clipboard-settings"),
+            crate::clipboard_tools::Kind::Mindmap => (820., 680., "clipboard-ai-mindmap"),
+            crate::clipboard_tools::Kind::Translate => (720., 560., "clipboard-ai-translate"),
+        };
+        let w = build(
+            app,
+            &p.label,
+            format!("index.html?clipboardPopup={}&page={page}", p.instance),
+            width,
+            height,
+        )?;
+        w.center().map_err(err)?;
+        wait_ready(app, &p.label, &p.instance)?;
+        if !core.ai.current_tool(&core.store, &p.label, &p.instance) {
+            return Err("PRESENTATION_EXPIRED: 工具已撤销".into());
+        }
+        native::show(&w)?;
+        w.set_focus().map_err(err)
+    })();
+    if result.is_err() {
+        let _ = clipboard_close(app, &p.label);
+    }
+    result
+}
+pub(crate) fn clipboard_show(
+    app: &AppHandle,
+    p: &crate::clipboard_surface::Popup,
+) -> AppResult<()> {
+    use crate::clipboard_surface::Kind;
+    let core = app.state::<Core>();
+    if !core.clipboard.current_window(&p.label, &p.instance) || hidden(app)? {
+        return Err("PRESENTATION_EXPIRED: 剪切板窗口已撤销".into());
+    }
+    if app.get_webview_window(&p.label).is_some() {
+        return Ok(());
+    }
+    let result = (|| {
+        let (width, height, page) = if p.kind == Kind::History {
+            (500., 400., "clipboard-history")
+        } else {
+            (700., 54., "clipboard-search")
+        };
+        let w = build(
+            app,
+            &p.label,
+            format!("index.html?clipboardPopup={}&page={page}", p.instance),
+            width,
+            height,
+        )?;
+        #[cfg(windows)]
+        let owner = w.hwnd().map_err(err)?.0 as usize;
+        #[cfg(not(windows))]
+        let owner = 0;
+        core.clipboard.attach_window(&core.store, p, owner)?;
+        let a = area(app, true)?;
+        let scale = a.scale_factor;
+        let width = (width * scale).round().min(a.width as f64).max(1.) as u32;
+        let height = (height * scale).round().min(a.height as f64).max(1.) as u32;
+        let x = a.left + (a.width as i32 - width as i32) / 2;
+        let y = if p.kind == Kind::History {
+            a.top
+                + (a.height as i32 - height as i32 - (a.height as f64 * 0.05).round() as i32).max(0)
+        } else {
+            a.top
+        };
+        w.set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(err)?;
+        w.set_size(tauri::PhysicalSize::new(width, height))
+            .map_err(err)?;
+        wait_ready(app, &p.label, &p.instance)?;
+        core.clipboard.show_window(&core.store, p, || {
+            native::show(&w)?;
+            if p.kind == Kind::History {
+                w.set_focus().map_err(err)?;
+            }
+            Ok(())
+        })
+    })();
+    if result.is_err() {
+        core.clipboard.closed(&p.label);
+        let _ = dispose(app, &p.label);
+    }
+    result
+}
+pub(crate) fn reminder_reconcile(
+    app: &AppHandle,
+    surface: crate::reminder_engine::Surface,
+    target: Option<crate::reminder_engine::Target>,
+) -> AppResult<()> {
+    use crate::reminder_engine::Surface;
+    let core = app.state::<Core>();
+    if core.reminders.target(surface) != target {
+        return Ok(());
+    }
+    let prefix = if surface == Surface::Notice {
+        "island-"
+    } else {
+        "break-"
+    };
+    // 最新代次清理同类旧窗，过期清理任务即使被跳过也不会留下旧显示层。
+    for label in app
+        .webview_windows()
+        .keys()
+        .filter(|label| label.starts_with(prefix))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        dispose(app, &label)?;
+    }
+    let Some(target) = target else {
+        return Ok(());
+    };
+    if core.reminders.target(surface).as_ref() != Some(&target) || hidden(app)? {
+        return Ok(());
+    }
+    let label = target.label();
+    let result = (|| {
+        let w = build(
+            app,
+            &label,
+            format!(
+                "index.html?{}={}",
+                if surface == Surface::Notice {
+                    "noticeOverlay"
+                } else {
+                    "breakOverlay"
+                },
+                target.owner
+            ),
+            350.,
+            if surface == Surface::Notice {
+                f64::from(target.height)
+            } else {
+                240.
+            },
+        )?;
+        let area = area(app, false)?;
+        if surface == Surface::Notice {
+            let size = w.outer_size().map_err(err)?;
+            w.set_position(tauri::PhysicalPosition::new(
+                area.left + (area.width as i32 - size.width as i32) / 2,
+                area.top
+                    + (if target.height == 160 { 100. } else { 80. } * area.scale_factor) as i32,
+            ))
+            .map_err(err)?;
+            w.set_focusable(false).map_err(err)?;
+        } else {
+            w.set_position(tauri::PhysicalPosition::new(area.left, area.top))
+                .map_err(err)?;
+            w.set_fullscreen(true).map_err(err)?;
+        }
+        wait_ready(app, &label, &target.owner)?;
+        core.reminders.show_target(app, &target, || {
+            if surface == Surface::Notice {
+                native::show(&w)
+            } else {
+                w.show().map_err(err)?;
+                w.set_focus().map_err(err)
+            }
+        })
+    })();
+    if let Err(error) = result {
+        if core.reminders.target(surface).as_ref() == Some(&target) {
+            core.reminders.failed(app, &target, error.clone());
+        }
+        let _ = dispose(app, &label);
+        if error.starts_with("SESSION_EXPIRED:") {
+            return Ok(());
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+pub(crate) fn keyboard_close_all(app: &AppHandle) -> AppResult<()> {
+    for label in app
+        .webview_windows()
+        .keys()
+        .filter(|label| label.starts_with("keyboard-"))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        dispose(app, &label)?;
+    }
+    Ok(())
+}
+pub(crate) fn keyboard_create(app: &AppHandle, id: &str, generation: u64) -> AppResult<()> {
+    let core = app.state::<Core>();
+    if core.quitting.load(std::sync::atomic::Ordering::Acquire)
+        || hidden(app)?
+        || !core.keyboard.current(id, generation)
+    {
+        return Ok(());
+    }
+    let label = format!("keyboard-{id}");
+    let result = (|| {
+        let w = build(
+            app,
+            &label,
+            format!("index.html?keyboardOverlay={id}"),
+            450.,
+            240.,
+        )?;
+        w.set_ignore_cursor_events(true).map_err(err)?;
+        w.set_focusable(false).map_err(err)?;
+        wait_ready(app, &label, id)?;
+        if !core.keyboard.current(id, generation) || hidden(app)? {
+            dispose(app, &label)?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = dispose(app, &label);
+    }
+    result
+}
+pub(crate) fn keyboard_visibility(app: &AppHandle, id: &str, generation: u64) -> AppResult<()> {
+    let core = app.state::<Core>();
+    if !core.keyboard.current(id, generation) {
+        return Ok(());
+    }
+    let w = app
+        .get_webview_window(&format!("keyboard-{id}"))
+        .ok_or("键盘演示叠加层不存在")?;
+    if core.quitting.load(std::sync::atomic::Ordering::Acquire)
+        || hidden(app)?
+        || !core.keyboard.wants_show(id, generation)
+    {
+        return native::hide(&w);
+    }
+    let area = area(app, false)?;
+    let size = w.outer_size().map_err(err)?;
+    w.set_position(tauri::PhysicalPosition::new(
+        area.left + (area.width as i32 - size.width as i32) / 2,
+        area.top + area.height as i32 - size.height as i32,
+    ))
+    .map_err(err)?;
+    w.set_always_on_top(true).map_err(err)?;
+    w.set_ignore_cursor_events(true).map_err(err)?;
+    if core.keyboard.wants_show(id, generation) && !hidden(app)? {
+        native::show(&w)?;
+    }
+    Ok(())
 }
 pub fn ready(app: &AppHandle, label: &str, id: &str) -> AppResult<()> {
     app.state::<Core>()
@@ -391,7 +795,81 @@ fn wait_ready(app: &AppHandle, label: &str, id: &str) -> AppResult<()> {
         std::thread::sleep(Duration::from_millis(30));
     }
 }
-fn area(app: &AppHandle, at_pointer: bool) -> AppResult<crate::desktop_geometry::WorkArea> {
+fn panel_contents_ready(state: &Visibility, ids: &[String]) -> bool {
+    ids.iter().all(|id| {
+        let key = format!("panel/{id}");
+        state.failed.contains_key(&key)
+            || state
+                .ready
+                .get(&key)
+                .is_some_and(|at| at.elapsed() >= Duration::from_millis(800))
+    })
+}
+fn fail_pending_panel_contents(
+    state: &mut Visibility,
+    ids: &[String],
+    message: &str,
+) -> Vec<String> {
+    let pending = ids
+        .iter()
+        .filter(|id| {
+            let key = format!("panel/{id}");
+            !state.ready.contains_key(&key) && !state.failed.contains_key(&key)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in &pending {
+        state.failed.insert(format!("panel/{id}"), message.into());
+    }
+    pending
+}
+fn wait_panel_contents(app: &AppHandle) -> AppResult<()> {
+    let ids = active_panel_instances(app)?
+        .iter()
+        .filter_map(|item| item["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    let deadline = std::time::Instant::now() + Duration::from_secs(12);
+    loop {
+        let ready = {
+            let core = app.state::<Core>();
+            let state = core.visibility.lock().map_err(err)?;
+            panel_contents_ready(&state, &ids)
+        };
+        if ready {
+            return Ok(());
+        }
+        if app.get_webview_window("panel").is_none() {
+            return Err("面板已关闭".into());
+        }
+        if std::time::Instant::now() >= deadline {
+            // 单个坏组件不能阻止整个面板打开；页面仍保留自己的错误与重试入口。
+            let message = "组件初始化超过12秒，可重新加载。";
+            let pending = {
+                let core = app.state::<Core>();
+                let mut state = core.visibility.lock().map_err(err)?;
+                fail_pending_panel_contents(&mut state, &ids, message)
+            };
+            if pending.is_empty() {
+                return Ok(());
+            }
+            for id in pending {
+                app.emit_to(
+                    "panel",
+                    "host:instance-error",
+                    serde_json::json!({"instance":id,"message":message}),
+                )
+                .map_err(err)?;
+            }
+            app.state::<Core>().report(message.into());
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(30));
+    }
+}
+pub(crate) fn area(
+    app: &AppHandle,
+    at_pointer: bool,
+) -> AppResult<crate::desktop_geometry::WorkArea> {
     let monitor = if at_pointer {
         let p = app.cursor_position().map_err(err)?;
         app.monitor_from_point(p.x, p.y).map_err(err)?
@@ -456,19 +934,75 @@ pub fn save_panel_settings(app: &AppHandle, settings: crate::panel::Preferences)
     crate::desktop_input::set_enabled(settings.desktop_double_click);
     changed(app)
 }
+
+pub fn change_panel_groups(app: &AppHandle, change: crate::panel::GroupChange) -> AppResult<()> {
+    let before = app.state::<Core>().store.panel_groups()?;
+    let after = app.state::<Core>().store.change_panel_groups(change)?;
+    for instance in instances(app)? {
+        if let Some(id) = instance["id"].as_str() {
+            if before.contains(id) != after.contains(id) {
+                release_surface(app, "panel", Some(id))?;
+            }
+        }
+    }
+    changed(app)?;
+    layout_panel(app, false)
+}
+
+fn panel_min_width(app: &AppHandle) -> AppResult<f64> {
+    Ok(active_panel_instances(app)?
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .map(|id| dimensions(app, id).map(|(_, _, min, _)| min))
+        .collect::<AppResult<Vec<_>>>()?
+        .into_iter()
+        .fold(280f64, f64::max)
+        + 32.)
+}
+
+pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
+    if hidden(app)? {
+        return Err("请先恢复组件显示".into());
+    }
+    let window = app.get_webview_window("panel").ok_or("面板已关闭")?;
+    let area = area(app, false)?;
+    let minimum = panel_min_width(app)?;
+    {
+        let core = app.state::<Core>();
+        let mut state = core.visibility.lock().map_err(err)?;
+        state.interacting = true;
+        state.epoch += 1;
+    }
+    let result = (|| {
+        if let Some(geometry) = native::resize_panel_width(&window, area, minimum)? {
+            let mut settings: crate::panel::Preferences =
+                serde_json::from_value(panel_preferences(app)?).map_err(err)?;
+            settings.ratio = geometry.effective_ratio;
+            save_panel_settings(app, settings)
+        } else {
+            layout_panel(app, false)
+        }
+    })();
+    {
+        let core = app.state::<Core>();
+        let mut state = core.visibility.lock().map_err(err)?;
+        state.interacting = false;
+        state.epoch += 1;
+    }
+    if let Err(error) = result {
+        if let Err(restore) = layout_panel(app, false) {
+            return Err(format!("{error}；恢复原面板宽度失败：{restore}"));
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn layout_panel(app: &AppHandle, at_pointer: bool) -> AppResult<()> {
     if let Some(w) = app.get_webview_window("panel") {
         let a = area(app, at_pointer)?;
         let ratio = panel_preferences(app)?["ratio"].as_f64().unwrap();
-        let min = instances(app)?
-            .iter()
-            .filter(|i| i["visible"] == true && i["location"] == "panel")
-            .filter_map(|i| i["id"].as_str())
-            .map(|id| dimensions(app, id).map(|(_, _, min, _)| min))
-            .collect::<AppResult<Vec<_>>>()?
-            .into_iter()
-            .fold(280f64, f64::max);
-        let g = crate::desktop_geometry::panel_geometry(a, ratio, min + 32.)?;
+        let g = crate::desktop_geometry::panel_geometry(a, ratio, panel_min_width(app)?)?;
         native::place(&w, g.left, g.top, g.width, g.height, false)?;
         app.emit_to("panel", "host:panel-geometry", g)
             .map_err(err)?;
@@ -582,6 +1116,15 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     }
     let i = instance(app, id)?;
     if i["location"] == "panel" {
+        let groups = app.state::<Core>().store.panel_groups()?;
+        if !groups.contains(id) {
+            change_panel_groups(
+                app,
+                crate::panel::GroupChange::Select {
+                    group: groups.membership.get(id).cloned(),
+                },
+            )?;
+        }
         show_panel(app, false)?;
         wait_ready(app, "panel", id)?;
     } else {
@@ -601,22 +1144,22 @@ pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
     let created = app.get_webview_window("panel").is_none();
     if created {
         build(app, "panel", "index.html?panel=1".into(), 480., 700.)?;
+    }
+    {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
-        v.editing = false;
-        v.interacting = false;
-        v.menus.clear();
-        v.panel_manual = focus;
-    } else if focus {
-        app.state::<Core>()
-            .visibility
-            .lock()
-            .map_err(err)?
-            .panel_manual = true;
+        v.epoch += 1;
+        if created {
+            v.editing = false;
+            v.interacting = false;
+            v.menus.clear();
+        }
     }
     layout_panel(app, true)?;
     let w = app.get_webview_window("panel").ok_or("面板已关闭")?;
     if created {
+        // 先完成缓存恢复和握手，再滑入，避免把重建时的空报价/连接遮罩展示出来。
+        wait_panel_contents(app)?;
         let duration = panel_preferences(app)?["slideInMs"].as_u64().unwrap_or(250) as u32;
         if let Err(e) = native::slide_panel(&w, true, duration) {
             app.state::<Core>().report(e);
@@ -685,6 +1228,26 @@ fn position_edge(app: &AppHandle, w: &WebviewWindow) -> AppResult<()> {
     )
 }
 
+pub fn remove_instance(app: &AppHandle, id: &str) -> AppResult<()> {
+    hide_instance(app, id)?;
+    let core = app.state::<Core>();
+    let removed = crate::widgets::remove_instance_before(&core.store, &core.sessions, id, || {
+        core.pomodoro_windows.service.revoke(id)?;
+        core.jobs.revoke(id)?;
+        core.assistant.cancel(id)
+    });
+    let cleanup = core.assistant.cleanup(app);
+    let job_cleanup = core.jobs.cleanup_instance(app, id);
+    let pomodoro_cleanup = core.pomodoro_windows.cleanup(app);
+    removed?;
+    cleanup?;
+    job_cleanup?;
+    pomodoro_cleanup?;
+    core.ai.forget(id)?;
+    core.clipboard.forget(id)?;
+    core.coin_index.forget(id)?;
+    changed(app)
+}
 pub fn hide_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     let i = instance(app, id)?;
     app.state::<Core>().store.presentation(
@@ -693,15 +1256,18 @@ pub fn hide_instance(app: &AppHandle, id: &str) -> AppResult<()> {
         false,
         i["pinned"] == true,
     )?;
+    app.state::<Core>().pomodoro_windows.service.revoke(id)?;
+    app.state::<Core>().pomodoro_windows.kick(app);
+    app.state::<Core>()
+        .jobs
+        .hide_instance(&app.state::<Core>().store, id)?;
+    app.state::<Core>().jobs.kick(app, id);
     save_instance_geometry(app, id)?;
     dispose(app, &format!("float-{id}"))?;
     dispose(app, &format!("detail-{id}"))?;
     if i["location"] == "panel" {
-        let open = app.get_webview_window("panel").is_some();
-        dispose(app, "panel")?;
-        if open {
-            show_panel(app, false)?;
-        }
+        // 前端按稳定实例标识移除一个组件；不销毁同面板其他实例的页面或连接。
+        release_surface(app, "panel", Some(id))?;
     }
     changed(app)
 }
@@ -721,12 +1287,16 @@ pub fn move_to(app: &AppHandle, id: &str, location: &str) -> AppResult<()> {
     }
     let before = instance(app, id)?;
     let old = before["location"].as_str().unwrap();
+    if old == location && before["visible"] == true {
+        return show_instance(app, id);
+    }
     let panel_open = app.get_webview_window("panel").is_some();
+    let original_group = app.state::<Core>().store.panel_groups()?.active;
     save_instance_geometry(app, id)?;
     dispose(app, &format!("float-{id}"))?;
     dispose(app, &format!("detail-{id}"))?;
     if old == "panel" || location == "panel" {
-        dispose(app, "panel")?;
+        release_surface(app, "panel", Some(id))?;
     }
     let result: AppResult<()> = (|| {
         app.state::<Core>()
@@ -749,16 +1319,35 @@ pub fn move_to(app: &AppHandle, id: &str, location: &str) -> AppResult<()> {
     })();
     if let Err(error) = result {
         dispose(app, &format!("float-{id}"))?;
-        dispose(app, "panel")?;
+        if panel_open {
+            release_surface(app, "panel", Some(id))?;
+        } else {
+            dispose(app, "panel")?;
+        }
         app.state::<Core>().store.presentation(
             id,
             old,
             before["visible"] == true,
             before["pinned"] == true,
         )?;
+        if app.state::<Core>().store.panel_groups()?.active != original_group {
+            change_panel_groups(
+                app,
+                crate::panel::GroupChange::Select {
+                    group: original_group,
+                },
+            )?;
+        }
         changed(app)?;
+        // 状态快速回滚时前端快照可能合并；仅重建目标iframe，其他面板实例保留。
+        if panel_open {
+            app.emit("host:reload-instance", id).map_err(err)?;
+        }
         let restore: AppResult<()> = (|| {
-            if before["visible"] == true && (old == "desktop" || panel_open) {
+            if before["visible"] == true
+                && (old == "desktop"
+                    || panel_open && app.state::<Core>().store.panel_groups()?.contains(id))
+            {
                 show_instance(app, id)?;
             }
             if panel_open {
@@ -804,10 +1393,15 @@ pub fn pin(app: &AppHandle, id: &str) -> AppResult<()> {
 pub fn detail(app: &AppHandle, id: &str) -> AppResult<()> {
     detail_at(app, id, "quotes")
 }
-pub fn detail_at(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
-    if !["quotes", "rules", "history"].contains(&page) {
-        return Err("未知详情页".into());
+pub fn detail_capability(page: &str) -> AppResult<Option<&'static str>> {
+    match page {
+        "quotes" | "rules" | "history" => Ok(None),
+        "pomodoro-scenes" | "pomodoro-settings" | "pomodoro-history" => Ok(Some("focus.pomodoro")),
+        _ => Err("未知详情页".into()),
     }
+}
+pub fn detail_at(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
+    detail_capability(page)?;
     if hidden(app)? || instance(app, id)?["visible"] != true {
         return Err("请先显示组件".into());
     }
@@ -829,10 +1423,17 @@ pub fn detail_at(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
     app.emit_to(&label, "host:detail-page", page).map_err(err)
 }
 pub fn hide_all(app: &AppHandle) -> AppResult<()> {
+    app.state::<Core>()
+        .jobs
+        .hide_all(&app.state::<Core>().store)?;
+    app.state::<Core>().jobs.cleanup(app)?;
+    app.state::<Core>().assistant.cancel_all()?;
+    app.state::<Core>().assistant.cleanup(app)?;
     save_all_geometry(app)?;
     app.state::<Core>()
         .store
         .save_preference("hidden_all", "true")?;
+    app.state::<Core>().pomodoro_windows.suspend_all()?;
     {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
@@ -898,20 +1499,23 @@ pub fn auto_collapse(app: &AppHandle) {
         v.epoch
     };
     dispatch(app, move |app| {
+        let Some(panel) = app.get_webview_window("panel") else {
+            return Ok(());
+        };
+        // 失焦也允许收起；系统查询不持显隐锁，避免阻塞主线程焦点回调。
+        let focused = panel.is_focused().unwrap_or(true);
+        let inside = native::pointer_inside(&panel).unwrap_or(true);
+        let detail = app
+            .webview_windows()
+            .keys()
+            .any(|l| l.starts_with("detail-"));
         {
             let core = app.state::<Core>();
             let v = core.visibility.lock().map_err(err)?;
-            let detail = app
-                .webview_windows()
-                .keys()
-                .any(|l| l.starts_with("detail-"));
-            let inside = app
-                .get_webview_window("panel")
-                .is_some_and(|w| native::pointer_inside(&w).unwrap_or(true));
             if v.epoch != epoch
                 || v.hidden
                 || !crate::panel::can_auto_collapse(
-                    v.panel_manual,
+                    focused,
                     v.editing,
                     v.interacting,
                     !v.menus.is_empty(),
@@ -963,6 +1567,10 @@ pub fn clamp(w: &WebviewWindow) -> AppResult<()> {
 pub fn repair(app: &AppHandle) -> AppResult<()> {
     layout_panel(app, false)?;
     for w in app.webview_windows().values() {
+        // 专用窗允许收起到工作区外；几何和缩放由其协调器处理。
+        if w.label().starts_with("pomodoro-window-") {
+            continue;
+        }
         if w.label() != "panel" {
             clamp(w)?;
         }
@@ -988,6 +1596,129 @@ pub fn repair(app: &AppHandle) -> AppResult<()> {
 }
 pub fn destroy_views(app: &AppHandle) -> AppResult<()> {
     hide_all(app)
+}
+
+#[cfg(test)]
+mod document_drop_tests {
+    use super::*;
+
+    #[test]
+    fn panel_timeout_marks_only_unready_widgets_without_overwriting_recent_ready_or_existing_errors(
+    ) {
+        let mut state = Visibility::default();
+        state
+            .ready
+            .insert("panel/recent".into(), std::time::Instant::now());
+        state
+            .failed
+            .insert("panel/failed".into(), "原始错误".into());
+        let ids = vec!["recent".into(), "failed".into(), "pending".into()];
+        assert_eq!(
+            fail_pending_panel_contents(&mut state, &ids, "初始化超时"),
+            vec!["pending".to_owned()]
+        );
+        assert!(!state.failed.contains_key("panel/recent"));
+        assert_eq!(state.failed["panel/failed"], "原始错误");
+        assert_eq!(state.failed["panel/pending"], "初始化超时");
+        assert!(fail_pending_panel_contents(&mut state, &ids, "再次超时").is_empty());
+    }
+
+    #[test]
+    fn panel_waits_for_all_visible_contents_but_a_failed_widget_does_not_block_others() {
+        let mut state = Visibility::default();
+        let ids = vec!["first".into(), "second".into()];
+        assert!(!panel_contents_ready(&state, &ids));
+        state.ready.insert(
+            "panel/first".into(),
+            std::time::Instant::now() - Duration::from_secs(1),
+        );
+        assert!(!panel_contents_ready(&state, &ids));
+        state
+            .ready
+            .insert("panel/second".into(), std::time::Instant::now());
+        assert!(!panel_contents_ready(&state, &ids));
+        state
+            .failed
+            .insert("panel/second".into(), "测试失败".into());
+        assert!(panel_contents_ready(&state, &ids));
+        assert!(panel_contents_ready(&state, &[]));
+    }
+
+    #[test]
+    fn hiding_one_panel_instance_preserves_other_session_tokens_and_windows() {
+        let session = |instance: &str, window: &str| crate::widgets::Session {
+            instance: instance.into(),
+            window: window.into(),
+            shared_cursor: None,
+            preview: None,
+        };
+        let mut sessions = std::collections::HashMap::from([
+            ("hidden-panel".into(), session("first", "panel")),
+            ("other-panel".into(), session("second", "panel")),
+            ("first-detail".into(), session("first", "detail-first")),
+            ("similar-id".into(), session("first-2", "panel")),
+        ]);
+        assert_eq!(
+            take_surface_sessions(&mut sessions, "panel", Some("first")),
+            std::collections::HashSet::from(["hidden-panel".into()])
+        );
+        assert_eq!(sessions.len(), 3);
+        assert_eq!(sessions["other-panel"].instance, "second");
+        assert!(sessions.contains_key("first-detail"));
+        assert!(sessions.contains_key("similar-id"));
+        assert_eq!(take_surface_sessions(&mut sessions, "panel", None).len(), 2);
+        assert!(sessions.contains_key("first-detail"));
+    }
+
+    #[test]
+    fn detail_pages_are_fixed_and_pomodoro_requires_its_capability() {
+        for page in ["pomodoro-scenes", "pomodoro-settings", "pomodoro-history"] {
+            assert_eq!(detail_capability(page).unwrap(), Some("focus.pomodoro"));
+        }
+        assert_eq!(detail_capability("quotes").unwrap(), None);
+        for page in [
+            "https://example.com",
+            "../pomodoro-scenes",
+            "pomodoro-scenes?instance=other",
+            "unknown",
+        ] {
+            assert!(detail_capability(page).is_err());
+        }
+    }
+
+    #[test]
+    fn html_drop_only_applies_to_formal_windows_with_document_components() {
+        let store = crate::store::Store::open(
+            std::env::temp_dir().join(format!("souldesk-drop-{}", uuid::Uuid::new_v4())),
+        )
+        .unwrap();
+        for package in ["local.example.clock", "local.souldesk.widgetjs.convert"] {
+            let staged = crate::widgets::stage_bytes(
+                &store,
+                crate::presets::find(package)
+                    .unwrap()
+                    .unwrap()
+                    .archive()
+                    .unwrap(),
+            )
+            .unwrap();
+            crate::widgets::activate(&store, &staged).unwrap();
+        }
+        let clock = crate::widgets::create_instance(&store, "local.example.clock").unwrap();
+        let document =
+            crate::widgets::create_instance(&store, "local.souldesk.widgetjs.convert").unwrap();
+        assert!(!html_drop_for_window(&store, "main").unwrap());
+        assert!(!html_drop_for_window(&store, "trial-documents").unwrap());
+        assert!(!html_drop_for_window(&store, &format!("float-{clock}")).unwrap());
+        assert!(html_drop_for_window(&store, &format!("float-{document}")).unwrap());
+        assert!(!html_drop_for_window(&store, "panel").unwrap());
+        store.presentation(&document, "panel", true, false).unwrap();
+        assert!(html_drop_for_window(&store, "panel").unwrap());
+        store
+            .presentation(&document, "panel", false, false)
+            .unwrap();
+        assert!(!html_drop_for_window(&store, "panel").unwrap());
+    }
 }
 
 #[cfg(windows)]
@@ -1020,6 +1751,7 @@ pub fn monitor_changes(app: &AppHandle) -> AppResult<()> {
         changed
     };
     if changed {
+        app.state::<Core>().assistant.monitor_changed(app)?;
         repair(app)?;
     }
     for w in app

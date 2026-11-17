@@ -1,0 +1,1 @@
+x_=new dEe({backgroundColor:"rgba(0,0,0,0.5)",color:"#fff",fontSize:"14px",borderColor:"rgba(255,255,255,0.4)",dividerColor:"rgba(255,255,255,0.4)",primaryColor:"rgb(0, 149, 255)",borderRadius:"22px",backgroundBorderColor:"hsla(0,0%,100%,.06)",backgroundBoxShadowColor:"hsla(0, 0%, 100%, 0.1)"});Object.freeze(x_);

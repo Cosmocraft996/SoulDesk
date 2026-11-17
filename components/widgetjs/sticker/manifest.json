@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.sticker",
+  "name": "大头贴",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {"width": 360, "height": 440},
+  "minSize": {"width": 120, "height": 120},
+  "capabilities": ["storage.instance", "storage.document", "documents.user", "content.read"],
+  "settingsSchema": {"type": "object", "additionalProperties": false, "properties": {}}
+}

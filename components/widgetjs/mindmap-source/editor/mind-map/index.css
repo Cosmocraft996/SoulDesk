@@ -1,0 +1,112 @@
+@keyframes ant-line-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+@keyframes node-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.node-enter {
+  opacity: 0;
+  animation: node-enter 0.3s ease-out forwards;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  background-color: var(--mindmap-node-bg);
+  border: 1px solid var(--mindmap-node-border);
+  border-left: 4px solid #5F95FF;
+  border-radius: 4px;
+  box-shadow: 0 2px 5px 1px var(--mindmap-shadow-color);
+  transition: all 0.3s;
+}
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+.node .label {
+  display: inline-block;
+  flex: 1;
+  margin-left: 8px;
+  color: var(--mindmap-node-text);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+.label-input {
+  flex: 1;
+  margin-left: 8px;
+  font-size: 12px;
+  border: 1px solid #1890ff;
+  border-radius: 2px;
+  outline: none;
+  padding: 2px 4px;
+  color: var(--mindmap-node-text);
+  background: var(--mindmap-node-bg);
+  height: 24px;
+  width: 100%;
+}
+.node .status {
+  flex-shrink: 0;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+}
+.node.checked {
+  border-left: 4px solid #52c41a;
+}
+.collapse-btn {
+  margin-left: 8px;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  text-align: center;
+  border: 1px solid var(--mindmap-btn-border);
+  background: var(--mindmap-btn-bg);
+  color: var(--mindmap-text-color);
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  border-radius: 2px;
+}
+.collapse-btn:hover {
+  background-color: var(--mindmap-btn-hover);
+  border-color: var(--mindmap-node-text);
+}
+.x6-node-selected .node {
+  border-color: #1890ff;
+  border-radius: 2px;
+  box-shadow: 0 0 0 4px #d4e8fe;
+}
+.x6-node-selected .node.checked {
+  border-color: #52c41a;
+  border-radius: 2px;
+  box-shadow: 0 0 0 4px #ccecc0;
+}
+.x6-edge:hover path:nth-child(2){
+  stroke: #1890ff;
+  stroke-width: 1px;
+}
+
+.x6-edge-selected path:nth-child(2){
+  stroke: #1890ff;
+  stroke-width: 1.5px !important;
+}

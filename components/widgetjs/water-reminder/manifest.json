@@ -1,0 +1,13 @@
+{
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.water-reminder","name":"喝水提醒","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "entry":"dist/index.html","defaultSize":{"width":240,"height":240},"minSize":{"width":155,"height":155},
+  "capabilities":["storage.instance","reminders.water"],
+  "settingsSchema":{"type":"object","additionalProperties":false,"required":["enableReminder","interval","targetCup","background","color","primary"],"properties":{
+    "enableReminder":{"type":"boolean","title":"启用提醒","default":true},
+    "interval":{"type":"integer","title":"提醒间隔（分钟）","minimum":5,"maximum":100,"default":30},
+    "targetCup":{"type":"integer","title":"每日目标（杯）","minimum":1,"maximum":20,"default":8},
+    "background":{"type":"string","title":"背景颜色","maxLength":32,"default":"#ffffff"},
+    "color":{"type":"string","title":"文字颜色","maxLength":32,"default":"#092239"},
+    "primary":{"type":"string","title":"水波颜色","maxLength":32,"default":"#2596ff"}
+  }}
+}

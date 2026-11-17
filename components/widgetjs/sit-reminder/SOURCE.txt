@@ -1,0 +1,3 @@
+来源：https://github.com/widget-js/widgets/tree/714802e66336133396ab55463eb5a26d08fc0788/src/widgets/sit-reminder
+许可：随包GPL-2.0，原文件散列见components/widgetjs/reminder-source/SOURCE_FILES.json。
+保留原三滑块范围、10秒鼠标活动口径、提醒双按钮、全屏倒计时与TextSwitcher模板/SCSS。窗口/广播与网页计时改为SoulDesk核心后台和固定休息角色，Motion改CSS。默认关闭，显式开启才在内存读取坐标，不存轨迹、不上传。需同时开启灵动通知显示提醒；点击休息一下才全屏/聚焦，Esc或结束休息退出。控制卡隐藏不停止已启用任务，全局隐藏不弹出专用层。

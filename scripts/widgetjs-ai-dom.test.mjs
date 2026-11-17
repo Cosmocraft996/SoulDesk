@@ -1,0 +1,9 @@
+// 原Vue菜单在离线DOM执行事件；不是桌面鼠标或浏览器视觉验收。
+import test from'node:test';import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{JSDOM}from'jsdom';
+const dom=new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>',{url:'http://fixture.local/'});for(const key of ['window','document','Element','HTMLElement','SVGElement','Node','navigator'])Object.defineProperty(globalThis,key,{value:key==='window'?dom.window:key==='document'?dom.window.document:dom.window[key],configurable:true});
+const{createApp,h,provide,reactive,nextTick}=await import('vue');const{parse,compileScript}=await import('vue/compiler-sfc');test.after(()=>dom.window.close());
+test('原导图菜单的指针按下不提前隐藏，复制与查看点击可分别到达',async()=>{
+  const source=readFileSync('components/widgetjs/ai-source/parts/ContextMenu.vue','utf8'),descriptor=parse(source).descriptor,compiled=compileScript(descriptor,{id:'ai_menu_test',inlineTemplate:true}).content.replace(/from\s*['"]vue['"]/g,'from '+JSON.stringify(import.meta.resolve('vue'))),{default:Menu}=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+  const generator=reactive({menu:{visible:true,left:0,top:0}});let copies=0,views=0;const app=createApp({setup(){provide('ai-generator',generator);return()=>h('div',{onPointerdown:()=>generator.menu.visible=false},[h(Menu,{onCopy:()=>copies++,onView:()=>views++})]);}});app.mount('#app');
+  try{for(const index of [0,1]){generator.menu.visible=true;await nextTick();const item=document.querySelectorAll('.context-menu-item')[index];item.dispatchEvent(new dom.window.Event('pointerdown',{bubbles:true}));await nextTick();assert.equal(generator.menu.visible,true,'按下菜单项时菜单应保持可见，等待同一点击完成');item.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));await nextTick();assert.equal(generator.menu.visible,false);}assert.equal(copies,1);assert.equal(views,1);}finally{app.unmount();}
+});

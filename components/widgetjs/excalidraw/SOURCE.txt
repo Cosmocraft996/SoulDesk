@@ -1,0 +1,9 @@
+来源：https://github.com/rtugeek/excalidraw
+固定提交：5771e20a9eb40365d75170589b1d7a8ab1cb1af4
+原始标识：widgetjs.cn.excalidraw.default
+原文件：index.tsx、components/ExampleApp.tsx、components/ExampleApp.scss、initialData.tsx、excalidraw.widget.ts。
+图形库版本：@excalidraw/excalidraw 0.18.0，与原pnpm-lock.yaml一致；该库MIT许可证见LICENSE.txt。包装项目未附许可证，按本机自用保留来源。
+保留完整图形库、中文、初始字体/网格、绘图/文本/图片/图形库/本地打开与导出；234个原字体与字体子集工作线程随包提供，原生文件操作仅接收用户选择。
+原独立窗口/托盘/关闭隐藏改为SoulDesk已有展示协调。新增按实例自动保存和重试，文档上限32 MiB；文件打开总量16 MiB、保存32 MiB，取消或错误不冒充成功。每次显式保存经用户选择，返回无持久文件句柄，与browser-fs-access的无句柄模式一致。
+网页嵌入使用原库的地址校验及渲染；web.embed仅允许HTTPS子页面与演示/全屏，不授予弹窗、顶层导航或宿主接口。剪贴板通过独立的clipboard.read/write浏览器权限声明使用，隐藏试加载不授予；用户点击的外链由宿主校验后打开。
+真实桌面、剪贴板、原生对话框、字体导出和长时间绘图仍待验证；构建及逻辑检查不替代界面验收。

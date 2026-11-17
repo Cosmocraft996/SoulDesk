@@ -1,0 +1,6 @@
+剪切板与AI剪切板界面来源：https://github.com/rtugeek/clipboard
+固定版本：2482fc6b238983f3fe8f2aecf042d92a9b29c9e2
+该固定树没有许可证、package.json没有声明；用户已明确自用并授权移植。51份原文件的路径、长度和SHA256保存在同目录SOURCE_FILES.json。
+原Vue/SCSS模板保留，WidgetJS/Electron接口替换为SoulDesk固定能力；不运行原远程代码。
+AI导图和翻译复用已移植的rtugeek/ai固定0160f55feabd19421953c687eba033a707a8c3c2，相关GPL许可证随包提供；依赖许可证见THIRD_PARTY_LICENSES.txt。
+历史与两类工具文档按Windows用户、实例及工具加密，密钥仅保存在后台。采集、快捷键及跨应用粘贴默认关闭。

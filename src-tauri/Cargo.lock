@@ -3983,6 +3983,9 @@ dependencies = [
 name = "souldesk"
 version = "0.5.0"
 dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "flate2",
  "futures-util",
  "mime_guess",
  "percent-encoding",
@@ -4007,6 +4010,7 @@ dependencies = [
  "tokio-util",
  "url",
  "uuid",
+ "webview2-com",
  "windows",
  "windows-sys 0.61.2",
  "winreg 0.55.0",

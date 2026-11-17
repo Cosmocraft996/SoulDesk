@@ -1,0 +1,2 @@
+import{createApp}from'vue';import ElementPlus from'element-plus';import'element-plus/dist/index.css';import{connectHost}from'../../../sdk/host.js';import App from'./App.vue';import Assistant from'./Assistant.vue';import'./original-theme.css';import'./markmap.css';import'./style.css';
+const host=await connectHost(),variant=document.body.dataset.aiVariant??'translate';const app=createApp(variant==='assistant'?Assistant:App,{host,variant});app.use(ElementPlus);app.mount('#app');await host.ready();window.addEventListener('pagehide',()=>app.unmount(),{once:true});

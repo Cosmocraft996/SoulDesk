@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-assistant-close-session"
+description = "Enables the assistant_close_session command without any pre-configured scope."
+commands.allow = ["assistant_close_session"]
+
+[[permission]]
+identifier = "deny-assistant-close-session"
+description = "Denies the assistant_close_session command without any pre-configured scope."
+commands.deny = ["assistant_close_session"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-job-surface-failed"
+description = "Enables the job_surface_failed command without any pre-configured scope."
+commands.allow = ["job_surface_failed"]
+
+[[permission]]
+identifier = "deny-job-surface-failed"
+description = "Denies the job_surface_failed command without any pre-configured scope."
+commands.deny = ["job_surface_failed"]

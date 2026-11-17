@@ -1,0 +1,17 @@
+{
+  "neutral": "#8E8E93",
+  "presets": [
+    { "name": "蓝色", "color": "#0A84FF" },
+    { "name": "绿色", "color": "#30D158" },
+    { "name": "橙色", "color": "#FF9F0A" },
+    { "name": "紫色", "color": "#BF5AF2" },
+    { "name": "粉色", "color": "#FF375F" },
+    { "name": "青色", "color": "#40C8E0" },
+    { "name": "红色", "color": "#FF453A" },
+    { "name": "黄色", "color": "#FFD60A" },
+    { "name": "靛蓝", "color": "#5E5CE6" },
+    { "name": "薄荷", "color": "#63E6E2" },
+    { "name": "天蓝", "color": "#64D2FF" },
+    { "name": "棕色", "color": "#AC8E68" }
+  ]
+}

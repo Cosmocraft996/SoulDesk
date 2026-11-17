@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"pomodoro-window","description":"番茄专用窗仅通过固定桥接控制当前计时和所属窗口，不开放通用窗口及系统输入命令","windows":["pomodoro-window-*"],"permissions":["core:event:default","allow-open-session","allow-close-session","allow-widget-request","allow-surface-failed"]}

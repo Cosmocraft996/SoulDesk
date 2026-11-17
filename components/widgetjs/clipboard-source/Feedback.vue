@@ -1,0 +1,5 @@
+<script setup>
+import{inject}from'vue';const ui=inject('clipboard-ui');
+</script>
+<template><div v-if="ui.state.error||ui.state.status.actionError||ui.state.notice||ui.state.actionUncertain||ui.state.mutationUncertain" class="feedback"><p v-if="ui.state.error||ui.state.status.actionError" role="alert">{{ui.state.error||ui.state.status.actionError}}</p><p v-if="ui.state.notice" role="status">{{ui.state.notice}}</p><template v-if="ui.state.actionUncertain"><el-button size="small" :disabled="ui.state.busy" @click="ui.run(()=>ui.client.readAction())">读取动作结果</el-button><el-button v-if="ui.state.canRetryAction" size="small" :disabled="ui.state.busy" @click="ui.run(()=>ui.client.retryAction())">重试原动作请求</el-button></template><el-button v-if="ui.state.mutationUncertain" size="small" :disabled="ui.state.busy" @click="ui.run(()=>ui.client.retryMutation())">重试原保存请求</el-button></div></template>
+<style scoped>.feedback{font-size:12px;padding:4px 12px;max-height:90px;overflow:auto;flex-shrink:0;background:#fff}.feedback p{margin:3px 0;white-space:pre-wrap}[role=alert]{color:#b63838}[role=status]{color:#267b4d}</style>

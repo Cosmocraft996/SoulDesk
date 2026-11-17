@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.server",
+  "name": "服务器监控",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {
+    "width": 360,
+    "height": 560
+  },
+  "minSize": {
+    "width": 320,
+    "height": 320
+  },
+  "capabilities": [
+    "storage.instance",
+    "servers.monitor",
+    "assets.local",
+    "clipboard.write",
+    "links.open",
+    "documents.user"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "background",
+      "color",
+      "borderColor",
+      "fontSize",
+      "radius"
+    ],
+    "properties": {
+      "background": {
+        "type": "string",
+        "title": "背景颜色",
+        "maxLength": 32,
+        "default": "#000000"
+      },
+      "color": {
+        "type": "string",
+        "title": "文字颜色",
+        "maxLength": 32,
+        "default": "#ffffff"
+      },
+      "borderColor": {
+        "type": "string",
+        "title": "边框颜色",
+        "maxLength": 32,
+        "default": "#333333"
+      },
+      "fontSize": {
+        "type": "integer",
+        "title": "字体大小",
+        "minimum": 12,
+        "maximum": 28,
+        "default": 16
+      },
+      "radius": {
+        "type": "integer",
+        "title": "圆角",
+        "minimum": 0,
+        "maximum": 60,
+        "default": 24
+      }
+    }
+  }
+}

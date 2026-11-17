@@ -14,7 +14,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "=2.12.5", features = ["tray-icon"] }
+tauri = { version = "=2.12.5", features = ["tray-icon", "unstable"] }
 tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-global-shortcut = "=2.4.1"
 tauri-plugin-notification = "=2.8.1"
@@ -23,13 +23,16 @@ tauri-plugin-updater = { version = "=2.14.1", default-features = false, features
 # 更新插件使用0.13；补齐SOCKS5，不升级现有业务客户端。
 reqwest-updater = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 sha2 = "=0.10.9"
 uuid = { version = "=1.29.2", features = ["v4", "serde"] }
 mime_guess = "=2.0.5"
+flate2 = "=1.1.11"
 percent-encoding = "2"
+base64 = "=0.22.1"
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "=0.7.20"
 reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls", "socks", "json"] }
@@ -40,7 +43,8 @@ url = "2"
 rust_decimal = { version = "=1.43.0", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "=0.62.2", features = ["Win32_UI_Accessibility", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant"] }
-windows-sys = { version = "0.61", features = ["Win32_Media_Audio", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Power", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
+webview2-com = "=0.39.1"
+windows = { version = "=0.62.2", features = ["Win32_UI_Accessibility", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Data_Xml_Dom", "UI_Notifications"] }
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_System_Memory", "Win32_Security_Cryptography", "Win32_Media_Audio", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Power", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_Time", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Wdk_Graphics_Direct3D", "Win32_System_Performance", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
 winreg = "0.55"
 tauri-winrt-notification = "=0.8.1"

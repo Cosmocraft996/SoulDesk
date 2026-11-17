@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"assistant-shell","description":"网页助手的本机壳仅拥有专用会话、有限请求及故障报告；远程网页和登录窗口不授予IPC权限","webviews":["assistant-shell-*"],"permissions":["core:event:default","allow-assistant-open-session","allow-assistant-close-session","allow-assistant-widget-request","allow-assistant-surface-failed"]}

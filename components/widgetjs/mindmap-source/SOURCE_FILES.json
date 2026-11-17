@@ -1,0 +1,241 @@
+{
+  "repository": "rtugeek/mindmap",
+  "revision": "9e8ff6ace455e7930117dec3816821ada51c48ab",
+  "files": [
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\button-group.tsx",
+      "target": "editor\\components\\ui\\button-group.tsx",
+      "sha256": "c4e227a1b988025af5a9940ee9e500c0f3172b0da21e00e59c254841727cbff0"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\button.tsx",
+      "target": "editor\\components\\ui\\button.tsx",
+      "sha256": "e16065e44f327abb63506e7aa4c354639002407dd461e3746079bd5a7cb874bf"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\context-menu.tsx",
+      "target": "editor\\components\\ui\\context-menu.tsx",
+      "sha256": "4c8eafd4d80cd30f9ceae363a473a0ac39c41b20278ea10165c8a00f9ee2cb3e"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\dialog.tsx",
+      "target": "editor\\components\\ui\\dialog.tsx",
+      "sha256": "c22ff6be40a3fe0772f8e4ac26dd703e37a00a3e846da11e6938d837ab3a62dd"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\input.tsx",
+      "target": "editor\\components\\ui\\input.tsx",
+      "sha256": "3eb902e03c45ba3a72f0912bab41c6ae20189c8c5c6dd071a72cb229bcee336f"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\kbd.tsx",
+      "target": "editor\\components\\ui\\kbd.tsx",
+      "sha256": "11cd4247eddf438f0ed8fb9226f87be3b2907d2a87a138a4fdee514052e0801b"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\separator.tsx",
+      "target": "editor\\components\\ui\\separator.tsx",
+      "sha256": "bf1bf92fcf2966950277484828c36e6611f36e61ed15242df2c7cbfefffaedd8"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\spinner.tsx",
+      "target": "editor\\components\\ui\\spinner.tsx",
+      "sha256": "cbf9073613aed22ffd4ba21219adc1d1b8dce311d4280800f772b5eae587eeff"
+    },
+    {
+      "source": "packages\\mindmap\\src\\components\\ui\\toggle.tsx",
+      "target": "editor\\components\\ui\\toggle.tsx",
+      "sha256": "661ae38de5f49ea1ab1bbd05865ba4f61dd818e922718e0b7279a690ad27e1a5"
+    },
+    {
+      "source": "packages\\mindmap\\src\\constants\\flow-constants.ts",
+      "target": "editor\\constants\\flow-constants.ts",
+      "sha256": "08262a88ace5e23e9fc145c5ff0a1379be047c4e84fec6bca19444e0d68f932c"
+    },
+    {
+      "source": "packages\\mindmap\\src\\index.tsx",
+      "target": "editor\\index.tsx",
+      "sha256": "40bee3e669572a5f4b91cd97de45140650961f279acaab09b90b807ee6307ef5"
+    },
+    {
+      "source": "packages\\mindmap\\src\\lib\\utils.ts",
+      "target": "editor\\lib\\utils.ts",
+      "sha256": "5bc9ffc3d0b799807c464fd04462e08b0f3c3f02155863cf8e65936c26cbea90"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\algo-node.tsx",
+      "target": "editor\\mind-map\\algo-node.tsx",
+      "sha256": "c32f3e68bfecd383185d3a13258f2c02103bcec06bcc3497150d6a3011653ad4"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\delete-node-dialog.tsx",
+      "target": "editor\\mind-map\\delete-node-dialog.tsx",
+      "sha256": "8d64c673a00c7f1b2fd9da07d58c153917aaf51a161bf60e162d1af9a101733c"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\index.css",
+      "target": "editor\\mind-map\\index.css",
+      "sha256": "482be40f0cbee76c0bb23fc286172058f4547caec333f062d9fdcbac494e4ed2"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\index.tsx",
+      "target": "editor\\mind-map\\index.tsx",
+      "sha256": "e0f3e1522aec24fdadd2b829a89127a5a3f8a9eeaf08a89b1041a6add3795b07"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\mind-map-toolbar.tsx",
+      "target": "editor\\mind-map\\mind-map-toolbar.tsx",
+      "sha256": "34293a954f73785d51050d413af79b5496df7607cd0c89934643544c1f0953ab"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\registry.ts",
+      "target": "editor\\mind-map\\registry.ts",
+      "sha256": "3a87fb4501ae2358da55f0f0c5e0f7c402ac7e80c9a13133dbeb0db0124984f9"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\rename-node-dialog.tsx",
+      "target": "editor\\mind-map\\rename-node-dialog.tsx",
+      "sha256": "1dab8a57d143213067a2bba70d37cdceddd99ff455a20ee5a17bbcdfc28a4f94"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\use-graph-dnd.ts",
+      "target": "editor\\mind-map\\use-graph-dnd.ts",
+      "sha256": "af79e34f7b9026581691060fd407c6f919b6761a687415ba7d5e5128ae3251ca"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\use-graph-events.ts",
+      "target": "editor\\mind-map\\use-graph-events.ts",
+      "sha256": "a29ea0561d7de807b59ec959355458d1c9bd38c03f062a97de26728d388dc470"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\use-graph-init.ts",
+      "target": "editor\\mind-map\\use-graph-init.ts",
+      "sha256": "0d20e9f7646df008203d2f361b46b1ef504b3c1e98729276abb10fa085c178af"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\use-graph-operations.ts",
+      "target": "editor\\mind-map\\use-graph-operations.ts",
+      "sha256": "99e884450473e9baf1c1148adb36b619cd4be1658629af330d99877b4c824bdb"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\use-keyboard-shortcuts.ts",
+      "target": "editor\\mind-map\\use-keyboard-shortcuts.ts",
+      "sha256": "f6b9ff0449f13dd5cd0355ef1414b605a5320e59842d660cd71821c6e0b560a7"
+    },
+    {
+      "source": "packages\\mindmap\\src\\mind-map\\utils.ts",
+      "target": "editor\\mind-map\\utils.ts",
+      "sha256": "c2a0c7090f8b2182d7b8ccda5fea054ac190fad8fa71c32c7fe3db3d52a4a335"
+    },
+    {
+      "source": "packages\\mindmap\\src\\style.css",
+      "target": "editor\\style.css",
+      "sha256": "9e19fed2aa07bc952765ce17b2811b608475ebef6628a03e89d6f42d3beebc9d"
+    },
+    {
+      "source": "packages\\mindmap\\src\\types\\MindNode.ts",
+      "target": "editor\\types\\MindNode.ts",
+      "sha256": "87f11794f35abb44fb4aa722cb305845f98bafa7c82729b5d3a732fc5a750f22"
+    },
+    {
+      "source": "src/components/ui/sidebar.tsx",
+      "target": "ui/components/ui/sidebar.tsx",
+      "sha256": "77f4808fa2e017d67743babf784c4d6be2075dc7a6cef863106086e5e35a7a44"
+    },
+    {
+      "source": "src/hooks/use-mobile.ts",
+      "target": "ui/hooks/use-mobile.ts",
+      "sha256": "86cd781770e3b67544538f3816f55e219d43a0ecca79665fd748e9979e0b10ee"
+    },
+    {
+      "source": "src/lib/utils.ts",
+      "target": "ui/lib/utils.ts",
+      "sha256": "5bc9ffc3d0b799807c464fd04462e08b0f3c3f02155863cf8e65936c26cbea90"
+    },
+    {
+      "source": "src/components/ui/button.tsx",
+      "target": "ui/components/ui/button.tsx",
+      "sha256": "a78bfbf064f0aecbfc64e3cd45228ab5bc54912fce7db0dcf99f8c27c1250ce3"
+    },
+    {
+      "source": "src/components/ui/input.tsx",
+      "target": "ui/components/ui/input.tsx",
+      "sha256": "aca03c716617068c0581b2284b3bddd0d3c3be8d8889bdb4f11168f8f779f1d7"
+    },
+    {
+      "source": "src/components/ui/separator.tsx",
+      "target": "ui/components/ui/separator.tsx",
+      "sha256": "5177849b69cd28ac259a386e2af0912f7f35c39ca38e556d18957348f79054cb"
+    },
+    {
+      "source": "src/components/ui/sheet.tsx",
+      "target": "ui/components/ui/sheet.tsx",
+      "sha256": "0f77a82028e28b035a54a580e7051a8822e8108d67294fab2a509d75c2a1c583"
+    },
+    {
+      "source": "src/components/ui/skeleton.tsx",
+      "target": "ui/components/ui/skeleton.tsx",
+      "sha256": "5e045dc0265a2a7ea183bb689b440068b9b18b59affc7039efd85ad1bd083ad8"
+    },
+    {
+      "source": "src/components/ui/tooltip.tsx",
+      "target": "ui/components/ui/tooltip.tsx",
+      "sha256": "7d221a7852e4b2e7a1a3f9ef840b9534460824bae34aaf0ccd8da50de3c4943b"
+    },
+    {
+      "source": "src/components/ui/collapsible.tsx",
+      "target": "ui/components/ui/collapsible.tsx",
+      "sha256": "e2bd6e8747ee761f85294988cb20f845a9fd803553b091522a59fd05e92b19af"
+    },
+    {
+      "source": "src/components/ui/dropdown-menu.tsx",
+      "target": "ui/components/ui/dropdown-menu.tsx",
+      "sha256": "f81c6c012b4d606667f1c76659f6bc81b45e8fb9bb5fc28e73a574bc9febc3d9"
+    },
+    {
+      "source": "src/components/ui/popover.tsx",
+      "target": "ui/components/ui/popover.tsx",
+      "sha256": "69cce089f4a268a6c57ab6f6c68f2bf57d4872e9a300d3e87ca186da9aa63b3c"
+    },
+    {
+      "source": "src/components/ui/label.tsx",
+      "target": "ui/components/ui/label.tsx",
+      "sha256": "43e7cadacf1e0d71c1668dc388271656d2db8c4d45f2144d52d594f9aca31ca5"
+    },
+    {
+      "source": "src/components/ui/dialog.tsx",
+      "target": "ui/components/ui/dialog.tsx",
+      "sha256": "ae5fcd184edd1f8070ffab1e1a9e29238ed0e5023fc6d0ee12ea56fe8027367e"
+    },
+    {
+      "source": "src/components/ui/empty.tsx",
+      "target": "ui/components/ui/empty.tsx",
+      "sha256": "1523589e7664f743fc6cddf7daa7b7c030fbac6c5613a80f79478562277eda56"
+    },
+    {
+      "source": "src/components/TextType.jsx",
+      "target": "ui/components/TextType.jsx",
+      "sha256": "9d4a5dff7987f1b12ffbc6a03ef150c2ea54994ae080f27aae36058ff8fb5583"
+    },
+    {
+      "source": "src/components/TextType.css",
+      "target": "ui/components/TextType.css",
+      "sha256": "2457f7e8ab46f582b64ce016f6209dcc8c2acb7fd0b76b68510779e8fbc618e0"
+    },
+    {
+      "source": "src/components/TextType.d.ts",
+      "target": "ui/components/TextType.d.ts",
+      "sha256": "e12a9524553ecb52d0304e4958cd5bc0774f32aaae2e5a04ea5fec245a8fecdb"
+    },
+    {
+      "source": "src/assets/logo.png",
+      "target": "logo.png",
+      "sha256": "7cb43d91a76ac76bec15ea3c79534d54f4f54b98e8e4268dc4891749a9f87d56"
+    },
+    {
+      "source": "src/index.css",
+      "target": "base.css",
+      "sha256": "727e293f25be84a16fcfaa95adc1a2d9e1ab9c3b51e9fd89d376bc3c77408a39"
+    }
+  ]
+}

@@ -1,6 +1,24 @@
+mod ai_credentials;
+mod ai_host;
+mod ai_protocol;
+mod ai_transport;
 mod alert_store;
 pub mod alerts;
+mod assistant_host;
+mod assistant_state;
+mod assistant_webviews;
 mod business;
+mod clipboard_actions;
+mod clipboard_capture;
+mod clipboard_history;
+mod clipboard_host;
+mod clipboard_native;
+mod clipboard_shortcuts;
+mod clipboard_surface;
+mod clipboard_tools;
+mod coin;
+mod coin_live;
+mod content;
 pub mod desktop_geometry;
 #[cfg(windows)]
 mod desktop_input;
@@ -8,19 +26,49 @@ mod desktop_input;
 mod desktop_native;
 mod desktop_probe;
 mod desktop_widgets;
+mod documents;
+mod equity;
+mod hardware;
+mod hardware_details;
 mod integration;
+mod job_host;
+mod job_knowledge;
+mod job_knowledge_host;
+mod job_protocol;
+mod job_state;
+mod job_surfaces;
+mod job_webviews;
+mod key_capture;
+mod keyboard;
+mod keyboard_host;
+mod labor;
+mod launcher;
 pub mod market;
+mod media;
 pub mod network;
 mod packages;
 mod panel;
+mod pomodoro;
+mod pomodoro_window;
+mod pomodoro_window_host;
+mod pomodoro_window_native;
 mod power;
 mod presets;
 mod recovery;
+mod reminder_engine;
+mod reminder_host;
+mod reminder_state;
+mod reminder_store;
+mod server_monitor;
+mod shared_library;
 mod soak;
 mod store;
+mod todo;
 mod updates;
 mod verification;
 mod view_probe;
+mod water;
+mod weather;
 mod widgets;
 mod windows;
 
@@ -40,7 +88,7 @@ use serde_json::{json, Value};
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -59,15 +107,29 @@ pub async fn run_sleep_probe(report: std::path::PathBuf) -> Result<(), String> {
     recovery::run(report, true).await
 }
 pub struct Core {
+    ai: ai_host::Service,
+    assistant: assistant_host::Service,
+    jobs: job_host::Service,
+    clipboard: clipboard_host::Service,
     business: business::Service,
-    store: Store,
+    coin_live: coin_live::Service,
+    coin_index: coin::IndexCache,
+    hardware: hardware::Service,
+    keyboard: keyboard_host::Service,
+    reminders: reminder_host::Service,
+    water: water::Service,
+    labor: labor::Service,
+    todo: todo::Service,
+    pomodoro: pomodoro::Service,
+    pomodoro_windows: pomodoro_window_native::Coordinator,
+    store: Arc<Store>,
     sessions: widgets::Sessions,
     visibility: Mutex<windows::Visibility>,
     window_actions: Mutex<()>,
     quitting: AtomicBool,
     ticks: AtomicU64,
     active_tasks: AtomicU64,
-    last_error: Mutex<Option<String>>,
+    last_error: Arc<Mutex<Option<String>>>,
     verification: Option<verification::Config>,
     shortcut_hits: AtomicU64,
     shortcut_trace: Mutex<Option<Value>>,
@@ -125,6 +187,9 @@ async fn import_package(app: AppHandle) -> AppResult<Value> {
     {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
+        if v.dialog {
+            return Err("BUSY: 请先完成当前文件对话框".into());
+        }
         v.dialog = true;
         v.epoch += 1;
     }
@@ -153,10 +218,13 @@ async fn create_instance(app: AppHandle, package_id: String) -> AppResult<String
         return Err("请先恢复组件显示".into());
     }
     packages::ensure_preset(&app, &package_id).await?;
-    let id = widgets::create_instance(&app.state::<Core>().store, &package_id)?;
+    let id = widgets::create_instance_at(&app.state::<Core>().store, &package_id, "panel")?;
     let target = id.clone();
     let shown = tauri::async_runtime::spawn_blocking(move || {
-        windows::serialized(&app, |app| windows::show_instance(app, &target))
+        windows::serialized(&app, |app| {
+            windows::show_panel(app, true)?;
+            windows::show_instance(app, &target)
+        })
     })
     .await
     .map_err(err)?;
@@ -175,7 +243,6 @@ async fn manage_instance(
 ) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&app, |app| {
-            let core = app.state::<Core>();
             match action.as_str() {
                 "resize" => windows::resize_instance(
                     app,
@@ -183,10 +250,7 @@ async fn manage_instance(
                     width.ok_or("缺少宽度")?,
                     height.ok_or("缺少高度")?,
                 )?,
-                "remove" => {
-                    windows::hide_instance(app, &instance)?;
-                    widgets::remove_instance(&core.store, &core.sessions, &instance)?;
-                }
+                "remove" => windows::remove_instance(app, &instance)?,
                 _ => return Err("INVALID_ARGUMENT: 未知实例操作".into()),
             }
             windows::changed(app)
@@ -206,6 +270,251 @@ async fn unregister_package(app: AppHandle, package_id: String) -> AppResult<()>
     app.emit("host:changed", ()).map_err(err)
 }
 #[tauri::command]
+fn assistant_open_session(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    instance: String,
+    expected_digest: Option<String>,
+) -> AppResult<Value> {
+    let _native = core.store.native_actions.lock().map_err(err)?;
+    if !assistant_host::shell_role(webview.label(), &instance)
+        || !core.assistant.current_window(webview.label(), &instance)
+        || webview.window().label()
+            != webview
+                .label()
+                .replacen("assistant-shell-", "assistant-panel-", 1)
+    {
+        return Err("PRESENTATION_EXPIRED: 当前视图不是有效的助手本机壳".into());
+    }
+    let value = widgets::open_display_session(
+        &core.store,
+        &core.sessions,
+        webview.label(),
+        &instance,
+        expected_digest.as_deref(),
+    )?;
+    let token = value["token"]
+        .as_str()
+        .ok_or("SESSION_EXPIRED: 助手会话未建立")?;
+    if let Err(error) = core.assistant.bind(webview.label(), &instance, token) {
+        core.sessions.0.lock().map_err(err)?.remove(token);
+        return Err(error);
+    }
+    core.assistant.kick(webview.app_handle(), &instance);
+    Ok(value)
+}
+#[tauri::command]
+fn assistant_close_session(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    token: String,
+) -> AppResult<()> {
+    if !webview.label().starts_with("assistant-shell-") {
+        return Err("CAPABILITY_DENIED: 仅助手本机壳可关闭此会话".into());
+    }
+    let _native = core.store.native_actions.lock().map_err(err)?;
+    let mut sessions = core.sessions.0.lock().map_err(err)?;
+    if sessions
+        .get(&token)
+        .is_some_and(|s| s.window == webview.label())
+    {
+        let instance = core.assistant.close_session(webview.label(), &token)?;
+        sessions.remove(&token);
+        if let Some(id) = instance {
+            core.assistant.kick(webview.app_handle(), &id);
+        }
+    }
+    Ok(())
+}
+#[tauri::command]
+fn assistant_widget_request(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    token: String,
+    method: String,
+    args: Value,
+) -> AppResult<Value> {
+    if !webview.label().starts_with("assistant-shell-") {
+        return Err("CAPABILITY_DENIED: 仅助手本机壳可调用此接口".into());
+    }
+    if matches!(method.as_str(), "settings.get") {
+        // 沿用通用只读设置契约，仍先核对当前助手会话，不能借此访问其他能力。
+        core.assistant.access(
+            &core.store,
+            &core.sessions,
+            webview.label(),
+            &token,
+            "assistant.status",
+            Value::Null,
+        )?;
+        if !(args.is_null() || args.as_object().is_some_and(|o| o.is_empty())) {
+            return Err("INVALID_ARGUMENT: 读取设置不接受参数".into());
+        }
+        return widgets::gateway(
+            &core.store,
+            &core.sessions,
+            webview.label(),
+            &token,
+            &method,
+            args,
+        );
+    }
+    let (id, value) = core.assistant.access(
+        &core.store,
+        &core.sessions,
+        webview.label(),
+        &token,
+        &method,
+        args,
+    )?;
+    if method != "assistant.status" {
+        core.assistant.kick(webview.app_handle(), &id);
+    }
+    Ok(value)
+}
+#[tauri::command]
+fn assistant_surface_failed(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    instance: String,
+    _message: Option<String>,
+) -> AppResult<()> {
+    if !assistant_host::shell_role(webview.label(), &instance) {
+        return Err("CAPABILITY_DENIED: 当前视图不是助手本机壳".into());
+    }
+    core.assistant.shell_failed(webview.label(), &instance)?;
+    core.assistant.kick(webview.app_handle(), &instance);
+    Ok(())
+}
+#[tauri::command]
+fn job_open_session(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    instance: String,
+    expected_digest: Option<String>,
+) -> AppResult<Value> {
+    let _native = core.store.native_actions.lock().map_err(err)?;
+    let surface = core
+        .jobs
+        .surfaces
+        .lock()
+        .map_err(err)?
+        .shell(webview.label(), &instance)
+        .ok_or("PRESENTATION_EXPIRED: 当前视图不是有效AI直聘本机壳")?;
+    if !job_surfaces::shell_role(webview.label(), &instance)
+        || !core.jobs.current_window(webview.label(), &instance)
+        || webview.window().label() != surface.parent()
+    {
+        return Err("CAPABILITY_DENIED: AI直聘本机壳父窗口不符".into());
+    }
+    let value = widgets::open_display_session(
+        &core.store,
+        &core.sessions,
+        webview.label(),
+        &instance,
+        expected_digest.as_deref(),
+    )?;
+    let token = value["token"]
+        .as_str()
+        .ok_or("SESSION_EXPIRED: AI直聘会话未建立")?;
+    if let Err(error) = core
+        .jobs
+        .bind(&core.store, webview.label(), &instance, token)
+    {
+        core.sessions.0.lock().map_err(err)?.remove(token);
+        return Err(error);
+    }
+    core.jobs.kick(webview.app_handle(), &instance);
+    Ok(value)
+}
+#[tauri::command]
+fn job_close_session(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    token: String,
+) -> AppResult<()> {
+    if job_surfaces::role(webview.label()).is_none() {
+        return Err("CAPABILITY_DENIED: 仅AI直聘本机壳可关闭此会话".into());
+    }
+    let _native = core.store.native_actions.lock().map_err(err)?;
+    let mut sessions = core.sessions.0.lock().map_err(err)?;
+    if let Some(instance) = sessions
+        .get(&token)
+        .filter(|s| s.window == webview.label())
+        .map(|s| s.instance.clone())
+    {
+        core.jobs
+            .surfaces
+            .lock()
+            .map_err(err)?
+            .close_session(webview.label(), &token)?;
+        sessions.remove(&token);
+        core.jobs.kick(webview.app_handle(), &instance);
+    }
+    Ok(())
+}
+#[tauri::command]
+async fn job_widget_request(
+    webview: tauri::Webview,
+    token: String,
+    method: String,
+    args: Value,
+) -> AppResult<Value> {
+    if job_surfaces::role(webview.label()).is_none() {
+        return Err("CAPABILITY_DENIED: 仅AI直聘本机壳可调用此接口".into());
+    }
+    let app = webview.app_handle();
+    if matches!(method.as_str(), "settings.get" | "runtime.ready") {
+        let core = app.state::<Core>();
+        let (info, _) = core.jobs.access(
+            &core.store,
+            &core.sessions,
+            webview.label(),
+            &token,
+            "jobs.surface.info",
+            Value::Null,
+        )?;
+        let value = widgets::gateway(
+            &core.store,
+            &core.sessions,
+            webview.label(),
+            &token,
+            &method,
+            args,
+        )?;
+        if method == "runtime.ready" {
+            core.jobs
+                .surfaces
+                .lock()
+                .map_err(err)?
+                .ready(webview.label(), &token)?;
+            if let Some(i) = info["instanceId"].as_str() {
+                core.jobs.kick(app, i);
+            }
+        }
+        return Ok(value);
+    }
+    if !method.starts_with("jobs.") {
+        return Err("CAPABILITY_DENIED: AI直聘本机壳只开放固定业务和只读设置".into());
+    }
+    job_host::gateway(app, webview.label(), &token, &method, args).await
+}
+#[tauri::command]
+fn job_surface_failed(
+    webview: tauri::Webview,
+    core: State<'_, Core>,
+    instance: String,
+    _message: Option<String>,
+) -> AppResult<()> {
+    if !job_surfaces::shell_role(webview.label(), &instance) {
+        return Err("CAPABILITY_DENIED: 当前视图不是AI直聘本机壳".into());
+    }
+    core.jobs
+        .shell_failed(&core.store, webview.label(), &instance)?;
+    core.jobs.kick(webview.app_handle(), &instance);
+    Ok(())
+}
+#[tauri::command]
 fn open_session(
     window: tauri::WebviewWindow,
     core: State<'_, Core>,
@@ -215,6 +524,29 @@ fn open_session(
     if let Some(value) = packages::session(&core, window.label(), &instance)? {
         return Ok(value);
     }
+    if reminder_host::surface_role(window.label(), &instance).is_some()
+        && !core.reminders.current_window(window.label(), &instance)
+    {
+        return Err("SESSION_EXPIRED: 专用显示已被关闭或替换".into());
+    }
+    if pomodoro_window::role(window.label(), &instance)
+        && !core
+            .pomodoro_windows
+            .service
+            .current_window(window.label(), &instance)
+    {
+        return Err("PRESENTATION_EXPIRED: 番茄专用窗已关闭或替换".into());
+    }
+    if clipboard_surface::role(window.label(), &instance).is_some()
+        && !core.clipboard.current_window(window.label(), &instance)
+    {
+        return Err("PRESENTATION_EXPIRED: 剪切板专用显示已关闭或替换".into());
+    }
+    if clipboard_tools::role(window.label(), &instance).is_some()
+        && !core.ai.current_tool(&core.store, window.label(), &instance)
+    {
+        return Err("PRESENTATION_EXPIRED: 剪切板工具已关闭或替换".into());
+    }
     let mut value = widgets::open_display_session(
         &core.store,
         &core.sessions,
@@ -222,7 +554,55 @@ fn open_session(
         &instance,
         expected_digest.as_deref(),
     )?;
+    if pomodoro_window::role(window.label(), &instance) {
+        let token = value["token"]
+            .as_str()
+            .ok_or("SESSION_EXPIRED: 专用窗会话缺失")?;
+        if let Err(error) = core.pomodoro_windows.service.bind_session(
+            &core.store,
+            window.label(),
+            &instance,
+            token,
+        ) {
+            core.sessions.0.lock().map_err(err)?.remove(token);
+            return Err(error);
+        }
+    }
     value["verify"] = json!(core.verification.is_some());
+    if core
+        .integration
+        .as_ref()
+        .is_some_and(|c| matches!(c.mode.as_str(), "widgetjs" | "widgetjs-resume"))
+    {
+        value["verify"] = json!(true);
+        value["verificationMode"] = json!("widgetjs");
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=convert") {
+            value["verificationMode"] = json!("widgetjs-convert-render");
+        }
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=water-reminder") {
+            value["verificationMode"] = json!("widgetjs-water");
+        }
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=labor") {
+            value["verificationMode"] = json!("widgetjs-labor");
+        }
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=server") {
+            value["verificationMode"] = json!("widgetjs-server");
+        }
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=hotspots") {
+            value["verificationMode"] = json!("widgetjs-hotspots");
+        }
+        if std::env::args().any(|arg| arg == "--widgetjs-check-package=coins") {
+            value["verificationMode"] = json!("widgetjs-coins");
+        }
+        if std::env::args().any(|arg| {
+            matches!(
+                arg.as_str(),
+                "--widgetjs-check-package=photo" | "--widgetjs-check-package=sticker"
+            )
+        }) {
+            value["verificationMode"] = json!("widgetjs-photo");
+        }
+    }
     Ok(value)
 }
 #[tauri::command]
@@ -236,7 +616,13 @@ fn close_session(
         .get(&token)
         .is_some_and(|s| s.window == window.label())
     {
+        core.pomodoro_windows
+            .service
+            .session_closed(window.label(), &token)?;
         sessions.remove(&token);
+        core.ai.cancel_session(&core.store, &token)?;
+        core.coin_live
+            .release_owners(&std::collections::HashSet::from([token]))?;
     }
     Ok(())
 }
@@ -249,6 +635,51 @@ async fn widget_request(
     method: String,
     args: Value,
 ) -> AppResult<Value> {
+    keyboard_host::overlay_method(window.label(), &method)?;
+    reminder_host::surface_method(window.label(), &method)?;
+    clipboard_surface::surface_method(window.label(), &method)?;
+    pomodoro_window_native::surface_method(window.label(), &method)?;
+    if method.starts_with("pomodoro.window.") {
+        return pomodoro_window_native::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("jobs.") {
+        return job_host::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if window.label().starts_with("clipboard-tool-") {
+        let core = app.state::<Core>();
+        let instance = core
+            .sessions
+            .0
+            .lock()
+            .map_err(err)?
+            .get(&token)
+            .filter(|s| s.window == window.label() && s.preview.is_none())
+            .map(|s| s.instance.clone())
+            .ok_or("SESSION_EXPIRED: 工具会话无效")?;
+        if !core.ai.current_tool(&core.store, window.label(), &instance) {
+            return Err("PRESENTATION_EXPIRED: 工具已关闭或替换".into());
+        }
+    }
+    if method.starts_with("island.") || method.starts_with("sit.") || method.starts_with("phone.") {
+        return reminder_host::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("keyboard.") {
+        return keyboard_host::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("assistant.") {
+        let (id, value) = core.assistant.access(
+            &core.store,
+            &core.sessions,
+            window.label(),
+            &token,
+            &method,
+            args,
+        )?;
+        if method != "assistant.status" {
+            core.assistant.kick(&app, &id);
+        }
+        return Ok(value);
+    }
     if method == "view.openDetails" {
         let id = {
             let sessions = core.sessions.0.lock().map_err(err)?;
@@ -259,6 +690,35 @@ async fn widget_request(
             s.instance.clone()
         };
         let page = args["page"].as_str().unwrap_or("quotes").to_owned();
+        if window.label().starts_with("pomodoro-window-") {
+            if !matches!(
+                page.as_str(),
+                "pomodoro-scenes" | "pomodoro-settings" | "pomodoro-history"
+            ) {
+                return Err("CAPABILITY_DENIED: 专用窗只打开番茄钟详情".into());
+            }
+            core.pomodoro_windows.service.business(
+                &core.store,
+                &core.sessions,
+                window.label(),
+                &token,
+                "pomodoro.get",
+                Value::Null,
+                now_ms(),
+            )?;
+        }
+        if let Some(capability) = windows::detail_capability(&page)? {
+            if args.as_object().is_none_or(|value| value.len() != 1) {
+                return Err("INVALID_ARGUMENT: 详情仅接受固定page字段".into());
+            }
+            widgets::require_capability(
+                &core.store,
+                &core.sessions,
+                window.label(),
+                &token,
+                capability,
+            )?;
+        }
         let handle = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
             windows::serialized(&handle, |app| windows::detail_at(app, &id, &page))
@@ -267,12 +727,76 @@ async fn widget_request(
         .map_err(err)??;
         return Ok(Value::Null);
     }
+    if method == "content.live" {
+        return coin_live::gateway(&app, window.label(), &token, args).await;
+    }
+    if method.starts_with("weather.") {
+        return weather::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("ai.") {
+        return ai_host::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("clipboard.") {
+        return clipboard_host::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method == "system.metrics" {
+        return hardware::gateway(&app, window.label(), &token, args).await;
+    }
+    if method == "server.request" {
+        return server_monitor::gateway(&app, window.label(), &token, args).await;
+    }
+    if method == "labor.get" {
+        return labor::gateway(&app, window.label(), &token, args).await;
+    }
+    if method.starts_with("water.") {
+        return water::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("todo.") {
+        return todo::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("pomodoro.") {
+        if window.label().starts_with("pomodoro-window-") {
+            return core.pomodoro_windows.service.business(
+                &core.store,
+                &core.sessions,
+                window.label(),
+                &token,
+                &method,
+                args,
+                now_ms(),
+            );
+        }
+        return pomodoro::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("content.") || method.starts_with("links.") {
+        return content::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("documents.") {
+        return documents::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("media.") {
+        return media::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if method.starts_with("files.") {
+        return launcher::gateway(&app, window.label(), &token, &method, args).await;
+    }
     if method.starts_with("market.")
         || method.starts_with("watchlist.")
         || method.starts_with("alerts.")
     {
         return business::gateway(&app, window.label(), &token, &method, args).await;
     }
+    let reload_instance = if matches!(method.as_str(), "library.bind" | "library.create") {
+        core.sessions
+            .0
+            .lock()
+            .map_err(err)?
+            .get(&token)
+            .filter(|session| session.window == window.label() && session.preview.is_none())
+            .map(|session| session.instance.clone())
+    } else {
+        None
+    };
     let result = widgets::gateway(
         &core.store,
         &core.sessions,
@@ -281,6 +805,16 @@ async fn widget_request(
         &method,
         args,
     );
+    if result
+        .as_ref()
+        .is_ok_and(|value| value["reloadRequired"] == true)
+    {
+        if let Some(instance) = reload_instance {
+            if let Err(error) = app.emit("host:reload-instance", &instance) {
+                core.report(format!("数据源已切换，但其他视图重载通知失败：{error}"));
+            }
+        }
+    }
     if method == "runtime.ready" && result.is_ok() {
         let id = core
             .sessions
@@ -290,7 +824,17 @@ async fn widget_request(
             .get(&token)
             .map(|s| s.instance.clone());
         if let Some(id) = id {
-            windows::ready(&app, window.label(), &id)?;
+            if pomodoro_window::role(window.label(), &id) {
+                core.pomodoro_windows
+                    .service
+                    .book
+                    .lock()
+                    .map_err(err)?
+                    .ready(window.label(), &token, core.pomodoro_windows.now())?;
+                core.pomodoro_windows.kick(&app);
+            } else {
+                windows::ready(&app, window.label(), &id)?;
+            }
         }
     }
     result
@@ -337,9 +881,9 @@ async fn window_action(
 ) -> AppResult<()> {
     let label = window.label();
     let allowed = if label == "main" {
-        true
+        action != "resize-panel"
     } else if label == "edge" {
-        action == "edge-enter"
+        action == "edge-click"
     } else if label.starts_with("detail-") {
         action == "close-detail"
     } else if label == "panel" {
@@ -353,24 +897,36 @@ async fn window_action(
             "idle",
             "float",
             "hide",
+            "remove",
             "detail",
             "interaction-start",
+            "resize-panel",
             "interaction-end",
             "menu-open",
             "menu-close",
         ]
         .contains(&action.as_str())
             && instance.as_ref().is_none_or(|id| {
-                windows::instance(&app, id).is_ok_and(|i| i["location"] == "panel")
+                (id == "panel-groups" && ["menu-open", "menu-close"].contains(&action.as_str()))
+                    || windows::instance(&app, id).is_ok_and(|i| i["location"] == "panel")
             })
     } else if let Some(id) = label.strip_prefix("float-") {
-        ["show", "pin", "hide", "embed", "detail"].contains(&action.as_str())
+        ["show", "pin", "hide", "remove", "embed", "detail"].contains(&action.as_str())
             && instance.as_deref().is_none_or(|given| given == id)
     } else {
         false
     };
     if !allowed {
         return Err("CAPABILITY_DENIED: 当前窗口无此展示权限".into());
+    }
+    if action == "hide-all" {
+        app.state::<Core>().assistant.cancel_all()?;
+    }
+    if action == "remove" {
+        if let Some(id) = &instance {
+            app.state::<Core>().assistant.cancel(id)?;
+            app.state::<Core>().assistant.kick(&app, id);
+        }
     }
     tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&app, |app| {
@@ -382,16 +938,18 @@ async fn window_action(
                 "restore-all" => windows::restore(app),
                 "toggle" => windows::toggle(app),
                 "collapse" => windows::collapse(app),
+                "resize-panel" => windows::resize_panel_width(app),
                 "pin" => windows::pin(app, id()?),
                 "hide" => windows::hide_instance(app, id()?),
+                "remove" => windows::remove_instance(app, id()?),
                 "restore" => windows::restore_instance(app, id()?),
                 "float" => windows::move_to(app, id()?, "desktop"),
                 "embed" => windows::move_to(app, id()?, "panel"),
                 "detail" => windows::detail(app, id()?),
                 "close-detail" => windows::destroy_window(app, window.label()),
-                "edge-enter" => {
+                "edge-click" => {
                     if !app.state::<Core>().visibility.lock().map_err(err)?.hidden {
-                        windows::show_panel(app, false)?;
+                        windows::show_panel(app, true)?;
                         app.state::<Core>()
                             .edge_hits
                             .fetch_add(1, Ordering::Relaxed);
@@ -450,8 +1008,8 @@ async fn window_action(
 #[tauri::command]
 async fn set_panel(
     app: AppHandle,
-    ratio: f64,
-    tint: f64,
+    ratio: Option<f64>,
+    tint: Option<f64>,
     slide_in_ms: Option<u32>,
     slide_out_ms: Option<u32>,
     desktop_double_click: Option<bool>,
@@ -460,8 +1018,12 @@ async fn set_panel(
         windows::serialized(&app, |app| {
             let mut settings: panel::Preferences =
                 serde_json::from_value(windows::panel_preferences(app)?).map_err(err)?;
-            settings.ratio = ratio;
-            settings.tint = tint;
+            if let Some(value) = ratio {
+                settings.ratio = value;
+            }
+            if let Some(value) = tint {
+                settings.tint = value;
+            }
             if let Some(value) = slide_in_ms {
                 settings.slide_in_ms = value;
             }
@@ -477,6 +1039,22 @@ async fn set_panel(
     .await
     .map_err(err)?
 }
+#[tauri::command]
+async fn manage_panel_group(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    change: panel::GroupChange,
+) -> AppResult<()> {
+    if !["main", "panel"].contains(&window.label()) {
+        return Err("CAPABILITY_DENIED: 仅管理与面板可修改分组".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| windows::change_panel_groups(app, change))
+    })
+    .await
+    .map_err(err)?
+}
+
 #[tauri::command]
 async fn save_panel_layout(
     app: AppHandle,
@@ -552,9 +1130,19 @@ fn surface_failed(
     message: String,
 ) -> AppResult<()> {
     let label = window.label();
+    if pomodoro_window::role(label, &instance) {
+        return app
+            .state::<Core>()
+            .pomodoro_windows
+            .failed(&app, label, &instance);
+    }
     if label != "panel"
         && label != format!("float-{instance}")
         && label != format!("detail-{instance}")
+        && label != format!("keyboard-{instance}")
+        && reminder_host::surface_role(label, &instance).is_none()
+        && clipboard_surface::role(label, &instance).is_none()
+        && clipboard_tools::role(label, &instance).is_none()
     {
         return Err("CAPABILITY_DENIED: 无效展示来源".into());
     }
@@ -780,12 +1368,16 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .preference("shortcut")
         .unwrap_or("Ctrl+Alt+Space".into());
     app.manage(Core {
+        ai: Default::default(),
+        assistant: Default::default(),
+        jobs: Default::default(),
+        clipboard: Default::default(),
         business: business::Service {
             feed,
             subscriptions: Default::default(),
             network_ready: AtomicBool::new(network_ready),
         },
-        store,
+        store: Arc::new(store),
         sessions: Default::default(),
         visibility: Mutex::new(windows::Visibility {
             hidden,
@@ -795,7 +1387,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         quitting: AtomicBool::new(false),
         ticks: AtomicU64::new(0),
         active_tasks: AtomicU64::new(0),
-        last_error: Mutex::new(initial_error),
+        last_error: Arc::new(Mutex::new(initial_error)),
         verification,
         shortcut_hits: AtomicU64::new(0),
         shortcut_trace: Mutex::new(None),
@@ -811,14 +1403,28 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         integration,
         transfer_failure: Mutex::new(None),
         updates: Default::default(),
+        coin_live: Default::default(),
+        coin_index: Default::default(),
+        hardware: Default::default(),
+        keyboard: Default::default(),
+        reminders: Default::default(),
+        water: Default::default(),
+        labor: Default::default(),
+        todo: Default::default(),
+        pomodoro: Default::default(),
+        pomodoro_windows: Default::default(),
     });
     let show = MenuItem::with_id(app, "show", "管理组件", true, None::<&str>)?;
     let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "panel", "打开组件面板", true, None::<&str>)?;
+    let assistant = MenuItem::with_id(app, "assistant", "网页 AI 助手", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 SoulDesk", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &panel, &restore, &hide, &settings, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &panel, &assistant, &restore, &hide, &settings, &quit],
+    )?;
     let mut pixels = vec![0u8; 32 * 32 * 4];
     for y in 0..32 {
         for x in 0..32 {
@@ -840,20 +1446,29 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let action = event.id.as_ref().to_owned();
+            if app
+                .state::<Core>()
+                .pomodoro_windows
+                .menu_event(app, &action)
+            {
+                return;
+            }
             if action == "quit" {
-                windows::dispatch(app, |app| {
-                    windows::save_all_geometry(app)?;
-                    app.state::<Core>().quitting.store(true, Ordering::Relaxed);
-                    app.exit(0);
-                    Ok(())
-                });
+                let _ = app.state::<Core>().pomodoro_windows.service.stop();
+                app.state::<Core>().jobs.stop_memory();
+                let _ = app.state::<Core>().assistant.stop();
+                windows::dispatch(app, windows::quit);
             } else {
+                if action == "hide" {
+                    let _ = app.state::<Core>().assistant.cancel_all();
+                }
                 windows::dispatch(app, move |app| match action.as_str() {
                     "show" => windows::show(app, true),
                     "settings" => windows::settings(app),
                     "hide" => windows::hide_all(app),
                     "restore" => windows::restore(app),
                     "panel" => windows::toggle(app),
+                    "assistant" => app.state::<Core>().assistant.tray(app),
                     _ => Ok(()),
                 });
             }
@@ -863,7 +1478,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .state::<Core>()
         .integration
         .as_ref()
-        .is_none_or(|c| c.mode != "panel")
+        .is_none_or(|c| c.panel_shortcut_enabled())
     {
         if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
             app.state::<Core>()
@@ -886,6 +1501,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         updates::start(app.handle());
     }
     // 正常启动恢复桌面场景；显式隔离历史验收继续由其入口拥有。
+    app.state::<Core>().keyboard.start(app.handle())?;
+    app.state::<Core>().clipboard.start(app.handle())?;
     if app.state::<Core>().verification.is_none() && !hidden {
         windows::dispatch(app.handle(), windows::restore);
     }
@@ -896,6 +1513,21 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             timer.tick().await;
             if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
                 break;
+            }
+            let core = handle.state::<Core>();
+            core.water.dispatch(&handle);
+            core.labor.dispatch(&handle);
+            core.todo.dispatch(&handle);
+            core.pomodoro.dispatch(&handle);
+            core.pomodoro_windows.tick(&handle);
+            core.reminders.dispatch(&handle);
+            core.assistant.tick(&handle);
+            core.jobs.tick(&handle);
+            if let Ok(sessions) = core.sessions.0.lock() {
+                let owners = sessions.keys().cloned().collect();
+                if let Err(error) = core.coin_live.retain_owners(&owners) {
+                    core.report(error);
+                }
             }
             let tick = handle.state::<Core>().ticks.fetch_add(1, Ordering::Relaxed);
             if tick % 2 == 0 {
@@ -912,7 +1544,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .state::<Core>()
         .integration
         .as_ref()
-        .is_none_or(|c| c.mode != "panel")
+        .is_none_or(|c| !c.standalone_check())
         && app
             .state::<Core>()
             .verification
@@ -924,10 +1556,30 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn prevent_exit(quitting: bool, code: Option<i32>) -> bool {
+    // 关闭最后一个窗口产生的隐式退出不能抢先结束事件循环；
+    // 只接受本程序已授权并通过 app.exit 发出的显式退出。
+    !quitting || code.is_none()
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::prevent_exit;
+
+    #[test]
+    fn closing_last_window_does_not_overtake_explicit_exit() {
+        assert!(prevent_exit(false, None));
+        assert!(prevent_exit(true, None));
+        assert!(prevent_exit(false, Some(0)));
+        assert!(!prevent_exit(true, Some(0)));
+        assert!(!prevent_exit(true, Some(1)));
+    }
+}
+
 pub fn run() {
     verification::capture_start();
     let panel_check = integration::parse(&std::env::args().collect::<Vec<_>>())
-        .is_ok_and(|c| c.is_some_and(|c| c.mode == "panel"));
+        .is_ok_and(|c| c.is_some_and(|c| c.standalone_check()));
     let mut builder = tauri::Builder::default();
     // 专项检查必须先通过独立路径校验，且不注册全局快捷键、桌面监听或更新定时器。
     if !panel_check {
@@ -941,40 +1593,247 @@ pub fn run() {
         }));
     }
     builder
-        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app,_,event|{if event.state()==ShortcutState::Pressed {windows::dispatch(app,|app| {let before=app.webview_windows().iter().any(|(label,w)|label!="edge"&&w.is_visible().unwrap_or(false));windows::toggle(app)?;let after=app.webview_windows().iter().any(|(label,w)|label!="edge"&&w.is_visible().unwrap_or(false));*app.state::<Core>().shortcut_trace.lock().map_err(err)?=Some(json!({"beforeVisible":before,"afterVisible":after}));app.state::<Core>().shortcut_hits.fetch_add(1,Ordering::Relaxed);Ok(())});}}).build())
-        .plugin(tauri_plugin_notification::init()).plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        let core = app.state::<Core>();
+                        if let Some(spec) = core.assistant.shortcut_route(shortcut.id()) {
+                            let handle = app.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                let _ = handle
+                                    .state::<Core>()
+                                    .assistant
+                                    .shortcut_activated(&handle, &spec);
+                            });
+                            return;
+                        }
+                        match core.clipboard.shortcut_route(&core.store, shortcut.id()) {
+                            clipboard_shortcuts::Route::Ignore => return,
+                            clipboard_shortcuts::Route::Clipboard(spec) => {
+                                let target = clipboard_host::shortcut_target(&core.store, &spec);
+                                windows::dispatch(app, move |app| {
+                                    app.state::<Core>()
+                                        .clipboard
+                                        .shortcut_activated(app, &spec, target)
+                                });
+                                return;
+                            }
+                            clipboard_shortcuts::Route::Main => {}
+                        }
+                        windows::dispatch(app, |app| {
+                            let before = app.webview_windows().iter().any(|(label, w)| {
+                                label != "edge" && w.is_visible().unwrap_or(false)
+                            });
+                            windows::toggle(app)?;
+                            let after = app.webview_windows().iter().any(|(label, w)| {
+                                label != "edge" && w.is_visible().unwrap_or(false)
+                            });
+                            *app.state::<Core>().shortcut_trace.lock().map_err(err)? =
+                                Some(json!({"beforeVisible":before,"afterVisible":after}));
+                            app.state::<Core>()
+                                .shortcut_hits
+                                .fetch_add(1, Ordering::Relaxed);
+                            Ok(())
+                        });
+                    }
+                })
+                .build(),
+        )
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .register_uri_scheme_protocol("widget",|ctx,request| {
-            let result=widgets::resource(&ctx.app_handle().state::<Core>().store,request.uri().path());
-            let (status,data,mime)=match result {Ok((b,m))=>(200,b,m),Err(_)=>(404,b"component resource unavailable".to_vec(),"text/plain".into())};
-            let core=ctx.app_handle().state::<Core>();
-            if core.verification.is_some() {if let Ok(mut reports)=core.resource_reports.lock(){if reports.len()<64 {reports.push(json!({"uri":request.uri().to_string(),"status":status,"mime":mime}));}}}
-            tauri::http::Response::builder().status(status).header("Content-Type",mime).header("X-Content-Type-Options","nosniff")
-                .header("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
-                .header("Cache-Control","no-store").body(data).unwrap()
+        .register_uri_scheme_protocol("widget", |ctx, request| {
+            let result = widgets::resource(
+                &ctx.app_handle().state::<Core>().store,
+                request.uri().path(),
+            );
+            let (status, data, mime) = match result {
+                Ok((b, m)) => (200, b, m),
+                Err(_) => (
+                    404,
+                    b"component resource unavailable".to_vec(),
+                    "text/plain".into(),
+                ),
+            };
+            let core = ctx.app_handle().state::<Core>();
+            if core.verification.is_some() {
+                if let Ok(mut reports) = core.resource_reports.lock() {
+                    if reports.len() < 64 {
+                        reports.push(
+                            json!({"uri":request.uri().to_string(),"status":status,"mime":mime}),
+                        );
+                    }
+                }
+            }
+            tauri::http::Response::builder()
+                .status(status)
+                .header("Content-Type", mime)
+                .header("X-Content-Type-Options", "nosniff")
+                .header(
+                    "Content-Security-Policy",
+                    widgets::resource_csp(&core.store, request.uri().path()),
+                )
+                .header("Cache-Control", "no-store")
+                .body(data)
+                .unwrap()
         })
         .invoke_handler(|invoke| {
-            let allowed=invoke.message.webview_ref().try_state::<Core>().is_some_and(|core|invoke.message.headers().get("x-souldesk-host").and_then(|h|h.to_str().ok())==Some(core.host_token.as_str()));
-            if !allowed {invoke.resolver.reject("CAPABILITY_DENIED: 只允许宿主顶层容器调用");return true;}
-            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![snapshot,import_package,update_preset,create_instance,manage_instance,reorder_instances,unregister_package,open_session,close_session,widget_request,window_action,set_shortcut,set_autostart,schedule_test,business_settings,set_panel,save_panel_layout,app_update,surface_activate,surface_pointer,surface_failed,verification::report_view,packages::trial_failed];
+            let allowed = invoke
+                .message
+                .webview_ref()
+                .try_state::<Core>()
+                .is_some_and(|core| {
+                    invoke
+                        .message
+                        .headers()
+                        .get("x-souldesk-host")
+                        .and_then(|h| h.to_str().ok())
+                        == Some(core.host_token.as_str())
+                });
+            if !allowed {
+                invoke
+                    .resolver
+                    .reject("CAPABILITY_DENIED: 只允许宿主顶层容器调用");
+                return true;
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                snapshot,
+                import_package,
+                update_preset,
+                create_instance,
+                manage_instance,
+                reorder_instances,
+                unregister_package,
+                open_session,
+                close_session,
+                widget_request,
+                assistant_open_session,
+                assistant_close_session,
+                assistant_widget_request,
+                assistant_surface_failed,
+                job_open_session,
+                job_close_session,
+                job_widget_request,
+                job_surface_failed,
+                window_action,
+                set_shortcut,
+                set_autostart,
+                schedule_test,
+                business_settings,
+                set_panel,
+                save_panel_layout,
+                manage_panel_group,
+                app_update,
+                surface_activate,
+                surface_pointer,
+                surface_failed,
+                verification::report_view,
+                packages::trial_failed
+            ];
             handler(invoke)
         })
         .setup(setup)
-        .on_window_event(|window,event|{
-            let app=window.app_handle();
+        .on_window_event(|window, event| {
+            let app = window.app_handle();
+            if app.try_state::<Core>().is_some_and(|core| {
+                core.pomodoro_windows
+                    .window_event(app, window.label(), event)
+            }) {
+                return;
+            }
+            #[cfg(windows)]
+            if app.try_state::<Core>().is_some()
+                && job_surfaces::native::window_event(app, window.label(), event)
+            {
+                return;
+            }
+            if app
+                .try_state::<Core>()
+                .is_some_and(|core| core.assistant.window_event(app, window.label(), event))
+            {
+                return;
+            }
             match event {
-                tauri::WindowEvent::Moved(_)|tauri::WindowEvent::Resized(_)=>windows::queue_geometry_save(window),
-                tauri::WindowEvent::CloseRequested{api,..}=>{api.prevent_close();let label=window.label().to_owned();windows::dispatch(app,move|app|{
-                    if let Some(id)=label.strip_prefix("float-"){windows::hide_instance(app,id)}
-                    else if label=="panel" {windows::collapse(app)}
-                    else {if let Some(w)=app.get_webview_window(&label){windows::save_geometry(&w)?;}windows::release(app,&label)?;windows::destroy_window(app,&label)}
-                });},
-                tauri::WindowEvent::Focused(false) if window.label()=="panel"=>windows::auto_collapse(app),
-                tauri::WindowEvent::Focused(true) if window.label()=="panel"=>{let core=app.state::<Core>();if let Ok(mut v)=core.visibility.lock(){v.epoch+=1;};},
-                tauri::WindowEvent::Destroyed=>{if let Some(core)=app.try_state::<Core>(){if let Ok(mut values)=core.geometry_versions.lock(){values.remove(window.label());}if let Ok(mut sessions)=core.sessions.0.lock(){sessions.retain(|_,s|s.window!=window.label());}}},
-                _=>{}
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                    windows::queue_geometry_save(window)
+                }
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let label = window.label().to_owned();
+                    app.state::<Core>().reminders.closed(&label);
+                    app.state::<Core>().clipboard.closed(&label);
+                    let core = app.state::<Core>();
+                    let _ = core.ai.close_tool(&core.store, &label);
+                    windows::dispatch(app, move |app| {
+                        if let Some(id) = label.strip_prefix("float-") {
+                            windows::hide_instance(app, id)
+                        } else if label == "panel" {
+                            windows::collapse(app)
+                        } else {
+                            if let Some(w) = app.get_webview_window(&label) {
+                                windows::save_geometry(&w)?;
+                            }
+                            windows::release(app, &label)?;
+                            windows::destroy_window(app, &label)
+                        }
+                    });
+                }
+                tauri::WindowEvent::Focused(false) if window.label() == "panel" => {
+                    windows::auto_collapse(app)
+                }
+                tauri::WindowEvent::Focused(focused)
+                    if window.label().starts_with("clipboard-") =>
+                {
+                    app.state::<Core>()
+                        .clipboard
+                        .focus_window(window.label(), *focused);
+                }
+                tauri::WindowEvent::Focused(true) if window.label() == "panel" => {
+                    let core = app.state::<Core>();
+                    if let Ok(mut v) = core.visibility.lock() {
+                        v.epoch += 1;
+                    };
+                }
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(core) = app.try_state::<Core>() {
+                        core.reminders.closed(window.label());
+                        core.clipboard.closed(window.label());
+                        let _ = core.ai.close_tool(&core.store, window.label());
+                        if let Ok(mut values) = core.geometry_versions.lock() {
+                            values.remove(window.label());
+                        }
+                        if let Ok(mut sessions) = core.sessions.0.lock() {
+                            sessions.retain(|_, s| s.window != window.label());
+                        }
+                    }
+                }
+                _ => {}
             }
         })
-        .build(tauri::generate_context!()).expect("SoulDesk 初始化失败；请保留原数据并查看诊断")
-        .run(|app,event|{if let tauri::RunEvent::ExitRequested{api,..}=event {if !app.state::<Core>().quitting.load(Ordering::Relaxed){api.prevent_exit();}}});
+        .build(tauri::generate_context!())
+        .expect("SoulDesk 初始化失败；请保留原数据并查看诊断")
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                let prevent =
+                    prevent_exit(app.state::<Core>().quitting.load(Ordering::Relaxed), code);
+                integration::trace_lifecycle(
+                    app,
+                    json!({"event":"exit-requested","code":code,"prevented":prevent}),
+                );
+                if prevent {
+                    api.prevent_exit();
+                }
+            }
+            tauri::RunEvent::Exit => {
+                let _ = app.state::<Core>().pomodoro_windows.service.stop();
+                let _ = app.state::<Core>().pomodoro_windows.cleanup(app);
+                app.state::<Core>().jobs.stop_memory();
+                integration::trace_lifecycle(app, json!({"event":"event-loop-exit"}))
+            }
+            _ => {}
+        });
+    if panel_check {
+        eprintln!("SoulDesk 隔离事件循环已结束");
+    }
 }

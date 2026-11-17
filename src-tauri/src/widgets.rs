@@ -112,11 +112,58 @@ fn validate_manifest(m: &Manifest) -> AppResult<()> {
     {
         return Err("INVALID_ARGUMENT: 名称或入口无效".into());
     }
+    if m.capabilities.iter().any(|s| {
+        ![
+            "storage.instance",
+            "storage.shared",
+            "storage.document",
+            "documents.user",
+            "media.directory",
+            "files.launcher",
+            "assets.local",
+            "web.embed",
+            "clipboard.read",
+            "clipboard.write",
+            "clipboard.manage",
+            "assistant.web",
+            "jobs.manage",
+            "market.read",
+            "alerts.manage",
+            "content.read",
+            "content.live",
+            "weather.read",
+            "ai.generate",
+            "system.metrics",
+            "reminders.water",
+            "reminders.labor",
+            "reminders.sit",
+            "reminders.phone",
+            "notifications.island",
+            "todos.manage",
+            "focus.pomodoro",
+            "focus.pomodoro.window",
+            "keyboard.display",
+            "servers.monitor",
+            "links.open",
+        ]
+        .contains(&s.as_str())
+    }) {
+        return Err("CAPABILITY_DENIED: 未知能力".into());
+    }
     if m.capabilities
         .iter()
-        .any(|s| !["storage.instance", "market.read", "alerts.manage"].contains(&s.as_str()))
+        .any(|c| c == crate::job_protocol::CAPABILITY)
+        && m.id != crate::job_protocol::PACKAGE
     {
-        return Err("CAPABILITY_DENIED: 未知能力".into());
+        return Err("CAPABILITY_DENIED: AI直聘能力只用于固定组件".into());
+    }
+    if m.capabilities
+        .iter()
+        .any(|c| c == crate::pomodoro_window::CAPABILITY)
+        && (m.id != crate::pomodoro_window::PACKAGE
+            || !m.capabilities.iter().any(|c| c == "focus.pomodoro"))
+    {
+        return Err("CAPABILITY_DENIED: 专用窗能力仅用于声明计时能力的固定番茄组件".into());
     }
     if !(120..=1600).contains(&m.min_size.width)
         || !(80..=1200).contains(&m.min_size.height)
@@ -325,6 +372,9 @@ fn static_resource(path: &str) -> bool {
                     | "otf"
                     | "txt"
                     | "map"
+                    | "mp3"
+                    | "wav"
+                    | "m4a"
             )
         })
 }
@@ -581,8 +631,16 @@ pub fn import(store: &Store, path: &Path) -> AppResult<Manifest> {
 }
 
 pub fn create_instance(store: &Store, package_id: &str) -> AppResult<String> {
-    let db = store.db.lock().map_err(err)?;
-    let manifest: String = db
+    create_instance_at(store, package_id, "desktop")
+}
+
+pub fn create_instance_at(store: &Store, package_id: &str, location: &str) -> AppResult<String> {
+    if !["desktop", "panel"].contains(&location) {
+        return Err("INVALID_ARGUMENT: 未知展示位置".into());
+    }
+    let mut db = store.db.lock().map_err(err)?;
+    let tx = db.transaction().map_err(err)?;
+    let manifest: String = tx
         .query_row(
             "SELECT manifest FROM widget_packages WHERE id=?1",
             [package_id],
@@ -593,11 +651,22 @@ pub fn create_instance(store: &Store, package_id: &str) -> AppResult<String> {
     let settings = default_settings(&manifest.settings_schema);
     validate_settings(&manifest.settings_schema, &settings)?;
     let id = Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO widget_instances(id,package_id,settings,position) VALUES(?1,?2,?3,(SELECT COALESCE(MAX(position),-1)+1 FROM widget_instances))",
-        params![id, package_id, settings.to_string()],
+    tx.execute(
+        "INSERT INTO widget_instances(id,package_id,settings,position,location) VALUES(?1,?2,?3,(SELECT COALESCE(MAX(position),-1)+1 FROM widget_instances),?4)",
+        params![id, package_id, settings.to_string(), location],
     )
     .map_err(err)?;
+    if location == "panel" {
+        let mut groups = crate::store::panel_groups(&tx)?;
+        if let Some(group) = groups.active.clone() {
+            groups.change(crate::panel::GroupChange::Move {
+                instance: id.clone(),
+                group: Some(group),
+            })?;
+            crate::store::save_panel_groups(&tx, &groups)?;
+        }
+    }
+    tx.commit().map_err(err)?;
     Ok(id)
 }
 
@@ -643,17 +712,57 @@ pub fn reorder_instances(store: &Store, ids: &[String]) -> AppResult<()> {
 }
 
 pub fn remove_instance(store: &Store, sessions: &Sessions, instance: &str) -> AppResult<()> {
+    remove_instance_before(store, sessions, instance, || Ok(()))
+}
+pub(crate) fn remove_instance_before(
+    store: &Store,
+    sessions: &Sessions,
+    instance: &str,
+    before: impl FnOnce() -> AppResult<()>,
+) -> AppResult<()> {
+    let _native = store.native_actions.lock().map_err(err)?;
     let mut sessions = sessions.0.lock().map_err(err)?;
-    if store
-        .db
-        .lock()
-        .map_err(err)?
+    let mut db = store.db.lock().map_err(err)?;
+    let transaction = db.transaction().map_err(err)?;
+    before()?;
+    if transaction
         .execute("DELETE FROM widget_instances WHERE id=?1", [instance])
         .map_err(err)?
         != 1
     {
         return Err("INVALID_ARGUMENT: 实例不存在".into());
     }
+    transaction
+        .execute(
+            "DELETE FROM app_settings WHERE key=?1",
+            [format!("media_directory:{instance}")],
+        )
+        .map_err(err)?;
+    transaction
+        .execute(
+            "DELETE FROM app_settings WHERE key=?1",
+            [format!("file_launcher:{instance}")],
+        )
+        .map_err(err)?;
+    crate::water::remove_data(&transaction, instance)?;
+    let mut groups = crate::store::panel_groups(&transaction)?;
+    if groups.membership.remove(instance).is_some() {
+        crate::store::save_panel_groups(&transaction, &groups)?;
+    }
+    crate::weather::remove_data(&transaction, instance)?;
+    crate::ai_host::remove_data(&transaction, instance)?;
+    crate::clipboard_history::remove_data(&transaction, instance)?;
+    crate::clipboard_actions::remove_data(&transaction, instance)?;
+    crate::assistant_state::remove_data(&transaction, instance)?;
+    crate::job_state::remove_data(&transaction, instance)?;
+    crate::job_knowledge::remove_data(&transaction, instance)?;
+    crate::shared_library::remove_data(&transaction, instance)?;
+    crate::labor::remove_data(&transaction, instance)?;
+    crate::reminder_store::remove_data(&transaction, instance)?;
+    crate::todo::remove_data(&transaction, instance)?;
+    crate::pomodoro::remove_data(&transaction, instance)?;
+    crate::pomodoro_window::remove_data(&transaction, instance)?;
+    transaction.commit().map_err(err)?;
     sessions.retain(|_, s| s.instance != instance);
     Ok(())
 }
@@ -678,6 +787,7 @@ pub struct Session {
     pub instance: String,
     pub window: String,
     pub preview: Option<Arc<Mutex<Preview>>>,
+    pub shared_cursor: Option<(String, u64)>,
 }
 pub struct Preview {
     pub package: StagedPackage,
@@ -760,6 +870,13 @@ fn open_session_inner(
         )
         .map_err(err)?;
     let detail = window == format!("detail-{instance}");
+    let keyboard = window == format!("keyboard-{instance}");
+    let reminder = crate::reminder_host::surface_role(window, instance);
+    let clipboard = crate::clipboard_surface::role(window, instance);
+    let clipboard_tool = crate::clipboard_tools::role(window, instance);
+    let assistant = crate::assistant_host::shell_role(window, instance);
+    let job = crate::job_surfaces::shell_role(window, instance);
+    let pomodoro_window = crate::pomodoro_window::role(window, instance);
     if display {
         let (location, visible): (String, bool) = db
             .query_row(
@@ -777,9 +894,24 @@ fn open_session_inner(
             .unwrap_or_default()
             == "true";
         if hidden
-            || !visible
+            || !(keyboard
+                || reminder.is_some()
+                || clipboard.is_some()
+                || clipboard_tool.is_some()
+                || assistant
+                || job)
+                && !visible
             || !(detail
-                || window == "panel" && location == "panel"
+                || keyboard
+                || reminder.is_some()
+                || clipboard.is_some()
+                || clipboard_tool.is_some()
+                || assistant
+                || job
+                || pomodoro_window
+                || window == "panel"
+                    && location == "panel"
+                    && crate::store::panel_groups(&db)?.contains(instance)
                 || window == format!("float-{instance}") && location == "desktop")
         {
             return Err("SESSION_EXPIRED: 当前窗口不是可见实例的展示所有者".into());
@@ -796,6 +928,74 @@ fn open_session_inner(
         )
         .map_err(err)?;
     let manifest: Manifest = serde_json::from_str(&manifest).map_err(err)?;
+    if pomodoro_window
+        && (package != crate::pomodoro_window::PACKAGE
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|c| c == crate::pomodoro_window::CAPABILITY)
+            || !crate::pomodoro_window::load(&db, instance)?.config.enabled)
+    {
+        return Err("CAPABILITY_DENIED: 当前实例未启用番茄专用窗".into());
+    }
+    if job
+        && (package != crate::job_protocol::PACKAGE
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|c| c == crate::job_protocol::CAPABILITY))
+    {
+        return Err("CAPABILITY_DENIED: AI直聘壳与固定组件或能力不符".into());
+    }
+    if assistant
+        && (package != crate::assistant_host::PACKAGE
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|c| c == crate::assistant_host::CAPABILITY))
+    {
+        return Err("CAPABILITY_DENIED: 助手本机壳与固定组件或能力不符".into());
+    }
+    if clipboard_tool.is_some()
+        && (package != crate::clipboard_host::SEARCH
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|c| c == "clipboard.manage")
+            || !manifest.capabilities.iter().any(|c| c == "ai.generate"))
+    {
+        return Err("CAPABILITY_DENIED: 固定剪切板工具类型或能力不符".into());
+    }
+    if let Some(kind) = clipboard {
+        let expected = if kind == crate::clipboard_surface::Kind::History {
+            crate::clipboard_host::HISTORY
+        } else {
+            crate::clipboard_host::SEARCH
+        };
+        if package != expected
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|c| c == "clipboard.manage")
+        {
+            return Err("CAPABILITY_DENIED: 专用窗口与剪切板类型或能力不符".into());
+        }
+    }
+    if reminder.is_some()
+        && !crate::reminder_host::surface_allowed(&db, window, instance, &manifest)?
+    {
+        return Err("CAPABILITY_DENIED: 当前实例未启用对应的专用提醒显示".into());
+    }
+    if keyboard
+        && (package != crate::keyboard_host::PACKAGE
+            || !manifest
+                .capabilities
+                .iter()
+                .any(|cap| cap == "keyboard.display")
+            || !crate::keyboard_host::enabled(&db, instance)?)
+    {
+        return Err("CAPABILITY_DENIED: 当前实例未启用键盘演示".into());
+    }
     let digest: String = db
         .query_row(
             "SELECT digest FROM widget_packages WHERE id=?1",
@@ -806,12 +1006,23 @@ fn open_session_inner(
     if expected_digest.is_some_and(|expected| expected != digest) {
         return Err("VERSION_INCOMPATIBLE: 组件版本已更新，请重新加载".into());
     }
-    if display && detail && !manifest.capabilities.iter().any(|c| c == "alerts.manage") {
+    if display
+        && detail
+        && !manifest
+            .capabilities
+            .iter()
+            .any(|c| c == "alerts.manage" || c == "focus.pomodoro")
+    {
         return Err("CAPABILITY_DENIED: 此组件未声明详情能力".into());
     }
     let token = Uuid::new_v4().to_string();
     sessions.retain(|_, s| {
-        s.instance != instance || display && (s.window.starts_with("detail-") != detail)
+        s.instance != instance
+            || display
+                && (display_role(&s.window) != display_role(window)
+                    || s.window != window
+                        && display_role(window) == "job-knowledge"
+                        && display_role(&s.window) == "job-knowledge")
     });
     sessions.insert(
         token.clone(),
@@ -819,13 +1030,49 @@ fn open_session_inner(
             instance: instance.into(),
             window: window.into(),
             preview: None,
+            shared_cursor: None,
         },
     );
     Ok(
-        json!({"token":token,"instanceId":instance,"packageId":package,"digest":digest,"entry":manifest.entry,"resourcePath":format!("{package}/{digest}/{}",manifest.entry),"version":manifest.version,"role":if detail {"details"} else {"primary"},"settings":serde_json::from_str::<Value>(&settings).map_err(err)?}),
+        json!({"token":token,"instanceId":instance,"packageId":package,"digest":digest,"entry":manifest.entry,"resourcePath":format!("{package}/{digest}/{}",manifest.entry),"version":manifest.version,"capabilities":manifest.capabilities,"role":display_role(window),"settings":serde_json::from_str::<Value>(&settings).map_err(err)?}),
     )
 }
 
+fn display_role(window: &str) -> &'static str {
+    if window.starts_with("pomodoro-window-") {
+        return "pomodoro-window";
+    }
+    if let Some(role) = crate::job_surfaces::role(window) {
+        return role;
+    }
+    if window.starts_with("assistant-shell-") {
+        return "assistant-shell";
+    }
+    for (prefix, role) in [
+        ("clipboard-tool-settings-", "clipboard-settings"),
+        ("clipboard-tool-mindmap-", "clipboard-mindmap"),
+        ("clipboard-tool-translate-", "clipboard-translate"),
+    ] {
+        if window.starts_with(prefix) {
+            return role;
+        }
+    }
+    if window.starts_with("clipboard-") {
+        return "clipboard-popup";
+    }
+    if window.starts_with("island-") {
+        return "notification-overlay";
+    } else if window.starts_with("break-") {
+        return "break-overlay";
+    }
+    if window.starts_with("keyboard-") {
+        "keyboard-overlay"
+    } else if window.starts_with("detail-") {
+        "details"
+    } else {
+        "primary"
+    }
+}
 pub fn open_preview(
     sessions: &Sessions,
     window: &str,
@@ -839,7 +1086,7 @@ pub fn open_preview(
     let value = preview.lock().map_err(err)?;
     let token = Uuid::new_v4().to_string();
     let m = &value.package.manifest;
-    let result = json!({"token":token,"instanceId":instance,"packageId":m.id,"entry":m.entry,"digest":value.package.digest,"resourcePath":format!("{}/{}/{}",m.id,value.package.digest,m.entry),"version":m.version,"preview":true});
+    let result = json!({"token":token,"instanceId":instance,"packageId":m.id,"entry":m.entry,"digest":value.package.digest,"resourcePath":format!("{}/{}/{}",m.id,value.package.digest,m.entry),"version":m.version,"capabilities":m.capabilities,"preview":true});
     drop(value);
     sessions.retain(|_, s| s.instance != instance);
     sessions.insert(
@@ -848,9 +1095,62 @@ pub fn open_preview(
             instance: instance.into(),
             window: window.into(),
             preview: Some(preview),
+            shared_cursor: None,
         },
     );
     Ok(result)
+}
+
+/// 有副作用的原生能力统一核对窗口、当前会话和清单声明，试加载不授予权限。
+pub fn require_capability(
+    store: &Store,
+    sessions: &Sessions,
+    window: &str,
+    token: &str,
+    capability: &str,
+) -> AppResult<String> {
+    with_capability(store, sessions, window, token, capability, |session| {
+        Ok(session.instance.clone())
+    })
+}
+/// 整个原生请求保留会话锁，防止解析数据源后会话切换仍写入旧/新源。
+pub(crate) fn with_capability<T>(
+    store: &Store,
+    sessions: &Sessions,
+    window: &str,
+    token: &str,
+    capability: &str,
+    action: impl FnOnce(&mut Session) -> AppResult<T>,
+) -> AppResult<T> {
+    if window.starts_with("keyboard-") {
+        return Err("CAPABILITY_DENIED: 键盘叠加层只读".into());
+    }
+    let mut sessions = sessions.0.lock().map_err(err)?;
+    let session = sessions
+        .get_mut(token)
+        .filter(|s| s.window == window)
+        .ok_or("SESSION_EXPIRED: 请重新加载组件")?;
+    if session.preview.is_some() {
+        return Err("CAPABILITY_DENIED: 试加载不启用原生能力".into());
+    }
+    let definition: String = store.db.lock().map_err(err)?.query_row("SELECT p.manifest FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1", [&session.instance], |row| row.get(0)).map_err(err)?;
+    let manifest: Manifest = serde_json::from_str(&definition).map_err(err)?;
+    if !manifest.capabilities.iter().any(|c| c == capability) {
+        return Err(format!("CAPABILITY_DENIED: 未声明{capability}"));
+    }
+    action(session)
+}
+
+fn storage_limit(manifest: &Manifest) -> usize {
+    if manifest
+        .capabilities
+        .iter()
+        .any(|c| c == "storage.document")
+    {
+        32 * 1024 * 1024
+    } else {
+        4 * 1024 * 1024
+    }
 }
 
 pub fn gateway(
@@ -861,9 +1161,35 @@ pub fn gateway(
     method: &str,
     args: Value,
 ) -> AppResult<Value> {
-    let sessions = sessions.0.lock().map_err(err)?;
+    crate::keyboard_host::overlay_method(window, method)?;
+    crate::reminder_host::surface_method(window, method)?;
+    crate::clipboard_surface::surface_method(window, method)?;
+    crate::pomodoro_window_native::surface_method(window, method)?;
+    let _native = if method.starts_with("library.") {
+        Some(store.native_actions.lock().map_err(err)?)
+    } else {
+        None
+    };
+    let mut sessions = sessions.0.lock().map_err(err)?;
+    if matches!(method, "library.bind" | "library.create") {
+        let current = sessions
+            .get(token)
+            .filter(|session| session.window == window && session.preview.is_none())
+            .map(|session| session.instance.clone());
+        if let Some(instance) = current {
+            if sessions.values().any(|other| {
+                other.instance == instance && other.window != window && other.preview.is_none()
+                    // 专用钟面没有可丢失的编辑草稿；切源事务仍使其旧会话失效。
+                    && !crate::pomodoro_window::role(&other.window,&instance)
+            }) {
+                return Err(
+                    "CONFLICT: 请先保存并关闭该实例的其他详情窗口，再从主组件切换数据源".into(),
+                );
+            }
+        }
+    }
     let session = sessions
-        .get(token)
+        .get_mut(token)
         .filter(|s| s.window == window)
         .ok_or("SESSION_EXPIRED: 请重新加载组件")?;
     if let Some(preview) = &session.preview {
@@ -890,7 +1216,10 @@ pub fn gateway(
                 Ok(args)
             }
             "storage.get" => Ok(preview.storage.clone()),
-            "storage.set" if args.is_object() && args.to_string().len() <= 16 * 1024 => {
+            "storage.set"
+                if args.is_object()
+                    && args.to_string().len() <= storage_limit(&preview.package.manifest) =>
+            {
                 preview.storage = args.clone();
                 Ok(args)
             }
@@ -904,14 +1233,35 @@ pub fn gateway(
         }
         return result;
     }
-    let db = store.db.lock().map_err(err)?;
-    let (manifest,settings,storage):(String,String,String)=db.query_row("SELECT p.manifest,i.settings,i.storage FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1",[&session.instance],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(err)?;
+    let mut db = store.db.lock().map_err(err)?;
+    // 共享库状态/目录轮询不能为每次请求加载最多32 MiB的私有文档。
+    let sql = if method.starts_with("library.") && method != "library.create" {
+        "SELECT p.manifest,i.settings,'{}' FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1"
+    } else if method == "library.create" {
+        "SELECT p.manifest,i.settings,CASE WHEN p.id IN('local.souldesk.widgetjs.todo','local.souldesk.widgetjs.calendar-large','local.souldesk.widgetjs.pomodoro') THEN '{}' ELSE i.storage END FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1"
+    } else {
+        "SELECT p.manifest,i.settings,i.storage FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1"
+    };
+    let (manifest, settings, storage): (String, String, String) = db
+        .query_row(sql, [&session.instance], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(err)?;
     let m: Manifest = serde_json::from_str(&manifest).map_err(err)?;
     if method == "runtime.ready" {
         return Ok(Value::Null);
     }
     if !m.capabilities.iter().any(|c| c == "storage.instance") {
         return Err("CAPABILITY_DENIED: 未声明实例存储".into());
+    }
+    if method.starts_with("library.") {
+        let (result, invalidate) =
+            crate::shared_library::command(&mut db, session, &m, method, args, &storage)?;
+        if invalidate {
+            let instance = session.instance.clone();
+            sessions.retain(|_, current| current.instance != instance);
+        }
+        return Ok(result);
     }
     match method {
         "settings.get" => serde_json::from_str(&settings).map_err(err),
@@ -924,10 +1274,21 @@ pub fn gateway(
             .map_err(err)?;
             Ok(args)
         }
-        "storage.get" => serde_json::from_str(&storage).map_err(err),
+        "storage.get" => {
+            if let Some(value) = crate::shared_library::storage_get(&db, session, &m, &storage)? {
+                return Ok(value);
+            }
+            serde_json::from_str(&storage).map_err(err)
+        }
         "storage.set" => {
-            if !args.is_object() || args.to_string().len() > 16 * 1024 {
-                return Err("INVALID_ARGUMENT: 存储需要 16 KiB 内对象".into());
+            if !args.is_object() || args.to_string().len() > storage_limit(&m) {
+                return Err(format!(
+                    "INVALID_ARGUMENT: 存储需要 {} MiB 内对象",
+                    storage_limit(&m) / 1024 / 1024
+                ));
+            }
+            if crate::shared_library::storage_set(&mut db, session, &m, &args)? {
+                return Ok(args);
             }
             db.execute(
                 "UPDATE widget_instances SET storage=?1 WHERE id=?2",
@@ -938,6 +1299,72 @@ pub fn gateway(
         }
         _ => Err("CAPABILITY_DENIED: 未知或未开放的方法".into()),
     }
+}
+
+pub const COMPONENT_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+
+pub fn resource_csp(store: &Store, path: &str) -> String {
+    let capabilities = (|| -> AppResult<Vec<String>> {
+        let path = percent_encoding::percent_decode_str(path.trim_start_matches('/'))
+            .decode_utf8()
+            .map_err(err)?;
+        if !safe_path(&path) {
+            return Ok(Vec::new());
+        }
+        let (id, remaining) = path.split_once('/').ok_or("缺少组件标识")?;
+        let db = store.db.lock().map_err(err)?;
+        let definition: String = if remaining.starts_with("dist/") {
+            db.query_row(
+                "SELECT manifest FROM widget_packages WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+        } else {
+            let (digest, _) = remaining.split_once('/').ok_or("缺少组件版本")?;
+            db.query_row(
+                "SELECT manifest FROM widget_versions WHERE package_id=?1 AND digest=?2",
+                params![id, digest],
+                |row| row.get(0),
+            )
+        }
+        .map_err(err)?;
+        let manifest: Manifest = serde_json::from_str(&definition).map_err(err)?;
+        Ok(manifest.capabilities)
+    })()
+    .unwrap_or_default();
+    let mut policy = COMPONENT_CSP.to_owned();
+    if capabilities
+        .iter()
+        .any(|value| value == "ai.generate" || value == crate::job_protocol::CAPABILITY)
+    {
+        // 固定图形引擎生成SVG样式；样式许可不开放脚本求值、HTTP或工作线程。
+        policy = policy.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'");
+    }
+    if capabilities.iter().any(|value| value == "web.embed") {
+        policy = policy.replace("frame-src 'none'", "frame-src https:");
+    }
+    if capabilities.iter().any(|value| value == "content.read") {
+        policy = policy.replace("img-src 'self' data:", "img-src 'self' data: https:");
+    }
+    if capabilities
+        .iter()
+        .any(|value| value == crate::job_protocol::CAPABILITY)
+    {
+        // 固定AI直聘包显示BOSS职位资料中的公司图片，不因此开放HTTP或嵌入网页。
+        policy = policy.replace("img-src 'self' data:", "img-src 'self' data: https:");
+    }
+    if capabilities.iter().any(|value| value == "assets.local") {
+        policy = policy
+            .replace(
+                "script-src 'self'",
+                "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
+            )
+            .replace("style-src 'self'", "style-src 'self' 'unsafe-inline'")
+            .replace("img-src 'self' data:", "img-src 'self' blob: data:")
+            .replace("connect-src 'none'", "connect-src 'self'");
+        policy.push_str("; worker-src 'self' blob:");
+    }
+    policy
 }
 
 pub fn resource(store: &Store, path: &str) -> AppResult<(Vec<u8>, String)> {
@@ -977,7 +1404,10 @@ pub fn resource(store: &Store, path: &str) -> AppResult<(Vec<u8>, String)> {
     .map_err(err)?;
     drop(db);
     if relative == "dist/__souldesk_runtime.js" {
-        return Ok((br#"(()=>{const hostOrigin=new URLSearchParams(location.search).get('hostOrigin');const report=message=>{if(hostOrigin)parent.postMessage({type:'souldesk:failed',protocol:1,message:String(message).slice(0,1000)},hostOrigin);};window.addEventListener('error',e=>report(e.message||'component resource failed'),true);window.addEventListener('unhandledrejection',e=>report(e.reason?.message||e.reason));})();"#.to_vec(),"text/javascript".into()));
+        return Ok((
+            include_bytes!("../../sdk/runtime.js").to_vec(),
+            "text/javascript".into(),
+        ));
     }
     let root = PathBuf::from(directory).canonicalize().map_err(err)?;
     let file = root.join(relative).canonicalize().map_err(err)?;
@@ -1007,6 +1437,231 @@ pub fn resource(store: &Store, path: &str) -> AppResult<(Vec<u8>, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_addition_joins_current_group_and_preserves_existing_instances_after_restart() {
+        let root = std::env::temp_dir().join(format!("souldesk-panel-add-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let desktop = create_instance(&store, "local.example.clock").unwrap();
+        let ungrouped = create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        let groups = store
+            .change_panel_groups(crate::panel::GroupChange::Create {
+                name: "工作".into(),
+            })
+            .unwrap();
+        let added = create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        assert_eq!(store.panel_groups().unwrap().active, groups.active);
+        assert_eq!(
+            store.panel_groups().unwrap().membership[&added],
+            groups.active.unwrap()
+        );
+        assert!(!store
+            .panel_groups()
+            .unwrap()
+            .membership
+            .contains_key(&ungrouped));
+        let snapshot = store.snapshot().unwrap();
+        let instances = snapshot["instances"].as_array().unwrap();
+        assert_eq!(instances[0]["id"], desktop);
+        assert_eq!(instances[0]["location"], "desktop");
+        for (instance, id) in instances[1..].iter().zip([&ungrouped, &added]) {
+            assert_eq!(instance["id"], *id);
+            assert_eq!(instance["location"], "panel");
+            assert_eq!(instance["visible"], true);
+            assert_eq!(instance["pinned"], false);
+            assert_eq!(instance["settings"], instances[0]["settings"]);
+        }
+        drop(store);
+        let restored = Store::open(root).unwrap();
+        assert_eq!(
+            restored.snapshot().unwrap()["instances"],
+            snapshot["instances"]
+        );
+        assert!(restored.panel_groups().unwrap().contains(&added));
+    }
+
+    #[test]
+    fn panel_addition_rolls_back_instance_when_group_save_fails() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-panel-add-failure-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        store
+            .change_panel_groups(crate::panel::GroupChange::Create {
+                name: "工作".into(),
+            })
+            .unwrap();
+        let before = store.snapshot().unwrap();
+        store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_panel_add BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试分组保存失败'); END;").unwrap();
+        assert!(create_instance_at(&store, "local.example.clock", "panel").is_err());
+        let after = store.snapshot().unwrap();
+        assert_eq!(after["instances"], before["instances"]);
+        assert_eq!(after["panelGroups"], before["panelGroups"]);
+    }
+
+    #[test]
+    fn ai_job_capability_stages_as_a_standard_package_only_for_its_fixed_identity() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("artifacts")
+            .join(format!(
+                "desktop-integration-widgetjs-ai-job-package-{}",
+                Uuid::new_v4()
+            ));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["id"] = json!(crate::job_protocol::PACKAGE);
+        manifest["capabilities"] = json!([crate::job_protocol::CAPABILITY]);
+        let staged = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        let sessions = Sessions::default();
+        activate_sessions(&store, &sessions, &staged).unwrap();
+        let instance = create_instance(&store, crate::job_protocol::PACKAGE).unwrap();
+        let label = format!("job-shell-{instance}-{}", Uuid::new_v4());
+        let value = open_display_session(&store, &sessions, &label, &instance, None).unwrap();
+        assert_eq!(value["role"], "job-search");
+        assert_eq!(value["packageId"], crate::job_protocol::PACKAGE);
+        let policy = resource_csp(
+            &store,
+            &format!("{}/dist/index.html", crate::job_protocol::PACKAGE),
+        );
+        assert!(policy.contains("style-src 'self' 'unsafe-inline'"));
+        assert!(policy.contains("img-src 'self' data: https:"));
+        assert!(policy.contains("connect-src 'none'") && policy.contains("frame-src 'none'"));
+        assert!(!policy.contains("unsafe-eval") && !policy.contains("worker-src"));
+        manifest["id"] = json!("local.example.other-job");
+        assert!(stage(&store, &fixture(&root, &manifest, None)).is_err());
+    }
+
+    #[test]
+    fn instance_storage_accepts_documents_up_to_four_mib_and_rejects_larger_without_data_loss() {
+        let root = std::env::temp_dir().join(format!("souldesk-document-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let id = create_instance(&store, "local.example.clock").unwrap();
+        let other = create_instance(&store, "local.example.clock").unwrap();
+        let sessions = Sessions::default();
+        let session = open_session(&store, &sessions, "main", &id).unwrap();
+        let token = session["token"].as_str().unwrap();
+        let document = json!({"text":"中".repeat(100_000)});
+        assert_eq!(
+            gateway(
+                &store,
+                &sessions,
+                "main",
+                token,
+                "storage.set",
+                document.clone()
+            )
+            .unwrap(),
+            document
+        );
+        let oversized = json!({"text":"中".repeat(1_400_000)});
+        assert!(
+            gateway(&store, &sessions, "main", token, "storage.set", oversized)
+                .unwrap_err()
+                .contains("4 MiB")
+        );
+        assert_eq!(
+            gateway(&store, &sessions, "main", token, "storage.get", Value::Null).unwrap(),
+            document
+        );
+        let other_session = open_session(&store, &sessions, "main", &other).unwrap();
+        assert_eq!(
+            gateway(
+                &store,
+                &sessions,
+                "main",
+                other_session["token"].as_str().unwrap(),
+                "storage.get",
+                Value::Null
+            )
+            .unwrap(),
+            json!({})
+        );
+        let preview = Arc::new(Mutex::new(Preview {
+            settings: initial_settings(&serde_json::from_value(manifest.clone()).unwrap()),
+            package: stage(&store, &fixture(&root, &manifest, None)).unwrap(),
+            storage: json!({}),
+            ready_since: None,
+            failure: None,
+        }));
+        let trial = open_preview(
+            &sessions,
+            "trial-document",
+            "trial-document",
+            preview.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            gateway(
+                &store,
+                &sessions,
+                "trial-document",
+                trial["token"].as_str().unwrap(),
+                "storage.set",
+                document.clone()
+            )
+            .unwrap(),
+            document
+        );
+        assert!(gateway(
+            &store,
+            &sessions,
+            "trial-document",
+            trial["token"].as_str().unwrap(),
+            "storage.set",
+            json!({"text":"a".repeat(4 * 1024 * 1024)})
+        )
+        .is_err());
+        assert_eq!(preview.lock().unwrap().storage, document);
+    }
+
+    #[test]
+    fn declared_document_storage_allows_large_scenes_and_keeps_ordinary_instances_at_four_mib() {
+        let root = std::env::temp_dir().join(format!("souldesk-large-scene-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["capabilities"] = json!(["storage.instance", "storage.document"]);
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let id = create_instance(&store, "local.example.clock").unwrap();
+        let sessions = Sessions::default();
+        let session = open_session(&store, &sessions, "main", &id).unwrap();
+        let token = session["token"].as_str().unwrap();
+        let scene = json!({"scene":"x".repeat(5 * 1024 * 1024)});
+        gateway(
+            &store,
+            &sessions,
+            "main",
+            token,
+            "storage.set",
+            scene.clone(),
+        )
+        .unwrap();
+        assert!(gateway(
+            &store,
+            &sessions,
+            "main",
+            token,
+            "storage.set",
+            json!({"scene":"x".repeat(32 * 1024 * 1024)})
+        )
+        .unwrap_err()
+        .contains("32 MiB"));
+        assert_eq!(
+            gateway(&store, &sessions, "main", token, "storage.get", Value::Null).unwrap(),
+            scene
+        );
+    }
     use std::io::Write;
     #[test]
     fn formal_primary_and_detail_sessions_are_isolated_and_manager_cannot_mount() {
@@ -1024,6 +1679,7 @@ mod tests {
         assert!(open_display_session(&store, &sessions, "main", &id, None).is_err());
         assert!(open_display_session(&store, &sessions, "panel", &id, None).is_err());
         let primary = open_display_session(&store, &sessions, &label, &id, None).unwrap();
+        assert_eq!(primary["capabilities"], manifest["capabilities"]);
         let extra = open_display_session(&store, &sessions, &detail, &id, None).unwrap();
         assert_eq!(extra["role"], "details");
         assert_eq!(sessions.0.lock().unwrap().len(), 2);
@@ -1132,6 +1788,18 @@ mod tests {
 
     #[test]
     fn static_resource_rules_and_html_monitor_preserve_document_mode() {
+        assert!(
+            static_resource("dist/squidward.m4a"),
+            "原来电M4A应允许作为静态音频交付"
+        );
+        assert!(
+            static_resource("dist/hit.mp3"),
+            "本地音频应作为静态资源接入"
+        );
+        assert!(
+            static_resource("dist/pomodoro-ding.wav"),
+            "原WAV提示音应允许随包交付"
+        );
         let html = monitor_html(
             b"<!doctype html><html><head><title>test</title></head></html>".to_vec(),
             "/widget/dist/monitor.js",
@@ -1183,6 +1851,103 @@ mod tests {
         )
         .unwrap();
         assert!(preview.lock().unwrap().ready_since.is_some());
+    }
+
+    #[test]
+    fn only_declared_content_packages_can_load_https_images_and_versions_keep_their_own_policy() {
+        let root = std::env::temp_dir().join(format!("souldesk-image-policy-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        let baseline = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &baseline).unwrap();
+        assert_eq!(
+            resource_csp(&store, "local.example.clock/dist/index.html"),
+            COMPONENT_CSP
+        );
+        manifest["version"] = json!("2.0.0");
+        manifest["capabilities"] = json!(["storage.instance", "content.read"]);
+        let content = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &content).unwrap();
+        assert!(resource_csp(&store, "local.example.clock/dist/index.html")
+            .contains("img-src 'self' data: https:"));
+        assert_eq!(
+            resource_csp(
+                &store,
+                &format!("local.example.clock/{}/dist/index.html", baseline.digest)
+            ),
+            COMPONENT_CSP
+        );
+        assert!(resource_csp(
+            &store,
+            &format!("local.example.clock/{}/dist/index.html", content.digest)
+        )
+        .contains("connect-src 'none'"));
+        assert_eq!(
+            resource_csp(&store, "unknown/dist/index.html"),
+            COMPONENT_CSP
+        );
+        manifest["version"] = json!("3.0.0");
+        manifest["capabilities"] = json!(["storage.instance", "assets.local"]);
+        let local = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &local).unwrap();
+        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        assert!(policy.contains("connect-src 'self'"));
+        assert!(policy.contains("worker-src 'self' blob:"));
+        assert!(policy.contains("wasm-unsafe-eval"));
+        assert!(
+            policy.contains("'unsafe-eval'"),
+            "固定字体子集库使用动态函数包装WASM调用"
+        );
+        assert!(
+            !policy.contains("data: https:"),
+            "本地资产能力不授予外部图片"
+        );
+    }
+    #[test]
+    fn embedded_web_policy_is_separate_from_native_and_dynamic_code_permissions() {
+        let root = std::env::temp_dir().join(format!("souldesk-embed-policy-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["capabilities"] = json!([
+            "storage.instance",
+            "web.embed",
+            "clipboard.read",
+            "clipboard.write"
+        ]);
+        let embedded = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &embedded).unwrap();
+        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        assert!(policy.contains("frame-src https:"));
+        assert!(policy.contains("connect-src 'none'"));
+        assert!(!policy.contains("'unsafe-eval'"));
+    }
+    #[test]
+    fn ai_graphics_policy_allows_engine_styles_but_no_scripts_network_workers_or_remote_images() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-ai-graphics-policy-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["capabilities"] = json!(["storage.instance", "ai.generate"]);
+        let candidate = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &candidate).unwrap();
+        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        assert!(
+            policy.contains("style-src 'self' 'unsafe-inline'"),
+            "真实图形引擎动态SVG样式须可用"
+        );
+        assert!(policy.contains("script-src 'self';"));
+        assert!(policy.contains("connect-src 'none'"));
+        assert!(policy.contains("frame-src 'none'"));
+        assert!(policy.contains("img-src 'self' data:"));
+        assert!(
+            !policy.contains("unsafe-eval")
+                && !policy.contains("blob:")
+                && !policy.contains("https:")
+                && !policy.contains("worker-src")
+        );
     }
     #[test]
     fn identical_package_reimport_keeps_live_sessions_and_preview_obeys_capabilities() {

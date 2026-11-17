@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-assistant-surface-failed"
+description = "Enables the assistant_surface_failed command without any pre-configured scope."
+commands.allow = ["assistant_surface_failed"]
+
+[[permission]]
+identifier = "deny-assistant-surface-failed"
+description = "Denies the assistant_surface_failed command without any pre-configured scope."
+commands.deny = ["assistant_surface_failed"]

@@ -1,0 +1,235 @@
+{
+  "repository": "https://github.com/widget-js/widgets",
+  "revision": "714802e66336133396ab55463eb5a26d08fc0788",
+  "files": [
+    {
+      "source": "LICENSE",
+      "path": "LICENSE.txt",
+      "bytes": 18092,
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "source": "public/audio/hangup.m4a",
+      "path": "original/public/audio/hangup.m4a",
+      "bytes": 4973,
+      "sha256": "276c92ff440066fbe133f8cf85e95009ff8fa02d8ccaa79b9eec7680c22af170"
+    },
+    {
+      "source": "public/audio/ringtone.m4a",
+      "path": "original/public/audio/ringtone.m4a",
+      "bytes": 43648,
+      "sha256": "cb019adf80e9e5c30b8b54def4b1a558e5b32cab1bf3fc07ee08d3fdee235919"
+    },
+    {
+      "source": "public/audio/voice/elvis.mp3",
+      "path": "original/public/audio/voice/elvis.mp3",
+      "bytes": 400595,
+      "sha256": "3e61fe6807afd65181e4e5c6baee56c74da4912494789d6f25fea4cd128cdddb"
+    },
+    {
+      "source": "public/audio/voice/jackie_chan.wav",
+      "path": "original/public/audio/voice/jackie_chan.wav",
+      "bytes": 1109966,
+      "sha256": "cec64e6f2e295d60133f0662d2f63afa34d448dd415a9b48e498723179878b01"
+    },
+    {
+      "source": "public/audio/voice/mrs_pan.m4a",
+      "path": "original/public/audio/voice/mrs_pan.m4a",
+      "bytes": 133681,
+      "sha256": "9ce09e69d4faa5cbc36acc839d7f586dca3034901512506eda343a1981c56f8a"
+    },
+    {
+      "source": "public/audio/voice/squidward.m4a",
+      "path": "original/public/audio/voice/squidward.m4a",
+      "bytes": 617749,
+      "sha256": "7f08681e2fa8023a144702b95e1b1e45231ec9207e19f763406cb5dbba956393"
+    },
+    {
+      "source": "public/images/avatar/elvis.png",
+      "path": "original/public/images/avatar/elvis.png",
+      "bytes": 1057179,
+      "sha256": "dfbfa8aaf896ae5bbb312b0e6b0665937fe0cf811607a1468bc662bc4f62a902"
+    },
+    {
+      "source": "public/images/avatar/jackie_chan.jpg",
+      "path": "original/public/images/avatar/jackie_chan.jpg",
+      "bytes": 79570,
+      "sha256": "91af12876d400637221c4f9bdc9d620a4954c1fae71a9cd24c901dc2a47d9cd3"
+    },
+    {
+      "source": "public/images/avatar/mrs_pan.jpg",
+      "path": "original/public/images/avatar/mrs_pan.jpg",
+      "bytes": 17951,
+      "sha256": "5533e5769526151909633f990b7bbb0c2071b532241baf1573a235c2bbf74569"
+    },
+    {
+      "source": "public/images/zhangyuge.jpg",
+      "path": "original/public/images/zhangyuge.jpg",
+      "bytes": 57504,
+      "sha256": "cd30eff9070dd1fae421a8c9f4c1193aca3e8aa6d3af085c35955d1650232761"
+    },
+    {
+      "source": "src/widgets/dynamic-island/DynamicIsland.widget.ts",
+      "path": "original/src/widgets/dynamic-island/DynamicIsland.widget.ts",
+      "bytes": 983,
+      "sha256": "c995768abea638b5cadd1081da18bdb9c4ad4f7a1f8aab2cac5b2b7441410ab0"
+    },
+    {
+      "source": "src/widgets/dynamic-island/DynamicIslandWidget.vue",
+      "path": "original/src/widgets/dynamic-island/DynamicIslandWidget.vue",
+      "bytes": 5580,
+      "sha256": "e8d53528d2ff06ddfaae6de9ef80f232a7308cd2ea54aaf7272f337ca120ce7c"
+    },
+    {
+      "source": "src/widgets/dynamic-island/DynamicIslandWidgetRoutes.ts",
+      "path": "original/src/widgets/dynamic-island/DynamicIslandWidgetRoutes.ts",
+      "bytes": 678,
+      "sha256": "c12439f420c7867d87f8656398551b72154e283709e49bf6c7e2c2ee3e3da4aa"
+    },
+    {
+      "source": "src/widgets/dynamic-island/DynamicIslandWidgetView.vue",
+      "path": "original/src/widgets/dynamic-island/DynamicIslandWidgetView.vue",
+      "bytes": 4537,
+      "sha256": "630c72ac8bf37a3bf594d33e1ea9926e304606a01bbf6e28ddca8aaaa3c4e40a"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/AdvanceCountdownNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/AdvanceCountdownNotification.vue",
+      "bytes": 1904,
+      "sha256": "dbc8a6e778904fcc0d959495fbda5edcb532a0f781c67395322b13ff1be9be03"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/CountingNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/CountingNotification.vue",
+      "bytes": 2521,
+      "sha256": "dce2ce15379fa3589b45fa0df8805b0d7ee96c0ca14bd69c10aa31fd5d8ea051"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/CustomUrlNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/CustomUrlNotification.vue",
+      "bytes": 478,
+      "sha256": "981519db7d010d1f2e039953012e4bd7bcac406c1eab6ffedff34b3e740a3ada"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/MessageNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/MessageNotification.vue",
+      "bytes": 1020,
+      "sha256": "60f2d373d8283d014c029579133ef2b4d1a005dff4d6589bb18285dec1c2faa2"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/PhoneCallNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/PhoneCallNotification.vue",
+      "bytes": 7667,
+      "sha256": "97c541a5f8cf25e7086325b0afb6ff80c1f3de0c5bd344c34435a1c72f660ee4"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/ReminderNotification.vue",
+      "path": "original/src/widgets/dynamic-island/components/ReminderNotification.vue",
+      "bytes": 3112,
+      "sha256": "c2eda21f1f909759c5b1a0961daee75cf9c02ea7ff02bd897610fc5ed26e416a"
+    },
+    {
+      "source": "src/widgets/dynamic-island/components/VoiceBar.vue",
+      "path": "original/src/widgets/dynamic-island/components/VoiceBar.vue",
+      "bytes": 1368,
+      "sha256": "7841f9df1eebba770aab623a6d82e5e7b088c96188663de3fcff90e07c6f2514"
+    },
+    {
+      "source": "src/widgets/dynamic-island/model/Demo.ts",
+      "path": "original/src/widgets/dynamic-island/model/Demo.ts",
+      "bytes": 1672,
+      "sha256": "8f002fa1969397431c1b2a560ed4e30c547e14a264d3638b1d6f5c9b01ddee80"
+    },
+    {
+      "source": "src/widgets/dynamic-island/model/NotificationState.ts",
+      "path": "original/src/widgets/dynamic-island/model/NotificationState.ts",
+      "bytes": 110,
+      "sha256": "999a184b6cc155485da1cb1d6f6b951d2f8a575066ac57e64f913298c966a516"
+    },
+    {
+      "source": "src/widgets/dynamic-island/scss/notification.scss",
+      "path": "original/src/widgets/dynamic-island/scss/notification.scss",
+      "bytes": 27,
+      "sha256": "7bcd98538d8029efd7321be23e67ea73ff416d0a85b0ae639399be54ea11744c"
+    },
+    {
+      "source": "src/widgets/phone-reminder/PhoneReminder.widget.ts",
+      "path": "original/src/widgets/phone-reminder/PhoneReminder.widget.ts",
+      "bytes": 900,
+      "sha256": "611bffe5aa1dff46adaccc775e3b45ec8d6967ce3aa2a6611ccf52ce93ae6a86"
+    },
+    {
+      "source": "src/widgets/phone-reminder/PhoneReminderConfigView.vue",
+      "path": "original/src/widgets/phone-reminder/PhoneReminderConfigView.vue",
+      "bytes": 4797,
+      "sha256": "50fa2b6fa12d6476829d9ef58526f6a1c81d629707b007b5eea11fc58d4e2ed3"
+    },
+    {
+      "source": "src/widgets/phone-reminder/PhoneReminderWidgetRoutes.ts",
+      "path": "original/src/widgets/phone-reminder/PhoneReminderWidgetRoutes.ts",
+      "bytes": 728,
+      "sha256": "e8025481e69acba52c9314d154b759dd7da7ebd04fef9c69fd589b7b54a673e6"
+    },
+    {
+      "source": "src/widgets/phone-reminder/PhoneReminderWidgetView.vue",
+      "path": "original/src/widgets/phone-reminder/PhoneReminderWidgetView.vue",
+      "bytes": 1528,
+      "sha256": "e9a47cf07157d9ae1699143cd0a918715ad70f37b9d0f76590763ef2df80b2d2"
+    },
+    {
+      "source": "src/widgets/phone-reminder/model/PhoneReminder.ts",
+      "path": "original/src/widgets/phone-reminder/model/PhoneReminder.ts",
+      "bytes": 3672,
+      "sha256": "5eb0d1944e6537c10483a0e925a180b93f86191e6dabf736c016fcaff7749114"
+    },
+    {
+      "source": "src/widgets/sit-reminder/BreakView.vue",
+      "path": "original/src/widgets/sit-reminder/BreakView.vue",
+      "bytes": 1835,
+      "sha256": "859219c614d3231f9ff2f51d73d6da3f8240bed3e65b03e3a2e199ebf001d483"
+    },
+    {
+      "source": "src/widgets/sit-reminder/SitReminder.widget.ts",
+      "path": "original/src/widgets/sit-reminder/SitReminder.widget.ts",
+      "bytes": 906,
+      "sha256": "d2656b7b07f8bcf5d3ea591e3b313dbf32fcb1c0885e3f2ede4e77dd0327f76c"
+    },
+    {
+      "source": "src/widgets/sit-reminder/SitReminderConfigView.vue",
+      "path": "original/src/widgets/sit-reminder/SitReminderConfigView.vue",
+      "bytes": 1247,
+      "sha256": "2e36a020e1fc996fc5b99423f13ae1739537902e5509af7e9370912736d04b11"
+    },
+    {
+      "source": "src/widgets/sit-reminder/SitReminderWidget.vue",
+      "path": "original/src/widgets/sit-reminder/SitReminderWidget.vue",
+      "bytes": 194,
+      "sha256": "e209cd0749bbb93fa40252d3dba86076ea0185f9508c1dbf686b894ef8383978"
+    },
+    {
+      "source": "src/widgets/sit-reminder/SitReminderWidgetRoutes.ts",
+      "path": "original/src/widgets/sit-reminder/SitReminderWidgetRoutes.ts",
+      "bytes": 893,
+      "sha256": "c26907713c49f2151b6dfcb7a4ba73c3b4ce4a90c0e730a6839fd970a8333b24"
+    },
+    {
+      "source": "src/widgets/sit-reminder/TextSwitcher.vue",
+      "path": "original/src/widgets/sit-reminder/TextSwitcher.vue",
+      "bytes": 2578,
+      "sha256": "1b18bca2d0d6344882e2aa6b081c4690088b2c75a312a92988d754369294d0da"
+    },
+    {
+      "source": "src/widgets/sit-reminder/composition/use-sit-reminder.ts",
+      "path": "original/src/widgets/sit-reminder/composition/use-sit-reminder.ts",
+      "bytes": 2925,
+      "sha256": "2a29843ed0201d36c2ccb3627099d64bc1e0d314cb191dbfcbef2fe264c8e657"
+    },
+    {
+      "source": "src/widgets/sit-reminder/model/SitReminder.ts",
+      "path": "original/src/widgets/sit-reminder/model/SitReminder.ts",
+      "bytes": 498,
+      "sha256": "8ba592f4c8ff7f7738db7771a0aa7212afaafeb2ccc0073e24c177420fb38707"
+    }
+  ],
+  "scope": "灵动通知、久坐提醒及来电提醒的固定源码与原图片/音频，仅提取不执行"
+}

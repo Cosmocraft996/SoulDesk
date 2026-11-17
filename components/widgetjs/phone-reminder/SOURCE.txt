@@ -1,0 +1,3 @@
+来源：https://github.com/widget-js/widgets/tree/714802e66336133396ab55463eb5a26d08fc0788/src/widgets/phone-reminder
+许可：随包GPL-2.0，原文件散列见components/widgetjs/reminder-source/SOURCE_FILES.json。
+保留四事项/头像/录音/歌词、星期与第一时刻、章鱼哥提前7秒、原试听和灵动来电Vue/SCSS、装饰波形。不是系统电话接入。默认全部关闭，需显式开启灵动通知；SQLite先预留当天计划槽，不恢复过期来电。主程序调度，隐藏控制卡仍工作。仅窗口已显示后尝试播放，歌词跟随实际audio.currentTime，失败显示接听重试。试加载静音不访问后台，不加载外部音频，不执行任意通知或URL。

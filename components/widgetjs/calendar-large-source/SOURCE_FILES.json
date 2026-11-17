@@ -1,0 +1,46 @@
+{
+  "entry": "https://itime.fun/web/",
+  "deployment": "index-BJrdQu13.js",
+  "entrySha256": "79ba25621b91084bb06fa4a3e78888eee28f03767949ac7049ab19b7dee5cf06",
+  "upstreamId": "itime.fun.calendar_large",
+  "license": "公开部署未附许可声明，按用户明确自用范围保留来源",
+  "adaptation": "保留原FullCalendar/Preact及daygrid/rrule/interaction算法；移除WidgetJS/Vue包装，原两段CSS独立交付，停用运行时样式注入",
+  "files": [
+    {
+      "path": "original/CalendarLargeConfigView-BnhonMyN.js",
+      "url": "https://itime.fun/web/assets/CalendarLargeConfigView-BnhonMyN.js",
+      "bytes": 5295,
+      "sha256": "de3983e0cce469edd27090b2404227c40493135eb2cdb79c016c5f0ca0759780"
+    },
+    {
+      "path": "original/CalendarLargeConfigView-_PKGlKeF.css",
+      "url": "https://itime.fun/web/assets/CalendarLargeConfigView-_PKGlKeF.css",
+      "bytes": 319,
+      "sha256": "022b9e72100283704f01f8db9bf81d08b0293c2c032145fa8b88cd9fbc862535"
+    },
+    {
+      "path": "original/CalendarLargeWidgetView-BWZiw04f.js",
+      "url": "https://itime.fun/web/assets/CalendarLargeWidgetView-BWZiw04f.js",
+      "bytes": 303696,
+      "sha256": "727c3e3a2e8d19d2967ca27bb40d4cc25bc4e20513785975b93b19307669299d"
+    },
+    {
+      "path": "original/CalendarLargeWidgetView-CeVf48fi.css",
+      "url": "https://itime.fun/web/assets/CalendarLargeWidgetView-CeVf48fi.css",
+      "bytes": 457,
+      "sha256": "bf55034f3317ebd913f1bf57a13b74c16ca924a13df379e73518474540c310bf"
+    },
+    {
+      "path": "original/PublicEventApi-CCyMTjiM.js",
+      "url": "https://itime.fun/web/assets/PublicEventApi-CCyMTjiM.js",
+      "bytes": 126,
+      "sha256": "2ff8e427d50cabf909c62a4febf985560cc17f4a51b5d3549f913a0c2d2fc8e4"
+    },
+    {
+      "path": "original/index-foMHgrIw.js",
+      "url": "https://itime.fun/web/assets/index-foMHgrIw.js",
+      "bytes": 302243,
+      "sha256": "2d1db889b8aa01b27138c5f6d8f6227b82cbe5db5c51dbe0fc885567cba21afb"
+    }
+  ]
+}

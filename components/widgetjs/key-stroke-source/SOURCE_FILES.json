@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/rtugeek/utilities",
+  "revision": "3d733215bac3e9c1e58125518f100c1601650828",
+  "files": [
+    {
+      "source": "src/widgets/key-stroke/KeyStrokeWidgetView.vue",
+      "sha256": "ead4faedf9b0a316e9d4377ac46bf574c8f0793b08b1224c148b4db917469927"
+    }
+  ],
+  "adaptation": "原Vue模板/SCSS，宿主快照替换钩子与窗口API；固定CSS代替motion；移除鼠标启用，保持穿透"
+}

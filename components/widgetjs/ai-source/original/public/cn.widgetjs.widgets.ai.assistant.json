@@ -1,0 +1,238 @@
+{
+  "name": "cn.widgetjs.widgets.ai.assistant",
+  "version": "0.4.1",
+  "requiredAppVersion": "0.0.1",
+  "author": "Neo Fu",
+  "homepage": "https://widgetjs.cn",
+  "title": {
+    "zh-CN": "AI助手"
+  },
+  "description": {
+    "zh-CN": "一键呼出DeepSeek、Kimi、豆包、Grok等AI服务"
+  },
+  "entry": "index.html",
+  "remoteEntry": "https://widgetjs.cn/ai",
+  "remotePackage": "https://widgetjs.cn/ai/widget.json",
+  "remote": {
+    "entry": "https://widgetjs.cn/ai",
+    "hash": true,
+    "base": "/ai",
+    "hostname": "widgetjs.cn"
+  },
+  "zipUrl": "https://widgetjs.cn/ai/widget.zip",
+  "hash": true,
+  "url": "",
+  "widgets": [
+    {
+      "name": "cn.widgetjs.widgets.ai.assistant.translate",
+      "title": {
+        "zh-CN": "AI翻译",
+        "en-US": "AI Translation"
+      },
+      "description": {
+        "zh-CN": "使用AI翻译文本",
+        "en-US": "Translate text using AI"
+      },
+      "keywords": [
+        "recommend"
+      ],
+      "security": false,
+      "permissions": [],
+      "lang": "zh-CN",
+      "width": 1,
+      "height": 1,
+      "maxWidth": 1,
+      "webviewTag": false,
+      "maxHeight": 1,
+      "minWidth": 1,
+      "minHeight": 1,
+      "movable": true,
+      "singleton": false,
+      "resizable": true,
+      "path": "/widget/translate",
+      "meta": {},
+      "backgroundThrottling": false,
+      "previewImage": "/preview_translate.png",
+      "categories": [
+        "ai",
+        "utilities"
+      ],
+      "supportDeployMode": 65536,
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "routes": [],
+      "browserWindowOptions": {
+        "width": 800,
+        "height": 600,
+        "frame": true,
+        "center": true,
+        "titleBarStyle": "hidden",
+        "transparent": false,
+        "skipTaskbar": false
+      },
+      "socialLinks": [
+        {
+          "name": "github",
+          "link": "https://github.com/rtugeek/ai"
+        }
+      ]
+    },
+    {
+      "name": "cn.widgetjs.widgets.ai.assistant.mind_map",
+      "title": {
+        "zh-CN": "思维导图",
+        "en-US": "Mind Map"
+      },
+      "description": {
+        "zh-CN": "根据关键词生成思维导图",
+        "en-US": "Generate a mind map based on keywords"
+      },
+      "keywords": [
+        "recommend"
+      ],
+      "security": false,
+      "permissions": [],
+      "lang": "zh-CN",
+      "width": 1,
+      "height": 1,
+      "maxWidth": 1,
+      "webviewTag": false,
+      "maxHeight": 1,
+      "minWidth": 1,
+      "minHeight": 1,
+      "movable": true,
+      "singleton": false,
+      "resizable": true,
+      "path": "/widget/mind_map",
+      "meta": {},
+      "backgroundThrottling": false,
+      "previewImage": "/preview_mindmap.png",
+      "categories": [
+        "ai",
+        "utilities"
+      ],
+      "supportDeployMode": 65536,
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "routes": [],
+      "browserWindowOptions": {
+        "width": 800,
+        "height": 600,
+        "frame": true,
+        "center": true,
+        "titleBarStyle": "hidden",
+        "transparent": false,
+        "skipTaskbar": false
+      },
+      "socialLinks": [
+        {
+          "name": "github",
+          "link": "https://github.com/rtugeek/ai"
+        }
+      ]
+    },
+    {
+      "name": "cn.widgetjs.widgets.ai.assistant.mermaid",
+      "title": {
+        "zh-CN": "Mermaid图表",
+        "en-US": "Mermaid Chart"
+      },
+      "description": {
+        "zh-CN": "生成流程图、类图、甘特图、时序图等图表",
+        "en-US": "Generate flowcharts, class diagrams, Gantt charts, sequence diagrams, etc."
+      },
+      "keywords": [
+        "recommend"
+      ],
+      "security": false,
+      "permissions": [],
+      "lang": "zh-CN",
+      "width": 1,
+      "height": 1,
+      "maxWidth": 1,
+      "webviewTag": false,
+      "maxHeight": 1,
+      "minWidth": 1,
+      "minHeight": 1,
+      "movable": true,
+      "singleton": false,
+      "resizable": true,
+      "path": "/widget/mermaid",
+      "meta": {},
+      "backgroundThrottling": false,
+      "previewImage": "/preview_mermaid.png",
+      "categories": [
+        "ai",
+        "utilities"
+      ],
+      "supportDeployMode": 65536,
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "routes": [],
+      "browserWindowOptions": {
+        "width": 800,
+        "height": 600,
+        "center": true,
+        "frame": true,
+        "titleBarStyle": "hidden",
+        "transparent": false,
+        "skipTaskbar": false
+      },
+      "socialLinks": [
+        {
+          "name": "github",
+          "link": "https://github.com/rtugeek/ai"
+        }
+      ]
+    },
+    {
+      "name": "cn.widgetjs.widgets.ai.assistant.chatgpt",
+      "title": {
+        "zh-CN": "AI助手",
+        "en-US": "AI Assistant"
+      },
+      "description": {
+        "zh-CN": "一键呼出DeepSeek、Kimi、豆包、Grok等AI服务",
+        "en-US": "Call DeepSeek, ChatGPT, Grok, Gemini with shortcut"
+      },
+      "keywords": [
+        "recommend"
+      ],
+      "security": false,
+      "permissions": [],
+      "lang": "zh-CN",
+      "width": 1,
+      "height": 1,
+      "maxWidth": 1,
+      "webviewTag": true,
+      "maxHeight": 15,
+      "minWidth": 1,
+      "minHeight": 1,
+      "movable": true,
+      "singleton": false,
+      "resizable": true,
+      "path": "/widget/chatgpt",
+      "meta": {},
+      "backgroundThrottling": false,
+      "previewImage": "/preview_ai.png",
+      "categories": [
+        "productivity",
+        "ai"
+      ],
+      "supportDeployMode": 65536,
+      "configPagePath": "/widget/config/chatgpt?frame=true&transparent=false",
+      "routes": [],
+      "browserWindowOptions": {
+        "webviewTag": true
+      },
+      "socialLinks": [
+        {
+          "name": "github",
+          "link": "https://github.com/rtugeek/ai"
+        },
+        {
+          "name": "bilibili",
+          "link": "https://www.bilibili.com/video/BV1B29AY2ELn/"
+        }
+      ]
+    }
+  ],
+  "pages": []
+}

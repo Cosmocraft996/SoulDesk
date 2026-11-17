@@ -1,0 +1,541 @@
+{
+  "repository": "https://github.com/rtugeek/ai",
+  "revision": "0160f55feabd19421953c687eba033a707a8c3c2",
+  "license": "GPL v2 原LICENSE，package.json另声明MIT，两份事实均保留",
+  "files": [
+    {
+      "source": "LICENSE",
+      "path": "LICENSE.txt",
+      "bytes": 18092,
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "source": "README.md",
+      "path": "original/README.md",
+      "bytes": 2080,
+      "sha256": "c173756327916c6eb8bd6f726a1b69d03345f6c15f63952404732cb723954f14"
+    },
+    {
+      "source": "index.html",
+      "path": "original/index.html",
+      "bytes": 895,
+      "sha256": "9e6967c3d3f0ef834c9a5191721a49bd3da215471f7254c77d33e784e1f14c05"
+    },
+    {
+      "source": "package.json",
+      "path": "original/package.json",
+      "bytes": 2631,
+      "sha256": "791e5ff44b328c96013fe1824f8d1862da1eac380541bf9565b7cf97319a7f23"
+    },
+    {
+      "source": "pnpm-lock.yaml",
+      "path": "original/pnpm-lock.yaml",
+      "bytes": 416226,
+      "sha256": "29397b7837afa219dca9fd4eb8c0097cf4c8318b7eecee7ecdd2848cc32156aa"
+    },
+    {
+      "source": "public/.spa",
+      "path": "original/public/.spa",
+      "bytes": 49,
+      "sha256": "fe6494d388341097482e912ec30dc73d81d5585fa2cd55d2f6ace06dd9236b93"
+    },
+    {
+      "source": "public/cn.widgetjs.widgets.ai.assistant.json",
+      "path": "original/public/cn.widgetjs.widgets.ai.assistant.json",
+      "bytes": 6039,
+      "sha256": "bafb87b5aeb0e45acf7c3e7209df8ca8eed1a244234c9af5c544616363404f16"
+    },
+    {
+      "source": "public/favicon.ico",
+      "path": "original/public/favicon.ico",
+      "bytes": 4286,
+      "sha256": "db74ab0b78338c1f778f8398c45f4103c99aea0e845a3118a7750b4eeafd3445"
+    },
+    {
+      "source": "public/logo.png",
+      "path": "original/public/logo.png",
+      "bytes": 69752,
+      "sha256": "7cb43d91a76ac76bec15ea3c79534d54f4f54b98e8e4268dc4891749a9f87d56"
+    },
+    {
+      "source": "public/preview_ai.png",
+      "path": "original/public/preview_ai.png",
+      "bytes": 37820,
+      "sha256": "e488e3768177a022cb9dcc009411547012d758a1d0d42c495583cff2177cad16"
+    },
+    {
+      "source": "public/preview_mermaid.png",
+      "path": "original/public/preview_mermaid.png",
+      "bytes": 70466,
+      "sha256": "78c2bcc495f2303c629900a9c65b934e85b8e4b1d599fe28cd01d15dcc3d4687"
+    },
+    {
+      "source": "public/preview_mindmap.png",
+      "path": "original/public/preview_mindmap.png",
+      "bytes": 212932,
+      "sha256": "0009abcdd152cca3da01893c43b857c8be0508715ad66051c6a8400150487cba"
+    },
+    {
+      "source": "public/preview_translate.png",
+      "path": "original/public/preview_translate.png",
+      "bytes": 30189,
+      "sha256": "3ae34e91604d3e7b105f1855e9690106ac6edc33a6cf9cf07fd606426c5645ca"
+    },
+    {
+      "source": "public/widget.json",
+      "path": "original/public/widget.json",
+      "bytes": 6039,
+      "sha256": "bafb87b5aeb0e45acf7c3e7209df8ca8eed1a244234c9af5c544616363404f16"
+    },
+    {
+      "source": "src/App.vue",
+      "path": "original/src/App.vue",
+      "bytes": 521,
+      "sha256": "9b0ae5bdb265a7a8c5392def39d3877ea1651868729052d2f9cd4b8cdaa65780"
+    },
+    {
+      "source": "src/api/Prompt.ts",
+      "path": "original/src/api/Prompt.ts",
+      "bytes": 960,
+      "sha256": "9a641c2ce2a3a0cb60a99f50a5912c799ceeeb14c07c4f84d798088ac9a5f579"
+    },
+    {
+      "source": "src/assets/chatgpt-icon.png",
+      "path": "original/src/assets/chatgpt-icon.png",
+      "bytes": 5584,
+      "sha256": "5ef5ffc3b15bf9a3364665e231dab42892f511de49c97d344d4b3afa3b5bfd94"
+    },
+    {
+      "source": "src/assets/deepseek.png",
+      "path": "original/src/assets/deepseek.png",
+      "bytes": 4130,
+      "sha256": "15247c4a4188995c79317c8a2a465a9ba833ae612d5edcff53ae662099272d51"
+    },
+    {
+      "source": "src/assets/dou_bao.png",
+      "path": "original/src/assets/dou_bao.png",
+      "bytes": 9912,
+      "sha256": "d58ea85647b8e5b9e2738b1b118cf77b588c1f162bbc1a4050bbb8a2d68ad3c9"
+    },
+    {
+      "source": "src/assets/google-gemini-icon.png",
+      "path": "original/src/assets/google-gemini-icon.png",
+      "bytes": 16697,
+      "sha256": "b057023b1053bf52451c91d867750f5af081812042789f76aa991a9b8b9ca352"
+    },
+    {
+      "source": "src/assets/grok.png",
+      "path": "original/src/assets/grok.png",
+      "bytes": 33277,
+      "sha256": "ae50d19953b9fd9fa4e3884365c0ffa0fa604d4266fefbf20d58eac26d6671f8"
+    },
+    {
+      "source": "src/assets/images/bar_chart.png",
+      "path": "original/src/assets/images/bar_chart.png",
+      "bytes": 128243,
+      "sha256": "abdf0e73debefa805b0e82747ac8cfdee607137675864b3ff2498d119def42b8"
+    },
+    {
+      "source": "src/assets/images/docx.png",
+      "path": "original/src/assets/images/docx.png",
+      "bytes": 3754,
+      "sha256": "c225d92a1b9f73cf9f16b42f0986b4921267628df8c79e40744491df48dd5025"
+    },
+    {
+      "source": "src/assets/images/exploding_head_3d.png",
+      "path": "original/src/assets/images/exploding_head_3d.png",
+      "bytes": 47230,
+      "sha256": "a915d5b325dbe3130fed54ebaf793777ab88b54c130560f8f3c17ad1af2bcdaf"
+    },
+    {
+      "source": "src/assets/images/face_with_monocle_3d.png",
+      "path": "original/src/assets/images/face_with_monocle_3d.png",
+      "bytes": 45911,
+      "sha256": "de447e866d16da68cf6c87e88a35b3312b76b20492056604259bd16e2148570e"
+    },
+    {
+      "source": "src/assets/images/globe_showing_asia-australia_3d.png",
+      "path": "original/src/assets/images/globe_showing_asia-australia_3d.png",
+      "bytes": 42172,
+      "sha256": "2425b438be805a2e54bfc1a40f93418c484c6ec392a17090f18ab3fbf62868ac"
+    },
+    {
+      "source": "src/assets/images/magnifying_glass_tilted_left_3d.png",
+      "path": "original/src/assets/images/magnifying_glass_tilted_left_3d.png",
+      "bytes": 35247,
+      "sha256": "e8fea91e4652a36486aa9392a67873c987a13389afdae06bbcdae78ab30b4f4f"
+    },
+    {
+      "source": "src/assets/images/open-book.png",
+      "path": "original/src/assets/images/open-book.png",
+      "bytes": 14654,
+      "sha256": "5fd3e85d83a8db95f6c2e2970ce4101560c9aa288ba58a589c820addb257f330"
+    },
+    {
+      "source": "src/assets/images/page_with_curl_3d.png",
+      "path": "original/src/assets/images/page_with_curl_3d.png",
+      "bytes": 27920,
+      "sha256": "64441859deece3ff29976c702ac13626b1f6cc94f3bbf9cf62c77f49607fdb85"
+    },
+    {
+      "source": "src/assets/images/robot_3d.png",
+      "path": "original/src/assets/images/robot_3d.png",
+      "bytes": 43362,
+      "sha256": "3f9b5a00b53c8bddda36b6a3f68d00718d9d7d8c04f986a3248e55ae93a7961b"
+    },
+    {
+      "source": "src/assets/kimi.png",
+      "path": "original/src/assets/kimi.png",
+      "bytes": 20874,
+      "sha256": "1306c5095bbcbdcb25e64856c7d435ecde0ab0e00b37f61ee06bbf712f02a673"
+    },
+    {
+      "source": "src/assets/logo/chatgpt.png",
+      "path": "original/src/assets/logo/chatgpt.png",
+      "bytes": 6582,
+      "sha256": "8374f245e9e17636f814176d343c2c2a95e1f72564eba83aef73a861e4d5361e"
+    },
+    {
+      "source": "src/assets/logo/deepseek.png",
+      "path": "original/src/assets/logo/deepseek.png",
+      "bytes": 4646,
+      "sha256": "6bf2674321033cdddf2a475affaccb0795ebce87efcc5176b40ffe4d84c58749"
+    },
+    {
+      "source": "src/assets/logo/qian_wen.png",
+      "path": "original/src/assets/logo/qian_wen.png",
+      "bytes": 4287,
+      "sha256": "acb38a1625cccd84a34ed632b5eea26484d7ffa82ba88b8119a671fb631de0e2"
+    },
+    {
+      "source": "src/assets/logo/spark.png",
+      "path": "original/src/assets/logo/spark.png",
+      "bytes": 5757,
+      "sha256": "544cb5edffbb91cdc5acbbdfcb3d1d3e904ed6e27cf3f4a97106e1d3bfcf0acc"
+    },
+    {
+      "source": "src/assets/logo/tencent.png",
+      "path": "original/src/assets/logo/tencent.png",
+      "bytes": 4271,
+      "sha256": "26668f1cc297eb5c1f7aa7b1145beacda82e685b7c11de89118d34837148694f"
+    },
+    {
+      "source": "src/assets/main.css",
+      "path": "original/src/assets/main.css",
+      "bytes": 1783,
+      "sha256": "f104170c0dde86705af73c6bb2a8062491931ec09971d83ef664d19f3e730d34"
+    },
+    {
+      "source": "src/assets/qwen.png",
+      "path": "original/src/assets/qwen.png",
+      "bytes": 30630,
+      "sha256": "7f887999e1070937dc28987f6d5862e54cd6c4d1f18f0ca8e73e67d77586834e"
+    },
+    {
+      "source": "src/assets/robot.png",
+      "path": "original/src/assets/robot.png",
+      "bytes": 121513,
+      "sha256": "308bac089f69d4d20fd24102ded1528f5595e293db271106c7474c9e5fa97e4e"
+    },
+    {
+      "source": "src/assets/widget.png",
+      "path": "original/src/assets/widget.png",
+      "bytes": 70645,
+      "sha256": "b006a994f5c5e69819d090fe9ab72858e4acfba3459c787c10311b5741b25628"
+    },
+    {
+      "source": "src/assets/yuanbao.png",
+      "path": "original/src/assets/yuanbao.png",
+      "bytes": 55724,
+      "sha256": "5ca181aede182eae5339a0574ae6854433946c31922634af211ace000ea234d1"
+    },
+    {
+      "source": "src/common/css/common.css",
+      "path": "original/src/common/css/common.css",
+      "bytes": 1192,
+      "sha256": "21ca5f79b9eb08aed5be2eff06b57f1d3b6105b28c3674626897a2bcaf0d726a"
+    },
+    {
+      "source": "src/components/Card.vue",
+      "path": "original/src/components/Card.vue",
+      "bytes": 262,
+      "sha256": "8520031d28302816a409cc0e2593e12afd88f892eb8bde8880965fcb7fb59115"
+    },
+    {
+      "source": "src/components/ContextMenu.vue",
+      "path": "original/src/components/ContextMenu.vue",
+      "bytes": 1328,
+      "sha256": "52e262ebb62443458958c4a808f4789b9b676f2e6ac20677a1d22bb1592f9e0b"
+    },
+    {
+      "source": "src/components/EmojiLogo.vue",
+      "path": "original/src/components/EmojiLogo.vue",
+      "bytes": 390,
+      "sha256": "69bc647d59d2502827a0dbfcf3d60234b9bd8344d2d2a783ffff6fb7da77b95b"
+    },
+    {
+      "source": "src/components/FullScreenButton.vue",
+      "path": "original/src/components/FullScreenButton.vue",
+      "bytes": 791,
+      "sha256": "30a6a8db3f1d25f1f589032d62d873ad3f7fcc1e2637e860bd84f9b899b3a631"
+    },
+    {
+      "source": "src/components/LanguageSelect.vue",
+      "path": "original/src/components/LanguageSelect.vue",
+      "bytes": 1242,
+      "sha256": "97a9235d4dfc8823dd4e68614c0f1e6cca78d796c8730518cb6c1323edd53676"
+    },
+    {
+      "source": "src/components/Markdown.vue",
+      "path": "original/src/components/Markdown.vue",
+      "bytes": 926,
+      "sha256": "657f77746f98e21efa63371f92b0cc7413a508cf31d5741fca99fc4826168ec9"
+    },
+    {
+      "source": "src/components/MarkdownMap.vue",
+      "path": "original/src/components/MarkdownMap.vue",
+      "bytes": 3924,
+      "sha256": "12f98a678e8e8c6c5591f27f125a2694f62521ae80eb0b376616ef65c5802616"
+    },
+    {
+      "source": "src/components/PaginationScrollbar.vue",
+      "path": "original/src/components/PaginationScrollbar.vue",
+      "bytes": 1107,
+      "sha256": "dbe04d6c3f3f4c91c19234ffda0afc26ac46f57f64e089dbeea1c740e945acee"
+    },
+    {
+      "source": "src/components/ThemeToggle.vue",
+      "path": "original/src/components/ThemeToggle.vue",
+      "bytes": 912,
+      "sha256": "9ac8a8a662070c3f7452f414d502b2aad4f5eb79dc0e9626e4d8d57d2b142fcd"
+    },
+    {
+      "source": "src/components/window/Window.vue",
+      "path": "original/src/components/window/Window.vue",
+      "bytes": 625,
+      "sha256": "12be82d16654218c798a87c06cb8c62c62045a7c3e8faa5a56dd8ad23a071d1a"
+    },
+    {
+      "source": "src/components/window/WindowTitleBar.vue",
+      "path": "original/src/components/window/WindowTitleBar.vue",
+      "bytes": 2263,
+      "sha256": "718f17e9e0665a785382b6bfad671f6758c94aca92f51c66803f624b0763dcdb"
+    },
+    {
+      "source": "src/composition/useRouteAiConfig.ts",
+      "path": "original/src/composition/useRouteAiConfig.ts",
+      "bytes": 1605,
+      "sha256": "ec5699a02f2681c8ef20ac3742e4617f8a804243a4843409f821865c08db23a4"
+    },
+    {
+      "source": "src/composition/useWindowState.ts",
+      "path": "original/src/composition/useWindowState.ts",
+      "bytes": 2018,
+      "sha256": "ee78eb957b6eab019433fd7b75a1055ab5fda496f877f8288eb7b2e9487a060d"
+    },
+    {
+      "source": "src/data/CommonContext.ts",
+      "path": "original/src/data/CommonContext.ts",
+      "bytes": 1036,
+      "sha256": "cb2ac3156c47e7c54da2aebedf3c51487ff96c5ad96d9b9ee573eae7a0dfe4b2"
+    },
+    {
+      "source": "src/data/TranslateContext.ts",
+      "path": "original/src/data/TranslateContext.ts",
+      "bytes": 829,
+      "sha256": "d07ba88a9b96d7d3abe92557fca2ed00c3e7d27113270aeaf5add18c331e6c4c"
+    },
+    {
+      "source": "src/i18n/index.ts",
+      "path": "original/src/i18n/index.ts",
+      "bytes": 4660,
+      "sha256": "6662a0c902046b1e892a0df4b3b2d345af95bd0bf38ae4774f876a67533bd8a7"
+    },
+    {
+      "source": "src/main.ts",
+      "path": "original/src/main.ts",
+      "bytes": 610,
+      "sha256": "1f300cbe85ffebfc08be8fbfcde446302a595d027fc941f27db0fc944b374746"
+    },
+    {
+      "source": "src/router/index.ts",
+      "path": "original/src/router/index.ts",
+      "bytes": 528,
+      "sha256": "526fadfb6302dae234ed13c4abc2683632bf5d9d23bce47501eb481cd9f8bced"
+    },
+    {
+      "source": "src/shims-vue.d.ts",
+      "path": "original/src/shims-vue.d.ts",
+      "bytes": 250,
+      "sha256": "772a4de3e9eb29d7ae94fa1564da6ed6a626f3d883057ac1055bbbb1197822d9"
+    },
+    {
+      "source": "src/store/useConfigStore.ts",
+      "path": "original/src/store/useConfigStore.ts",
+      "bytes": 1532,
+      "sha256": "76e3bd1f8a57fb9be1b1e73661d0de989f3ee52fac314edbd5deaea7189d4d37"
+    },
+    {
+      "source": "src/utils/AiUtils.ts",
+      "path": "original/src/utils/AiUtils.ts",
+      "bytes": 2212,
+      "sha256": "049aae8009a22335965baa1fd4b484be716fb13edbfb8f1cc6dedbc5daa59ba5"
+    },
+    {
+      "source": "src/vite-env.d.ts",
+      "path": "original/src/vite-env.d.ts",
+      "bytes": 39,
+      "sha256": "d071c1fa889272a3c73a1fb993916fbd6fb5c70d90a7a19a9beb7d83b3d6060b"
+    },
+    {
+      "source": "src/widgets/ai/AiConfig.ts",
+      "path": "original/src/widgets/ai/AiConfig.ts",
+      "bytes": 359,
+      "sha256": "24c434663b171a341fb9c5a0463605aa2b40f84077e2b3e3651a4d158e4bd611"
+    },
+    {
+      "source": "src/widgets/ai/AiConfigView.vue",
+      "path": "original/src/widgets/ai/AiConfigView.vue",
+      "bytes": 1891,
+      "sha256": "450c061299925d0f7d5aaf2f573b14623940c25510e2971f546a5aaff13e9782"
+    },
+    {
+      "source": "src/widgets/ai/AiWidgetRoutes.ts",
+      "path": "original/src/widgets/ai/AiWidgetRoutes.ts",
+      "bytes": 536,
+      "sha256": "cf5d39ef96174935401b393661eb9a031dfdc6d2383ff617fd1e3b20ed157ab4"
+    },
+    {
+      "source": "src/widgets/ai/AiWidgetView.vue",
+      "path": "original/src/widgets/ai/AiWidgetView.vue",
+      "bytes": 3444,
+      "sha256": "02344d2e326f620cfea34706629874b96842bb3ec5f3e0781c2e58ca0c08b026"
+    },
+    {
+      "source": "src/widgets/ai/Loading.vue",
+      "path": "original/src/widgets/ai/Loading.vue",
+      "bytes": 1158,
+      "sha256": "671fda78463c9a713852b3407a88bde644abc248ebeff96c4ea677ac260960d1"
+    },
+    {
+      "source": "src/widgets/ai/ai.widget.ts",
+      "path": "original/src/widgets/ai/ai.widget.ts",
+      "bytes": 937,
+      "sha256": "a1c59675d9c90170f1fea5a1c23592be152d7c61ff3ef49f5dc3c2d1983fefcf"
+    },
+    {
+      "source": "src/widgets/ai/component/AiPlatformRadioGroup.vue",
+      "path": "original/src/widgets/ai/component/AiPlatformRadioGroup.vue",
+      "bytes": 1649,
+      "sha256": "7a28cda82252b4b1b4614bd32c200960d0b49e557f162744647ca2038aaf4235"
+    },
+    {
+      "source": "src/widgets/ai/component/AiSelect.vue",
+      "path": "original/src/widgets/ai/component/AiSelect.vue",
+      "bytes": 2349,
+      "sha256": "8c8a5c8c3f0568e90589c8cec765b455bc0312a54f9b0b1dac7543a82e8ccdbc"
+    },
+    {
+      "source": "src/widgets/ai/component/BaseWebview.vue",
+      "path": "original/src/widgets/ai/component/BaseWebview.vue",
+      "bytes": 3746,
+      "sha256": "4e457a4f2de3bc68c7bb4bac5d999ea1abf59f6f105d04efdcac323209ccffc6"
+    },
+    {
+      "source": "src/widgets/ai/component/DuelWebview.vue",
+      "path": "original/src/widgets/ai/component/DuelWebview.vue",
+      "bytes": 2910,
+      "sha256": "20403f24a626606448b35c03f2d719d3b92a9f715f04e03e0c0482e0628e15d8"
+    },
+    {
+      "source": "src/widgets/ai/component/PromptInput.vue",
+      "path": "original/src/widgets/ai/component/PromptInput.vue",
+      "bytes": 1727,
+      "sha256": "ba136ae2361af1c810d2971ebb26d71b51db2476ced154ffe31ce1728609a860"
+    },
+    {
+      "source": "src/widgets/ai/component/SettingHeader.vue",
+      "path": "original/src/widgets/ai/component/SettingHeader.vue",
+      "bytes": 2743,
+      "sha256": "6ad654cf12e0fd3ad37976c50077cf0329881104523daf59a9720c92eb798949"
+    },
+    {
+      "source": "src/widgets/ai/component/Tip.vue",
+      "path": "original/src/widgets/ai/component/Tip.vue",
+      "bytes": 1538,
+      "sha256": "cf633376cb2717120c47ab7e0294ee034fb8e681aac97a80849469879f3b1bf4"
+    },
+    {
+      "source": "src/widgets/mermaid/Mermaid.widget.ts",
+      "path": "original/src/widgets/mermaid/Mermaid.widget.ts",
+      "bytes": 947,
+      "sha256": "02c9bb660c478277617653146f03c67c5e61495f870e7da4b62a5cb8efdfc0ba"
+    },
+    {
+      "source": "src/widgets/mermaid/MermaidChart.vue",
+      "path": "original/src/widgets/mermaid/MermaidChart.vue",
+      "bytes": 8953,
+      "sha256": "58e7a3b9766989fc8aed745ee07ac645cfc7c15290fc76cc57c295f58abe690d"
+    },
+    {
+      "source": "src/widgets/mermaid/MermaidWidgetRoutes.ts",
+      "path": "original/src/widgets/mermaid/MermaidWidgetRoutes.ts",
+      "bytes": 342,
+      "sha256": "dcef5255185b13e240ea85a7c679087977adda592d106f0645b7761713bbf017"
+    },
+    {
+      "source": "src/widgets/mermaid/MermaidWidgetView.vue",
+      "path": "original/src/widgets/mermaid/MermaidWidgetView.vue",
+      "bytes": 4595,
+      "sha256": "260de5911ee62690d633ddfe59a570d1e4cf361d802a5cae77a16ad59408c8ca"
+    },
+    {
+      "source": "src/widgets/mind-map/MindMap.widget.ts",
+      "path": "original/src/widgets/mind-map/MindMap.widget.ts",
+      "bytes": 890,
+      "sha256": "16058874a58ec7fbb99f13b90d52a0e98f1cfe12cf01f0038d9c87f33e8a6b8d"
+    },
+    {
+      "source": "src/widgets/mind-map/MindMapWidgetRoutes.ts",
+      "path": "original/src/widgets/mind-map/MindMapWidgetRoutes.ts",
+      "bytes": 342,
+      "sha256": "046e5525788e9ba972ef9a73152f24c5edc4e0ee0a059d9eead2982f479bb0a4"
+    },
+    {
+      "source": "src/widgets/mind-map/MindMapWidgetView.vue",
+      "path": "original/src/widgets/mind-map/MindMapWidgetView.vue",
+      "bytes": 4475,
+      "sha256": "12ffdd4fc425dd1f779c979d6327ddda66ab2c1982a9573ddaa75414c916ac47"
+    },
+    {
+      "source": "src/widgets/translate/Translate.widget.ts",
+      "path": "original/src/widgets/translate/Translate.widget.ts",
+      "bytes": 865,
+      "sha256": "0c6f9a1e98fd2543f44ef775b07050ae00aafa2baed48e98841273253f9aecd5"
+    },
+    {
+      "source": "src/widgets/translate/TranslateWidgetRoutes.ts",
+      "path": "original/src/widgets/translate/TranslateWidgetRoutes.ts",
+      "bytes": 356,
+      "sha256": "4272b444186037b1ba181a78a787a1cd3224779e58d59261cd91373c95468d7a"
+    },
+    {
+      "source": "src/widgets/translate/TranslateWidgetView.vue",
+      "path": "original/src/widgets/translate/TranslateWidgetView.vue",
+      "bytes": 4085,
+      "sha256": "9cf8b1b68d2f82314a7a40366b09af4bf00ec66af7152194fd517a30307b3d75"
+    },
+    {
+      "source": "src/widgets/widget-router.ts",
+      "path": "original/src/widgets/widget-router.ts",
+      "bytes": 509,
+      "sha256": "7e992b19d57c7f5819c3c984405c635d25f27c0e5c2c6e0a4084d8110fa2990b"
+    },
+    {
+      "source": "vite.config.ts",
+      "path": "original/vite.config.ts",
+      "bytes": 1131,
+      "sha256": "a96e742005179a240ba124459930db59471154278703ac90401a3a8db676c630"
+    }
+  ]
+}

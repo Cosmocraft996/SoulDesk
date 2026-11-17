@@ -1,0 +1,6 @@
+来源：https://github.com/rtugeek/ai/tree/0160f55feabd19421953c687eba033a707a8c3c2
+保留原TranslateWidgetView.vue、20种原语言、双向母语/第二语言、固定原提示词、复制、图标与主题。来源89份原文件与散列见components/widgetjs/ai-source/SOURCE_FILES.json。原LICENSE为GPL v2，package.json另声明MIT，两者均记录；按用户本机自用授权移植，不发布。
+原AI公共配置/WidgetJS接口改SoulDesk固定AI业务网关；用户自填API地址/模型/Key，默认关闭，只在显式生成时请求。密钥按Windows用户与实例DPAPI保护，普通实例仅保存输入/结果/有限历史。原流式结果使用SSE、请求UUID/版本/会话/取消保护，不自动重试付费请求；明确失败/中断且保留真实部分内容，历史绑定原输入，不错配新草稿。不接任意网页脚本/外部链接或后台剪贴板采集。
+原Element Plus 2.12.0与IconPark 1.4.2固定在项目，依赖各自许可保留；真实自有服务、复制与桌面仍待手动，不以回环替身或服务端渲染冒称通过。
+
+0.1.2：递增补丁版本，修正历史同版本不同ZIP导致的升级拒绝；当前视图与宿主接口不变，保留实例配置、私有内容及共享绑定，不接入原云能力。

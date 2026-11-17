@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"job-shell","description":"AI直聘本机壳只开放专用会话、固定业务和故障报告，远程BOSS及详情页不授予IPC权限","webviews":["job-shell-*","job-analysis-shell-*","job-knowledge-shell-*"],"permissions":["core:event:default","allow-job-open-session","allow-job-close-session","allow-job-widget-request","allow-job-surface-failed"]}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.photo",
+  "name": "轮播相册",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {"width": 320, "height": 320},
+  "minSize": {"width": 120, "height": 120},
+  "capabilities": ["storage.instance", "media.directory"],
+  "settingsSchema": {
+    "type": "object", "additionalProperties": false,
+    "required": ["duration", "random", "radius"],
+    "properties": {
+      "duration": {"type": "integer", "title": "轮播时间（秒）", "minimum": 1, "maximum": 86400, "default": 5},
+      "random": {"type": "boolean", "title": "随机播放", "default": false},
+      "radius": {"type": "integer", "title": "圆角", "minimum": 0, "maximum": 80, "default": 16}
+    }
+  }
+}

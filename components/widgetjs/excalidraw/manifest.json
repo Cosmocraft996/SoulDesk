@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.excalidraw",
+  "name": "画板",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": { "width": 1200, "height": 800 },
+  "minSize": { "width": 620, "height": 420 },
+  "capabilities": ["storage.instance", "storage.document", "documents.user", "assets.local", "links.open", "web.embed", "clipboard.read", "clipboard.write"],
+  "settingsSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+}

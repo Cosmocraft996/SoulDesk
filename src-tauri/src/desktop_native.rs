@@ -705,6 +705,122 @@ pub fn clamp_desktop(w: &WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
+/// 只在反馈改变时通知目标窗口，退出（包括错误）时清空曾高亮的双方。
+#[derive(Default)]
+struct SnapFeedback {
+    current: std::collections::BTreeMap<String, Vec<crate::desktop_geometry::SnapEdge>>,
+}
+impl SnapFeedback {
+    fn update(
+        &mut self,
+        app: &tauri::AppHandle,
+        next: std::collections::BTreeMap<String, Vec<crate::desktop_geometry::SnapEdge>>,
+    ) {
+        use tauri::Emitter;
+        for label in self
+            .current
+            .keys()
+            .chain(next.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            if self.current.get(label) != next.get(label) {
+                let edges = next.get(label).cloned().unwrap_or_default();
+                let _ = app.emit_to(label.as_str(), "host:snap-edges", edges);
+            }
+        }
+        self.current = next;
+    }
+}
+
+struct SnapFeedbackGuard<'a> {
+    app: &'a tauri::AppHandle,
+    feedback: SnapFeedback,
+}
+impl Drop for SnapFeedbackGuard<'_> {
+    fn drop(&mut self) {
+        self.feedback.update(self.app, Default::default());
+    }
+}
+
+/// 面板左沿跟随真实鼠标；右边界和高度固定，松手后由协调器保存一次比例。
+pub fn resize_panel_width(
+    w: &WebviewWindow,
+    area: crate::desktop_geometry::WorkArea,
+    min_width: f64,
+) -> Result<Option<crate::desktop_geometry::PanelGeometry>, String> {
+    use tauri::{Emitter, Manager};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
+    };
+    let h = handle(w)? as HWND;
+    let mut start = POINT::default();
+    let key = unsafe {
+        if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            VK_RBUTTON
+        } else {
+            VK_LBUTTON
+        }
+    };
+    unsafe {
+        if IsWindowVisible(h) == 0
+            || pid(h) != std::process::id()
+            || GetAsyncKeyState(key as i32) >= 0
+            || GetCursorPos(&mut start) == 0
+        {
+            return Ok(None);
+        }
+        let hit = WindowFromPoint(start);
+        if hit != h && IsChild(h, hit) == 0 {
+            return Ok(None);
+        }
+    }
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(h, &mut rect) } == 0 {
+        return Err(winerr("读取面板几何失败"));
+    }
+    let initial_width = (rect.right - rect.left).max(1) as u32;
+    let mut current = None;
+    let mut last_x = start.x;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        if unsafe { GetAsyncKeyState(VK_ESCAPE as i32) } < 0
+            || unsafe { IsWindowVisible(h) } == 0
+            || std::time::Instant::now() >= deadline
+        {
+            return Ok(None);
+        }
+        let mut point = POINT::default();
+        if unsafe { GetCursorPos(&mut point) } == 0 {
+            return Err(winerr("读取鼠标位置失败"));
+        }
+        if point.x != last_x {
+            last_x = point.x;
+            let geometry = crate::desktop_geometry::resized_panel_geometry(
+                area,
+                initial_width,
+                i64::from(point.x) - i64::from(start.x),
+                min_width,
+            )?;
+            place(
+                w,
+                geometry.left,
+                geometry.top,
+                geometry.width,
+                geometry.height,
+                false,
+            )?;
+            w.app_handle()
+                .emit_to("panel", "host:panel-geometry", geometry)
+                .map_err(err)?;
+            current = Some(geometry);
+        }
+        if unsafe { GetAsyncKeyState(key as i32) } >= 0 {
+            return Ok(current);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+}
+
 /// 仅当前物理鼠标按下且命中自有组件时开始拖动/调整，不注入系统输入。
 pub fn pointer_move(
     w: &WebviewWindow,
@@ -712,6 +828,8 @@ pub fn pointer_move(
     min_width: f64,
     min_height: f64,
 ) -> Result<(), String> {
+    use crate::desktop_geometry::{snap_geometry, WorkArea};
+    use tauri::Manager;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
     };
@@ -742,6 +860,58 @@ pub fn pointer_move(
         return Err(winerr("读取组件几何失败"));
     }
     let scale = w.scale_factor().map_err(err)?;
+    let monitors = w.available_monitors().map_err(err)?;
+    if monitors.is_empty() {
+        return Err("未找到显示器".into());
+    }
+    let mut windows = w
+        .app_handle()
+        .webview_windows()
+        .into_iter()
+        .collect::<Vec<_>>();
+    windows.sort_by(|a, b| a.0.cmp(&b.0));
+    let peers = windows
+        .iter()
+        .filter_map(|(label, peer)| {
+            if label == w.label() || !label.starts_with("float-") {
+                return None;
+            }
+            let h = handle(peer).ok()? as HWND;
+            let mut r = RECT::default();
+            unsafe {
+                if IsWindowVisible(h) == 0
+                    || IsIconic(h) != 0
+                    || pid(h) != std::process::id()
+                    || GetWindowRect(h, &mut r) == 0
+                {
+                    return None;
+                }
+            }
+            (r.right > r.left && r.bottom > r.top).then_some((
+                label.clone(),
+                (
+                    r.left,
+                    r.top,
+                    (r.right - r.left) as u32,
+                    (r.bottom - r.top) as u32,
+                ),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let peer_rects = peers.iter().map(|(_, rect)| *rect).collect::<Vec<_>>();
+    let mut feedback = SnapFeedbackGuard {
+        app: w.app_handle(),
+        feedback: SnapFeedback::default(),
+    };
+    let min_size = (
+        (min_width * scale).ceil() as u32,
+        (min_height * scale).ceil() as u32,
+    );
+    let max_size = (
+        ((1600. * scale) as u32).max(min_size.0),
+        ((1200. * scale) as u32).max(min_size.1),
+    );
+    let mut last = (0, 0);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while unsafe { GetAsyncKeyState(key as i32) } < 0 && std::time::Instant::now() < deadline {
         let mut p = POINT::default();
@@ -749,28 +919,78 @@ pub fn pointer_move(
             break;
         }
         let (dx, dy) = (p.x - start.x, p.y - start.y);
-        if resize {
-            place(
-                w,
-                rect.left,
-                rect.top,
-                (rect.right - rect.left + dx)
-                    .clamp((min_width * scale).ceil() as i32, (1600. * scale) as i32)
-                    as u32,
-                (rect.bottom - rect.top + dy)
-                    .clamp((min_height * scale).ceil() as i32, (1200. * scale) as i32)
-                    as u32,
-                false,
-            )?;
-        } else {
-            place(
-                w,
-                rect.left + dx,
-                rect.top + dy,
-                (rect.right - rect.left) as u32,
-                (rect.bottom - rect.top) as u32,
-                false,
-            )?;
+        if (dx, dy) != last {
+            last = (dx, dy);
+            // 拖动跟随鼠标所在显示器；缩放始终以固定左上角所在显示器为准。
+            let point = if resize {
+                POINT {
+                    x: rect.left,
+                    y: rect.top,
+                }
+            } else {
+                p
+            };
+            let monitor = monitors
+                .iter()
+                .find(|m| {
+                    let origin = m.position();
+                    let size = m.size();
+                    point.x >= origin.x
+                        && point.y >= origin.y
+                        && i64::from(point.x) < i64::from(origin.x) + i64::from(size.width)
+                        && i64::from(point.y) < i64::from(origin.y) + i64::from(size.height)
+                })
+                .unwrap_or(&monitors[0]);
+            let a = monitor.work_area();
+            let area = WorkArea {
+                left: a.position.x,
+                top: a.position.y,
+                width: a.size.width,
+                height: a.size.height,
+                scale_factor: monitor.scale_factor(),
+            };
+            let raw = if resize {
+                (
+                    rect.left,
+                    rect.top,
+                    (rect.right - rect.left + dx).clamp(min_size.0 as i32, max_size.0 as i32)
+                        as u32,
+                    (rect.bottom - rect.top + dy).clamp(min_size.1 as i32, max_size.1 as i32)
+                        as u32,
+                )
+            } else {
+                (
+                    rect.left + dx,
+                    rect.top + dy,
+                    (rect.right - rect.left) as u32,
+                    (rect.bottom - rect.top) as u32,
+                )
+            };
+            let mut matches = vec![];
+            let (x, y, width, height) = snap_geometry(
+                raw,
+                resize,
+                area,
+                &peer_rects,
+                min_size,
+                max_size,
+                &mut matches,
+            );
+            place(w, x, y, width, height, false)?;
+            let mut highlights = std::collections::BTreeMap::<String, Vec<_>>::new();
+            for mark in matches {
+                highlights
+                    .entry(w.label().into())
+                    .or_default()
+                    .push(mark.edge);
+                if let Some(peer) = mark.peer {
+                    highlights
+                        .entry(peers[peer].0.clone())
+                        .or_default()
+                        .push(mark.peer_edge);
+                }
+            }
+            feedback.feedback.update(feedback.app, highlights);
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
     }

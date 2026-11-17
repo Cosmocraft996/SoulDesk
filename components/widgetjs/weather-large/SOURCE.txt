@@ -1,0 +1,10 @@
+来源：https://github.com/rtugeek/weather
+固定提交：1d5b717b085c82a5b81bfc2f0969bb8518123570
+原始标识：cn.widgetjs.widget.weather.large
+保留原Vue布局、天气渐变和72张本地图片；图钉和四个指标字形使用本地语义标记，Tooltip改为原生title。
+WidgetJS/前端HTTP改为标准宿主能力weather.read；由用户配置自己的API Host/API Key并显式启用，默认不联网。
+普通设置仅含城市、单位和主题；密钥按实例用Windows DPAPI加密，不在settings/storage或请求URL返回。
+保留原v7实时/三日预报及生活指数路径和来源时间，缺值不当零，局部失败保留其他数据。v7实时/预报已被官方标注即将弃用，需后续v1适配。
+原图标/视图/样式及使用的工具源码散列见weather-source/SOURCE_FILES.json；原项目未附许可，按已确认本机自用范围保留来源。
+不使用旧源码的公共示例Host，不自动申请账户、登录、代付，不用其他天气源替代。
+城市标识保留原字母数字身份及Geo时区；预报按fxDate标日，旧预报和指数单独标旧，切城市不复用旧数据。

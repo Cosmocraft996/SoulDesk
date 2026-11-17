@@ -1,0 +1,9 @@
+来源：https://github.com/rtugeek/utilities
+固定提交：3d733215bac3e9c1e58125518f100c1601650828
+原始标识：widgetjs.cn.utilities.convert
+原文件：src/widgets/convert/ConvertWidgetView.vue、src/utils/imageUtils.ts。
+原项目未附许可证，按用户明确的本机自用范围保留来源，不作公开分发结论。
+保留原拖放/多文件选择、同名同大小去重、HEIC本地解码、JPG/PNG/WEBP/BMP/ICO输出、单边保持比例/双边指定尺寸、白色JPG/BMP背景、逐项转换状态和多文件ZIP。原Vue/Element Plus界面改为相同分区的原生表单；原独立后台窗口改为SoulDesk标准桌面组件。HEIC库按原锁文件使用heic2any 0.0.4，MIT见HEIC-LICENSE.txt；ZIP复用本项目fflate 0.8.3，MIT见ZIP-LICENSE.txt。
+转换偏好改为实例配置，可显式保存设置，转换前也先保存；输入文件仍只存在于当前视图。打开/保存经SoulDesk原生文件对话框，不覆盖原输入文件；保存副本的位置由用户选择。取消与失败不显示已保存，可再次保存已生成结果。HTML拖放使用Tauri禁用原生拦截后的浏览器事件，真实拖放仍待验证。
+修正原ZIP同基名输出互相覆盖，自动加编号；修正大于256像素的ICO目录项与PNG尺寸不一致：原始尺寸自动等比缩到256以内，显式超大ICO拒绝。单批32文件/合计16 MiB输入、32 MiB输出，输出画布最多16384边长和16777216像素；超限明确失败。WebView不支持所选编码时拒绝，不将PNG回退冒充WEBP。
+HEIC沿用原库取首幅图像并转JPEG后继续编码，不保留原元数据；部分新HEIC编码可能解码失败，以明确错误报告，不宣称支持所有HEIC变体。2026-11-15隔离WebView已验证固定上游HEIC样本，以及五种输出的实际解码、尺寸、像素、透明度和内存ZIP；样本来源见HEIC_FIXTURE.json。原生选择/保存、实际鼠标拖放及完整外观仍待完成，不以程序化拖放替代。二进制BMP/ICO算法和批量状态检查不替代真实WebView验收。

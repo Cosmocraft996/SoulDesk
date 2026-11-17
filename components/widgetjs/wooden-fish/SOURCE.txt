@@ -1,0 +1,7 @@
+来源：https://github.com/rtugeek/fun
+固定提交：07051c2c84a403593e89c182ab02aec66ceb6207
+原始标识：widget.js.fun.wooden_fish
+原文件：src/widgets/wooden-fish/WoodenFishWidgetView.vue、WoodenFishConfigView.vue；src/assets/images/wooden_fish.png；public/audio/{hit,bgm}.mp3。
+移植：保留图片、两段音频、功德数与飘字、连续敲击、背景音乐开关和背景/文字/圆角设置，改用SoulDesk实例存储与设置；预览不自动播放。
+差异：功德数沿用原版仅本次视图累计。音乐偏好按实例保存；播放被浏览器拒绝时显示点击重试，视图卸载停止声音；最多12个重叠敲击声道。
+个人自用；来源树未附许可证，保留来源事实。

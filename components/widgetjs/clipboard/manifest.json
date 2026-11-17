@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"local.souldesk.widgetjs.clipboard","name":"剪切板","version":"0.1.0","hostApiMajor":1,"loadCheck":1,"entry":"dist/index.html","defaultSize":{"width":350,"height":420},"minSize":{"width":300,"height":250},"capabilities":["clipboard.manage"],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}}

@@ -21,7 +21,8 @@ export function connectHost() {
       const host = { instanceId, preview, request(method, args = null) {
         return new Promise((resolve, reject) => {
           const id = crypto.randomUUID();
-          const timer = setTimeout(() => { pending.delete(id); reject(new Error('宿主请求超时')); }, 10000);
+          // 原生文件选择等待用户操作，不能在普通请求的10秒期限后继续偷偷写文件。
+          const timer = ['documents.open', 'documents.save'].includes(method) ? undefined : setTimeout(() => { pending.delete(id); reject(new Error('宿主请求超时')); }, 10000);
           pending.set(id, { resolve, reject, timer });
           port.postMessage({ protocol: 1, session, id, method, args });
         });

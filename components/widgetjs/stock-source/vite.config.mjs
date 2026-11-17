@@ -1,0 +1,2 @@
+import{defineConfig}from'vite';import react from'@vitejs/plugin-react';import tailwindcss from'@tailwindcss/vite';import{fileURLToPath}from'node:url';
+export default defineConfig({root:fileURLToPath(new URL('.',import.meta.url)),base:'./',plugins:[react(),tailwindcss()],publicDir:false,build:{target:'es2022',outDir:'../stock-bundle',emptyOutDir:false,cssCodeSplit:false,modulePreload:false,rollupOptions:{output:{inlineDynamicImports:true,entryFileNames:'app.js',assetFileNames:'style.css'}}}});

@@ -21,6 +21,6 @@
     "allow-business-settings",
     "allow-set-panel",
     "allow-update-preset"
-    ,"allow-save-panel-layout", "allow-app-update"
+    ,"allow-save-panel-layout", "allow-app-update", "allow-manage-panel-group"
   ]
 }

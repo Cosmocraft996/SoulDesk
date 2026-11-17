@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"keyboard-overlay","description":"键盘演示固定只读叠加层，不授予设置、窗口激活或实例管理命令","windows":["keyboard-*"],"permissions":["core:event:default","allow-open-session","allow-close-session","allow-widget-request","allow-surface-failed"]}
