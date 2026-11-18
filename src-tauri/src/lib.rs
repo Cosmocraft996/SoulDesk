@@ -4,6 +4,7 @@ mod ai_protocol;
 mod ai_transport;
 mod alert_store;
 pub mod alerts;
+mod asset_permissions;
 mod assistant_host;
 mod assistant_state;
 mod assistant_webviews;
@@ -18,7 +19,10 @@ mod clipboard_surface;
 mod clipboard_tools;
 mod coin;
 mod coin_live;
+mod component_lifecycle;
+mod component_registry;
 mod content;
+mod content_cache;
 pub mod desktop_geometry;
 #[cfg(windows)]
 mod desktop_input;
@@ -114,6 +118,7 @@ pub struct Core {
     business: business::Service,
     coin_live: coin_live::Service,
     coin_index: coin::IndexCache,
+    content_cache: content_cache::Service,
     hardware: hardware::Service,
     keyboard: keyboard_host::Service,
     reminders: reminder_host::Service,
@@ -159,12 +164,29 @@ impl Core {
 }
 
 #[tauri::command]
-async fn snapshot(app: AppHandle, core: State<'_, Core>) -> AppResult<Value> {
+async fn snapshot(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    core: State<'_, Core>,
+) -> AppResult<Value> {
     let mut value = core.store.snapshot()?;
     value["packages"] = json!(presets::catalog(
         value["packages"].as_array().ok_or("组件目录无效")?
     )?);
-    value["hiddenAll"] = json!(core.visibility.lock().map_err(err)?.hidden);
+    {
+        let visibility = core.visibility.lock().map_err(err)?;
+        value["hiddenAll"] = json!(visibility.hidden);
+        value["panelLocked"] = json!(visibility.panel_locked);
+        if window.label() == "panel" {
+            let group = value["panelGroups"]["active"].as_str().map(str::to_owned);
+            value["panelScroll"] = json!(visibility
+                .panel_scroll
+                .get(&group)
+                .copied()
+                .unwrap_or_default());
+            value["panelTarget"] = json!(visibility.panel_target);
+        }
+    }
     value["panelOpen"] = json!(app.get_webview_window("panel").is_some());
     value["panel"] = windows::panel_preferences(&app)?;
     value["panelGeometry"] = windows::panel_metrics(&app)?;
@@ -611,20 +633,7 @@ fn close_session(
     core: State<'_, Core>,
     token: String,
 ) -> AppResult<()> {
-    let mut sessions = core.sessions.0.lock().map_err(err)?;
-    if sessions
-        .get(&token)
-        .is_some_and(|s| s.window == window.label())
-    {
-        core.pomodoro_windows
-            .service
-            .session_closed(window.label(), &token)?;
-        sessions.remove(&token);
-        core.ai.cancel_session(&core.store, &token)?;
-        core.coin_live
-            .release_owners(&std::collections::HashSet::from([token]))?;
-    }
-    Ok(())
+    crate::component_lifecycle::close_session(&core, window.label(), &token)
 }
 #[tauri::command]
 async fn widget_request(
@@ -635,14 +644,16 @@ async fn widget_request(
     method: String,
     args: Value,
 ) -> AppResult<Value> {
+    use component_registry::Gateway;
+    let owner = component_registry::gateway(&method);
     keyboard_host::overlay_method(window.label(), &method)?;
     reminder_host::surface_method(window.label(), &method)?;
     clipboard_surface::surface_method(window.label(), &method)?;
     pomodoro_window_native::surface_method(window.label(), &method)?;
-    if method.starts_with("pomodoro.window.") {
+    if owner == Gateway::PomodoroWindow {
         return pomodoro_window_native::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("jobs.") {
+    if owner == Gateway::Jobs {
         return job_host::gateway(&app, window.label(), &token, &method, args).await;
     }
     if window.label().starts_with("clipboard-tool-") {
@@ -660,13 +671,13 @@ async fn widget_request(
             return Err("PRESENTATION_EXPIRED: 工具已关闭或替换".into());
         }
     }
-    if method.starts_with("island.") || method.starts_with("sit.") || method.starts_with("phone.") {
+    if owner == Gateway::Reminders {
         return reminder_host::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("keyboard.") {
+    if owner == Gateway::Keyboard {
         return keyboard_host::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("assistant.") {
+    if owner == Gateway::Assistant {
         let (id, value) = core.assistant.access(
             &core.store,
             &core.sessions,
@@ -680,7 +691,7 @@ async fn widget_request(
         }
         return Ok(value);
     }
-    if method == "view.openDetails" {
+    if owner == Gateway::Details {
         let id = {
             let sessions = core.sessions.0.lock().map_err(err)?;
             let s = sessions
@@ -727,34 +738,34 @@ async fn widget_request(
         .map_err(err)??;
         return Ok(Value::Null);
     }
-    if method == "content.live" {
+    if owner == Gateway::CoinLive {
         return coin_live::gateway(&app, window.label(), &token, args).await;
     }
-    if method.starts_with("weather.") {
+    if owner == Gateway::Weather {
         return weather::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("ai.") {
+    if owner == Gateway::Ai {
         return ai_host::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("clipboard.") {
+    if owner == Gateway::Clipboard {
         return clipboard_host::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method == "system.metrics" {
+    if owner == Gateway::Metrics {
         return hardware::gateway(&app, window.label(), &token, args).await;
     }
-    if method == "server.request" {
+    if owner == Gateway::Server {
         return server_monitor::gateway(&app, window.label(), &token, args).await;
     }
-    if method == "labor.get" {
+    if owner == Gateway::Labor {
         return labor::gateway(&app, window.label(), &token, args).await;
     }
-    if method.starts_with("water.") {
+    if owner == Gateway::Water {
         return water::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("todo.") {
+    if owner == Gateway::Todo {
         return todo::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("pomodoro.") {
+    if owner == Gateway::Pomodoro {
         if window.label().starts_with("pomodoro-window-") {
             return core.pomodoro_windows.service.business(
                 &core.store,
@@ -768,22 +779,19 @@ async fn widget_request(
         }
         return pomodoro::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("content.") || method.starts_with("links.") {
+    if owner == Gateway::Content {
         return content::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("documents.") {
+    if owner == Gateway::Documents {
         return documents::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("media.") {
+    if owner == Gateway::Media {
         return media::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("files.") {
+    if owner == Gateway::Files {
         return launcher::gateway(&app, window.label(), &token, &method, args).await;
     }
-    if method.starts_with("market.")
-        || method.starts_with("watchlist.")
-        || method.starts_with("alerts.")
-    {
+    if owner == Gateway::Market {
         return business::gateway(&app, window.label(), &token, &method, args).await;
     }
     let reload_instance = if matches!(method.as_str(), "library.bind" | "library.create") {
@@ -880,7 +888,9 @@ async fn window_action(
     instance: Option<String>,
 ) -> AppResult<()> {
     let label = window.label();
-    let allowed = if label == "main" {
+    let allowed = if matches!(action.as_str(), "lock-panel" | "unlock-panel") {
+        label == "panel" && instance.is_none()
+    } else if label == "main" {
         action != "resize-panel"
     } else if label == "edge" {
         action == "edge-click"
@@ -938,6 +948,9 @@ async fn window_action(
                 "restore-all" => windows::restore(app),
                 "toggle" => windows::toggle(app),
                 "collapse" => windows::collapse(app),
+                "lock-panel" | "unlock-panel" => {
+                    windows::set_panel_locked(app, action == "lock-panel")
+                }
                 "resize-panel" => windows::resize_panel_width(app),
                 "pin" => windows::pin(app, id()?),
                 "hide" => windows::hide_instance(app, id()?),
@@ -949,7 +962,7 @@ async fn window_action(
                 "close-detail" => windows::destroy_window(app, window.label()),
                 "edge-click" => {
                     if !app.state::<Core>().visibility.lock().map_err(err)?.hidden {
-                        windows::show_panel(app, true)?;
+                        windows::show_panel_from_edge(app)?;
                         app.state::<Core>()
                             .edge_hits
                             .fetch_add(1, Ordering::Relaxed);
@@ -1006,6 +1019,34 @@ async fn window_action(
     .map_err(err)?
 }
 #[tauri::command]
+fn panel_view(
+    window: tauri::WebviewWindow,
+    core: State<'_, Core>,
+    view_id: String,
+    update: windows::PanelViewUpdate,
+) -> AppResult<()> {
+    if window.label() != "panel" {
+        return Err("CAPABILITY_DENIED: 仅面板可以更新视口".into());
+    }
+    // 建窗线程等待宿主页时不占用此命令所需的锁。
+    core.visibility
+        .lock()
+        .map_err(err)?
+        .update_panel_view(&view_id, update)
+}
+#[tauri::command]
+async fn drag_panel_edge(app: AppHandle, window: tauri::WebviewWindow) -> AppResult<bool> {
+    if !matches!(window.label(), "panel" | "edge") {
+        return Err("CAPABILITY_DENIED: 当前窗口无挂件拖动权限".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        windows::serialized(&app, |app| windows::drag_panel_edge(app, &window))
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
 async fn set_panel(
     app: AppHandle,
     ratio: Option<f64>,
@@ -1013,6 +1054,7 @@ async fn set_panel(
     slide_in_ms: Option<u32>,
     slide_out_ms: Option<u32>,
     desktop_double_click: Option<bool>,
+    edge_style: Option<panel::EdgeStyle>,
 ) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&app, |app| {
@@ -1032,6 +1074,9 @@ async fn set_panel(
             }
             if let Some(value) = desktop_double_click {
                 settings.desktop_double_click = value;
+            }
+            if let Some(value) = edge_style {
+                settings.edge_style = value;
             }
             windows::save_panel_settings(app, settings)
         })
@@ -1364,6 +1409,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let (feed, market_rx, market_tx, market_inputs) =
         market::Feed::new(network.unwrap_or(network::NetworkConfig::Direct));
     let hidden = store.preference("hidden_all").as_deref() == Some("true");
+    let panel_locked = store.preference("panel_locked").as_deref() == Some("true");
     let shortcut = store
         .preference("shortcut")
         .unwrap_or("Ctrl+Alt+Space".into());
@@ -1381,6 +1427,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         sessions: Default::default(),
         visibility: Mutex::new(windows::Visibility {
             hidden,
+            panel_locked,
             ..Default::default()
         }),
         window_actions: Mutex::new(()),
@@ -1405,6 +1452,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         updates: Default::default(),
         coin_live: Default::default(),
         coin_index: Default::default(),
+        content_cache: Default::default(),
         hardware: Default::default(),
         keyboard: Default::default(),
         reminders: Default::default(),
@@ -1514,21 +1562,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
                 break;
             }
-            let core = handle.state::<Core>();
-            core.water.dispatch(&handle);
-            core.labor.dispatch(&handle);
-            core.todo.dispatch(&handle);
-            core.pomodoro.dispatch(&handle);
-            core.pomodoro_windows.tick(&handle);
-            core.reminders.dispatch(&handle);
-            core.assistant.tick(&handle);
-            core.jobs.tick(&handle);
-            if let Ok(sessions) = core.sessions.0.lock() {
-                let owners = sessions.keys().cloned().collect();
-                if let Err(error) = core.coin_live.retain_owners(&owners) {
-                    core.report(error);
-                }
-            }
+            crate::component_lifecycle::tick(&handle);
             let tick = handle.state::<Core>().ticks.fetch_add(1, Ordering::Relaxed);
             if tick % 2 == 0 {
                 windows::dispatch(&handle, windows::monitor_changes);
@@ -1722,6 +1756,8 @@ pub fn run() {
                 schedule_test,
                 business_settings,
                 set_panel,
+                drag_panel_edge,
+                panel_view,
                 save_panel_layout,
                 manage_panel_group,
                 app_update,

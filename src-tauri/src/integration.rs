@@ -28,7 +28,7 @@ impl Config {
     pub fn standalone_check(&self) -> bool {
         matches!(
             self.mode.as_str(),
-            "panel" | "widgetjs" | "widgetjs-resume" | "widgetjs-manual"
+            "panel" | "panel-performance" | "widgetjs" | "widgetjs-resume" | "widgetjs-manual"
         )
     }
 }
@@ -86,6 +86,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
         "--desktop-integration-resume" => "resume",
         "--desktop-integration-surface" => "surface",
         "--desktop-integration-panel" => "panel",
+        "--desktop-integration-panel-performance" => "panel-performance",
         "--desktop-integration-widgetjs" => "widgetjs",
         "--desktop-integration-widgetjs-resume" => "widgetjs-resume",
         "--desktop-integration-widgetjs-manual" => "widgetjs-manual",
@@ -115,7 +116,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
     {
         return Err("只接受desktop-integration-开头的独立测试目录".into());
     }
-    if mode == "first" || mode == "panel" || mode == "widgetjs" {
+    if matches!(mode, "first" | "panel" | "panel-performance" | "widgetjs") {
         if root.exists() || path.exists() {
             return Err("不覆盖已存在的报告或测试目录".into());
         }
@@ -144,6 +145,46 @@ fn rule(name: &str) -> Rule {
     }
 }
 pub fn prepare(c: &Config) -> AppResult<()> {
+    if c.mode == "panel-performance" {
+        std::fs::create_dir(&c.root).map_err(err)?;
+        std::fs::write(
+            c.root.join("isolated-test-data.marker"),
+            b"SoulDesk isolated panel performance check",
+        )
+        .map_err(err)?;
+        let store = Store::open(c.root.clone())?;
+        for (package, count, start_y) in [
+            ("local.souldesk.widgetjs.base-panel", 1, 0),
+            ("local.souldesk.widgetjs.pomodoro", 1, 350),
+            ("local.souldesk.widgetjs.todo", 10, 4000),
+        ] {
+            let staged = widgets::stage_bytes(
+                &store,
+                presets::find(package)?
+                    .ok_or("缺少性能检查组件")?
+                    .archive()?,
+            )?;
+            widgets::activate(&store, &staged)?;
+            for index in 0..count {
+                let id = widgets::create_instance_at(&store, package, "panel")?;
+                let size = if package.ends_with(".todo") {
+                    440.
+                } else {
+                    300.
+                };
+                store.save_panel_layout(
+                    &id,
+                    crate::panel::Layout {
+                        x: 0.,
+                        y: f64::from(start_y + index * 480),
+                        width: 400.,
+                        height: size,
+                    },
+                )?;
+            }
+        }
+        return Ok(());
+    }
     if c.mode == "widgetjs" {
         std::fs::create_dir(&c.root).map_err(err)?;
         std::fs::write(
@@ -311,6 +352,9 @@ fn events(app: &AppHandle, id: &str) -> AppResult<usize> {
     )
 }
 async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<()> {
+    if c.mode == "panel-performance" {
+        return execute_panel_performance(app, c, report).await;
+    }
     if c.mode == "widgetjs" || c.mode == "widgetjs-resume" {
         return execute_widgetjs(app, c, report).await;
     }
@@ -722,6 +766,73 @@ async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<(
     }
     Ok(())
 }
+// 用同一组隔离组件测量正式窗口和进程树。探针不派发系统输入，不经过网络。
+async fn execute_panel_performance(
+    app: &AppHandle,
+    c: &Config,
+    report: &mut Value,
+) -> AppResult<()> {
+    let core = app.state::<Core>();
+    core.visibility.lock().map_err(err)?.dialog = true;
+    let mut known = std::collections::BTreeMap::new();
+    let mut memory = || -> AppResult<u64> {
+        Ok(crate::view_probe::processes(&mut known)?
+            .iter()
+            .filter_map(|p| p["privateBytes"].as_u64())
+            .sum())
+    };
+    let mut rounds = Vec::new();
+    for _ in 0..4 {
+        let started = Instant::now();
+        let opening = tokio::spawn({
+            let app = app.clone();
+            async move { window(&app, |app| windows::show_panel(app, false)).await }
+        });
+        let deadline = started + Duration::from_secs(15);
+        let first_visible = loop {
+            if app
+                .get_webview_window("panel")
+                .is_some_and(|w| w.is_visible().unwrap_or(false))
+            {
+                break started.elapsed().as_millis();
+            }
+            if Instant::now() >= deadline {
+                return Err("性能检查未观察到面板展开".into());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        opening.await.map_err(err)??;
+        let expanded_ms = started.elapsed().as_millis();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let open_sessions = core.sessions.0.lock().map_err(err)?.len();
+        let expanded_bytes = memory()?;
+        window(app, windows::collapse).await?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let collapsed_bytes = memory()?;
+        let closed_sessions = core.sessions.0.lock().map_err(err)?.len();
+        let collapsed_window = app.get_webview_window("panel").is_none();
+        rounds.push(
+            json!({"firstVisibleMs":first_visible,"expandedMs":expanded_ms,
+            "openPrivateBytes":expanded_bytes,"closedPrivateBytes":collapsed_bytes,
+            "openSessions":open_sessions,"closedSessions":closed_sessions}),
+        );
+        if !collapsed_window || closed_sessions != 0 {
+            return Err("收起后面板窗口或展示会话仍在运行".into());
+        }
+    }
+    report["rounds"] = json!(rounds);
+    report["scope"] =
+        json!("12 个同组真实组件、4 次连续开合；每次静置 2 秒采样宿主及 WebView2 后代私有内存");
+    check(
+        report,
+        "panel-performance-open-and-release",
+        true,
+        json!(null),
+    )?;
+    report["status"] = json!("passed");
+    save(c, report)?;
+    window(app, windows::quit).await
+}
 // 等待正式页面的指定按钮就绪，只发送一次事件，不注入系统鼠标输入。
 async fn panel_ui_event(
     app: &AppHandle,
@@ -755,6 +866,30 @@ async fn panel_ui_event(
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+#[cfg(windows)]
+async fn panel_browser_process_id(window: tauri::WebviewWindow) -> AppResult<u32> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .with_webview(move |platform| {
+            let result = unsafe {
+                platform.controller().CoreWebView2().and_then(|webview| {
+                    let mut pid = 0;
+                    webview.BrowserProcessId(&mut pid)?;
+                    Ok(pid)
+                })
+            };
+            let _ = send.send(result.map_err(err));
+        })
+        .map_err(err)?;
+    let pid = tokio::time::timeout(Duration::from_secs(3), receive)
+        .await
+        .map_err(err)?
+        .map_err(err)??;
+    (pid != 0)
+        .then_some(pid)
+        .ok_or("WebView2 浏览器进程号无效".into())
+}
+
 async fn execute_panel(
     app: &AppHandle,
     c: &Config,
@@ -789,6 +924,46 @@ async fn execute_panel(
             && app.get_webview_window(&format!("float-{clock}")).is_none(),
         json!({"clock":clock}),
     )?;
+    panel_ui_event(app, "panel", ".panel-scroll", r#"
+        const host = window.__TAURI_INTERNALS__;
+        const token = window.__SOULDESK_HOST_TOKEN__;
+        if (!host?.invoke || !token) return false;
+        if (window.__panelPermissionProbe === undefined) {
+          window.__panelPermissionProbe = 'running';
+          const headers = {'x-souldesk-host': token};
+          Promise.allSettled([
+            host.invoke('snapshot', {}, {headers}),
+            host.invoke('snapshot'),
+            host.invoke('business_settings', {action:'get'}, {headers}),
+          ]).then(([read, missingToken, managementOnly]) => {
+            window.__panelPermissionProbe = read.status === 'fulfilled' && read.value.panelOpen === true
+              && missingToken.status === 'rejected' && String(missingToken.reason).includes('CAPABILITY_DENIED')
+              && managementOnly.status === 'rejected' && /not allowed|denied/i.test(String(managementOnly.reason));
+          });
+        }
+        if (window.__panelPermissionProbe !== true) return false;
+    "#).await?;
+    check(
+        report,
+        "panel-first-navigation-ipc-and-permissions",
+        true,
+        Value::Null,
+    )?;
+    #[cfg(windows)]
+    {
+        let panel = app.get_webview_window("panel").ok_or("缺少面板窗口")?;
+        let edge = app.get_webview_window("edge").ok_or("缺少侧边入口窗口")?;
+        let (panel, edge) = tokio::try_join!(
+            panel_browser_process_id(panel),
+            panel_browser_process_id(edge)
+        )?;
+        check(
+            report,
+            "panel-keeps-an-independent-browser-process",
+            panel != edge,
+            Value::Null,
+        )?;
+    }
     let layout = crate::panel::Layout {
         x: 25.0,
         y: 45.0,
@@ -1025,6 +1200,54 @@ async fn execute_panel(
         app.get_webview_window("panel").is_some(),
         Value::Null,
     )?;
+    window(app, windows::collapse).await?;
+    let store = &app.state::<Core>().store;
+    let first = widgets::create_instance_at(store, "local.example.clock", "panel")?;
+    let distant = widgets::create_instance_at(store, "local.example.clock", "panel")?;
+    store.save_panel_layout(
+        &first,
+        crate::panel::Layout {
+            x: 0.,
+            y: 0.,
+            width: 320.,
+            height: 160.,
+        },
+    )?;
+    store.save_panel_layout(
+        &distant,
+        crate::panel::Layout {
+            x: 0.,
+            y: 3000.,
+            width: 320.,
+            height: 160.,
+        },
+    )?;
+    window(app, |app| windows::show_panel(app, false)).await?;
+    until(|| Ok(session_count(app, &first) == 1), 10).await?;
+    check(
+        report,
+        "panel-screen-distant-widget-has-no-session",
+        session_count(app, &distant) == 0,
+        Value::Null,
+    )?;
+    panel_ui_event(app, "panel", ".panel-scroll", "node.scrollTop=3000").await?;
+    until(|| Ok(session_count(app, &distant) == 1), 10).await?;
+    window(app, windows::collapse).await?;
+    window(app, |app| windows::show_panel(app, false)).await?;
+    panel_ui_event(
+        app,
+        "panel",
+        ".panel-scroll",
+        "if(node.scrollTop<500)return false",
+    )
+    .await?;
+    until(|| Ok(session_count(app, &distant) == 1), 10).await?;
+    check(
+        report,
+        "panel-scroll-restores-before-choosing-which-widgets-to-load",
+        session_count(app, &first) == 0,
+        Value::Null,
+    )?;
     window(app, windows::destroy_views).await?;
     report["status"] = json!("passed");
     report["scope"] = json!("isolated-native-panel-lifecycle; no real mouse input, no installation, no updater installation");
@@ -1097,6 +1320,20 @@ fn widgetjs_saved_state(app: &AppHandle, id: &str) -> AppResult<Value> {
     Ok(value)
 }
 async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<()> {
+    let content_upgrade_from = std::env::args().find_map(|arg| {
+        arg.strip_prefix("--widgetjs-content-upgrade-from=")
+            .map(|path| (PathBuf::from(path), false))
+            .or_else(|| {
+                arg.strip_prefix("--widgetjs-audit-upgrade-from=")
+                    .map(|path| (PathBuf::from(path), true))
+            })
+    });
+    if let Some((from, audit_closeout)) = content_upgrade_from {
+        return execute_permission_upgrades(app, c, report, from, audit_closeout).await;
+    }
+    if std::env::args().any(|arg| arg == "--widgetjs-check-package=assets") {
+        return execute_asset_permissions(app, c, report).await;
+    }
     if std::env::args().any(|arg| arg == "--widgetjs-check-package=convert-files") {
         return execute_widgetjs_convert_files(app, c, report).await;
     }
@@ -1332,6 +1569,50 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
                 )?;
                 continue;
             }
+            if package == "local.souldesk.widgetjs.convert" {
+                // 只调整隔离夹具：UUID首位可能相同，不能拿随机宽度证明实例独立。
+                // 原UI编解码检查完成后，经各自正式会话写入48/49，再由真实页面重建及重启复核。
+                let index = ids
+                    .iter()
+                    .position(|item| item.as_str() == Some(id.as_str()))
+                    .ok_or("图片验收实例不在本次清单中")?;
+                let width = 48 + index;
+                let (token, label) = core
+                    .sessions
+                    .0
+                    .lock()
+                    .map_err(err)?
+                    .iter()
+                    .find(|(_, session)| session.instance == id && session.preview.is_none())
+                    .map(|(token, session)| (token.clone(), session.window.clone()))
+                    .ok_or("图片验收缺少当前实例的正式会话")?;
+                let mut settings = value["settings"].clone();
+                settings["width"] = json!(width);
+                widgets::gateway(
+                    &core.store,
+                    &core.sessions,
+                    &label,
+                    &token,
+                    "settings.update",
+                    settings,
+                )?;
+                let mut fixture = storage.clone();
+                fixture["verification"]["testWidth"] = json!(width);
+                widgets::gateway(
+                    &core.store,
+                    &core.sessions,
+                    &label,
+                    &token,
+                    "storage.set",
+                    fixture,
+                )?;
+                check(
+                    report,
+                    "convert-deterministic-fixture-width-saved",
+                    windows::instance(app, &id)?["settings"]["width"] == width,
+                    json!({"instance":id,"width":width,"via":"formal-instance-session","componentPackageUnchanged":true}),
+                )?;
+            }
             let old_loads = result["runtimeLoads"].as_u64().unwrap_or(0);
             let saved_state = widgetjs_saved_state(app, &id)?;
             let moved = id.clone();
@@ -1351,7 +1632,10 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
             check(
                 report,
                 "ported-widget-panel-roundtrip-retains-settings",
-                session_count(app, &id) == 1 && widgetjs_saved_state(app, &id)? == saved_state,
+                session_count(app, &id) == 1
+                    && widgetjs_saved_state(app, &id)? == saved_state
+                    && (package != "local.souldesk.widgetjs.convert"
+                        || widgetjs_storage(app, &id)?["verification"]["uiVerified"] == true),
                 json!({"package":package,"instance":id}),
             )?;
         }
@@ -2024,6 +2308,300 @@ async fn execute_widgetjs_convert_files(
     Ok(())
 }
 
+// 使用变更前保存的ZIP，经过正式导入和显式预置升级。两个阶段都只打开隔离库。
+async fn execute_permission_upgrades(
+    app: &AppHandle,
+    c: &Config,
+    report: &mut Value,
+    from: PathBuf,
+    audit_closeout: bool,
+) -> AppResult<()> {
+    if !from.is_absolute() || !from.is_dir() {
+        return Err("权限升级验收需要旧ZIP的绝对目录".into());
+    }
+    let names = if audit_closeout {
+        &[
+            "forex",
+            "metal",
+            "gold",
+            "stock-medium",
+            "stock-small",
+            "coin-small",
+            "coin-medium",
+            "stock",
+            "sticker",
+            "excalidraw",
+            "convert",
+            "mindmap",
+            "server",
+            "ai-mindmap",
+            "ai-mermaid",
+            "clipboard",
+            "clipboard-search",
+        ][..]
+    } else {
+        &[
+            "hotspot-bangumi",
+            "hotspot-bilibili",
+            "hotspot-bilibili-rcmd",
+            "hotspot-cls-telegraph",
+            "hotspot-douyin",
+            "hotspot-tou-tiao",
+            "hotspot-weibo",
+            "hotspot-world-cup",
+            "hotspot-zhihu",
+            "calendar",
+            "calendar-large",
+            "sticker",
+        ][..]
+    };
+    let legacy = ["content.read", "documents.user", "clipboard.manage"];
+    let core = app.state::<Core>();
+    let mut seed = json!({});
+    let seed_path = c.root.join("seed.json");
+    if c.mode == "widgetjs" {
+        for &name in names {
+            report["currentPackage"] = json!(name);
+            save(c, report)?;
+            let package = format!("local.souldesk.widgetjs.{name}");
+            let old = crate::packages::install(app, &from.join(format!("{name}.zip"))).await?;
+            if old.id != package
+                || !old
+                    .capabilities
+                    .iter()
+                    .any(|cap| legacy.contains(&cap.as_str()))
+            {
+                return Err(format!("旧ZIP身份或权限不符：{name}"));
+            }
+            let old_digest: String = core
+                .store
+                .db
+                .lock()
+                .map_err(err)?
+                .query_row(
+                    "SELECT digest FROM widget_packages WHERE id=?1",
+                    [&package],
+                    |row| row.get(0),
+                )
+                .map_err(err)?;
+            let old_path = format!("{package}/{old_digest}/{}", old.entry);
+            let old_policy = widgets::resource_csp(&core.store, &old_path);
+            let id = widgets::create_instance(&core.store, &package)?;
+            let mut settings = windows::instance(app, &id)?["settings"].clone();
+            if let Some(radius) = settings.get_mut("radius") {
+                *radius = json!(13);
+            }
+            let storage = match name {
+                "sticker" => json!({"image":"https://example.invalid/isolated-sticker.png"}),
+                "mindmap" => {
+                    json!({"version":1,"documents":[{"id":"fixture-document","topic":"隔离旧导图","emoji":"📝","group":"验收","createdAt":1,"updatedAt":2,"mindmap":{"id":"root","name":"隔离旧导图"}}]})
+                }
+                "server" => {
+                    json!({"version":1,"servers":[{"id":"fixture-server","name":"隔离服务器","ip":"127.0.0.1","api":{"url":"","token":"","interval":10}}]})
+                }
+                "stock" => {
+                    json!({"version":1,"stocks":[{"name":"隔离股票","code":"000001","marketId":0,"holdingPrice":"12.30","holdingShares":"200"}]})
+                }
+                _ => json!({"retainedFixture":{"component":name,"items":[1,2]}}),
+            };
+            let clipboard = if matches!(name, "clipboard" | "clipboard-search") {
+                let saved = crate::clipboard_history::mutate(
+                    &core.store,
+                    &id,
+                    json!({"requestId":uuid::Uuid::new_v4(),"command":{"type":"configure","expectedRevision":0,"captureEnabled":false,"shortcutEnabled":false,"pasteEnabled":false,"shortcut":"Super+Alt+V","historyExpiredHours":24}}),
+                )?;
+                Some(saved["configRevision"].clone())
+            } else {
+                None
+            };
+            core.store
+                .db
+                .lock()
+                .map_err(err)?
+                .execute(
+                    "UPDATE widget_instances SET settings=?1,storage=?2,visible=0 WHERE id=?3",
+                    rusqlite::params![settings.to_string(), storage.to_string(), id],
+                )
+                .map_err(err)?;
+            let before = windows::instance(app, &id)?;
+            crate::packages::update_preset(app, &package).await?;
+            let snapshot = core.store.snapshot()?;
+            let new = snapshot["packages"]
+                .as_array()
+                .and_then(|packages| packages.iter().find(|row| row["id"] == package))
+                .ok_or("升级后未登记组件")?;
+            check(
+                report,
+                "content-real-zip-upgrade-keeps-state-and-old-resource-policy",
+                before == windows::instance(app, &id)?
+                    && storage == widgetjs_storage(app, &id)?
+                    && new["version"] != old.version
+                    && widgets::resource_csp(&core.store, &old_path) == old_policy
+                    && (clipboard.is_none()
+                        || crate::clipboard_history::status(&core.store, &id)?["configRevision"]
+                            == clipboard.as_ref().unwrap().clone())
+                    && new["capabilities"].as_array().is_some_and(|caps| {
+                        !caps
+                            .iter()
+                            .any(|cap| cap.as_str().is_some_and(|cap| legacy.contains(&cap)))
+                    }),
+                json!({"package":package,"oldVersion":old.version,"newVersion":new["version"],"instance":id,"oldPolicyRetained":true}),
+            )?;
+            seed[&id] = json!({"instance":before,"storage":storage,"package":package,"version":new["version"],"clipboardRevision":clipboard});
+        }
+        std::fs::write(&seed_path, serde_json::to_vec(&seed).map_err(err)?).map_err(err)?;
+    } else {
+        seed = serde_json::from_slice(&std::fs::read(&seed_path).map_err(err)?).map_err(err)?;
+        let packages = core.store.snapshot()?["packages"].clone();
+        let items = seed
+            .as_object()
+            .filter(|items| items.len() == names.len())
+            .ok_or("隔离升级种子实例数量不符")?;
+        for (id, expected) in items {
+            check(
+                report,
+                "content-upgrade-state-retained-after-restart",
+                windows::instance(app, id)? == expected["instance"]
+                    && widgetjs_storage(app, id)? == expected["storage"]
+                    && (expected["clipboardRevision"].is_null()
+                        || crate::clipboard_history::status(&core.store, id)?["configRevision"]
+                            == expected["clipboardRevision"])
+                    && packages.as_array().is_some_and(|rows| {
+                        rows.iter().any(|row| {
+                            row["id"] == expected["package"]
+                                && row["version"] == expected["version"]
+                        })
+                    }),
+                json!({"instance":id,"package":expected["package"],"version":expected["version"]}),
+            )?;
+        }
+    }
+    check(
+        report,
+        "content-upgrade-trial-sessions-released",
+        core.sessions.0.lock().map_err(err)?.is_empty()
+            && core.trials.lock().map_err(err)?.is_empty(),
+        Value::Null,
+    )?;
+    report["currentPackage"] = Value::Null;
+    report["scope"] = json!("isolated-legacy-ZIP-import-and-preset-upgrade-with-WebView-trials; persisted-state-restart");
+    report["status"] = json!(if c.mode == "widgetjs" {
+        "restart-ready"
+    } else {
+        "passed"
+    });
+    save(c, report)?;
+    window(app, windows::quit).await?;
+    Ok(())
+}
+
+// 仅显式隔离入口运行；探针包走正式安装/隐藏试加载，不进入预置或用户数据库。
+async fn execute_asset_permissions(
+    app: &AppHandle,
+    c: &Config,
+    report: &mut Value,
+) -> AppResult<()> {
+    use crate::asset_permissions::*;
+    use std::io::Write;
+    let profiles: &[(&str, &[&str])] = &[
+        ("closed", &[SCOPED]),
+        ("styles", &[SCOPED, STYLES]),
+        ("images", &[SCOPED, IMAGES]),
+        ("fetch", &[SCOPED, FETCH]),
+        ("wasm", &[SCOPED, WASM]),
+        ("eval", &[SCOPED, EVAL]),
+        ("worker", &[SCOPED, WORKER]),
+        ("blob-worker", &[SCOPED, BLOB_WORKER]),
+        ("legacy", &["assets.local"]),
+    ];
+    let mut ids = profiles
+        .iter()
+        .map(|(name, _)| format!("local.test.assets.{name}"))
+        .collect::<Vec<_>>();
+    for name in ["excalidraw", "convert", "mindmap", "labor", "server"] {
+        ids.push(format!("local.souldesk.widgetjs.{name}"));
+    }
+    if c.mode == "widgetjs" {
+        for (name, capabilities) in profiles {
+            let mut manifest: Value =
+                serde_json::from_str(include_str!("../../examples/clock/manifest.json"))
+                    .map_err(err)?;
+            manifest["id"] = json!(format!("local.test.assets.{name}"));
+            manifest["capabilities"] = json!(capabilities);
+            let path = c.root.join(format!("asset-probe-{name}.zip"));
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).map_err(err)?);
+            let script = format!(
+                "const PROBE_CAPABILITIES = {};\n{}",
+                json!(capabilities),
+                include_str!("asset_permissions_probe.js")
+            );
+            for (path, body) in [
+                ("manifest.json", manifest.to_string()),
+                ("dist/index.html", "<!doctype html><html><head><meta charset=\"utf-8\"><script type=\"module\" src=\"./probe.js\"></script></head><body></body></html>".into()),
+                ("dist/probe.js", script),
+                ("dist/host.js", include_str!("../../sdk/host.js").into()),
+                ("dist/probe.json", "{\"ok\":true}".into()),
+                ("dist/worker.js", "let evaluated=false;try{evaluated=Function('return 7')()===7}catch{};WebAssembly.compile(new Uint8Array([0,97,115,109,1,0,0,0])).then(()=>postMessage({evaluated,wasm:true}),()=>postMessage({evaluated,wasm:false}));".into()),
+            ] {
+                zip.start_file(path, zip::write::SimpleFileOptions::default()).map_err(err)?;
+                zip.write_all(body.as_bytes()).map_err(err)?;
+            }
+            zip.finish().map_err(err)?;
+            report["currentPackage"] = json!(name);
+            save(c, report)?;
+            let result = crate::packages::install(app, &path).await;
+            check(
+                report,
+                "asset-permissions-real-webview",
+                result.is_ok(),
+                json!({"profile":name,"capabilities":capabilities,"error":result.err(),"checks":["eval","wasm","inline-style","style-property","blob-image","same-origin-fetch","local-worker","blob-worker","worker-eval-wasm"]}),
+            )?;
+        }
+        for id in ids
+            .iter()
+            .filter(|id| id.starts_with("local.souldesk.widgetjs."))
+        {
+            let result = crate::packages::ensure_preset(app, id).await;
+            check(
+                report,
+                "asset-migrated-preset-hidden-ready",
+                result.is_ok(),
+                json!({"id":id,"error":result.err()}),
+            )?;
+        }
+    }
+    let core = app.state::<Core>();
+    let snapshot = core.store.snapshot()?;
+    let packages = snapshot["packages"].as_array().ok_or("组件登记快照无效")?;
+    check(
+        report,
+        "asset-packages-retained",
+        packages.len() == ids.len() && ids.iter().all(|id| packages.iter().any(|p| p["id"] == *id)),
+        json!({"expected":ids,"actual":packages.len()}),
+    )?;
+    check(
+        report,
+        "asset-probes-no-business-instances-or-sessions",
+        snapshot["instances"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+            && core.sessions.0.lock().map_err(err)?.is_empty()
+            && core.trials.lock().map_err(err)?.is_empty(),
+        json!({"normalDatabaseOpened":false}),
+    )?;
+    report["currentPackage"] = Value::Null;
+    report["status"] = json!(if c.mode == "widgetjs" {
+        "restart-ready"
+    } else {
+        "passed"
+    });
+    report["scope"] =
+        json!("nine-csp-profiles-and-five-migrated-hidden-previews; no-visual-or-mouse-acceptance");
+    save(c, report)?;
+    window(app, windows::quit).await?;
+    Ok(())
+}
+
 // 只覆盖正式包管线和隐藏预览；不创建业务实例、不调用组件的交互验收脚本。
 async fn execute_widgetjs_previews(
     app: &AppHandle,
@@ -2141,7 +2719,7 @@ mod tests {
             };
             assert!(config.panel_shortcut_enabled(), "{mode}");
         }
-        for mode in ["panel", "widgetjs", "widgetjs-resume"] {
+        for mode in ["panel", "panel-performance", "widgetjs", "widgetjs-resume"] {
             let config = Config {
                 root: PathBuf::new(),
                 report: PathBuf::new(),

@@ -1,6 +1,6 @@
 {
-  "schemaVersion":1,"id":"local.souldesk.widgetjs.coin-medium","name":"主流虚拟币","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
-  "entry":"dist/index.html","defaultSize":{"width":420,"height":400},"minSize":{"width":340,"height":220},"capabilities":["storage.instance","content.read","content.live"],
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.coin-medium","name":"主流虚拟币","version":"0.1.1","hostApiMajor":1,"loadCheck":1,
+  "entry":"dist/index.html","defaultSize":{"width":420,"height":400},"minSize":{"width":340,"height":220},"capabilities":["storage.instance","content.live"],
   "settingsSchema":{"type":"object","additionalProperties":false,"required":["refreshMs","upColorRed","proxyMode","proxyHost","proxyPort","background","foreground","primary","border","radius"],"properties":{
     "refreshMs":{"type":"integer","title":"显示更新毫秒","minimum":3000,"maximum":60000,"default":3000},
     "upColorRed":{"type":"boolean","title":"红涨绿跌","default":true},

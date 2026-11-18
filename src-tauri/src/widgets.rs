@@ -112,42 +112,31 @@ fn validate_manifest(m: &Manifest) -> AppResult<()> {
     {
         return Err("INVALID_ARGUMENT: 名称或入口无效".into());
     }
-    if m.capabilities.iter().any(|s| {
-        ![
-            "storage.instance",
-            "storage.shared",
-            "storage.document",
-            "documents.user",
-            "media.directory",
-            "files.launcher",
-            "assets.local",
-            "web.embed",
-            "clipboard.read",
-            "clipboard.write",
-            "clipboard.manage",
-            "assistant.web",
-            "jobs.manage",
-            "market.read",
-            "alerts.manage",
-            "content.read",
-            "content.live",
-            "weather.read",
-            "ai.generate",
-            "system.metrics",
-            "reminders.water",
-            "reminders.labor",
-            "reminders.sit",
-            "reminders.phone",
-            "notifications.island",
-            "todos.manage",
-            "focus.pomodoro",
-            "focus.pomodoro.window",
-            "keyboard.display",
-            "servers.monitor",
-            "links.open",
-        ]
-        .contains(&s.as_str())
-    }) {
+    crate::asset_permissions::validate(&m.capabilities)?;
+    crate::clipboard_host::validate_permissions(&m.id, &m.capabilities)?;
+    if m.capabilities.iter().any(|name| name == "documents.user")
+        && m.capabilities.iter().any(|name| {
+            matches!(
+                name.as_str(),
+                "documents.open" | "documents.save" | "documents.drop"
+            )
+        })
+    {
+        return Err("CAPABILITY_DENIED: 旧文档权限不能与细分文档权限混用".into());
+    }
+    if m.capabilities
+        .iter()
+        .any(|name| name == crate::component_registry::LEGACY_CONTENT_READ)
+        && m.capabilities
+            .iter()
+            .any(|name| crate::component_registry::is_scoped_content_capability(name))
+    {
+        return Err("CAPABILITY_DENIED: 旧公开内容权限不能与细分来源或HTTPS图片权限混用".into());
+    }
+    if m.capabilities
+        .iter()
+        .any(|name| !crate::component_registry::known_capability(name))
+    {
         return Err("CAPABILITY_DENIED: 未知能力".into());
     }
     if m.capabilities
@@ -732,36 +721,7 @@ pub(crate) fn remove_instance_before(
     {
         return Err("INVALID_ARGUMENT: 实例不存在".into());
     }
-    transaction
-        .execute(
-            "DELETE FROM app_settings WHERE key=?1",
-            [format!("media_directory:{instance}")],
-        )
-        .map_err(err)?;
-    transaction
-        .execute(
-            "DELETE FROM app_settings WHERE key=?1",
-            [format!("file_launcher:{instance}")],
-        )
-        .map_err(err)?;
-    crate::water::remove_data(&transaction, instance)?;
-    let mut groups = crate::store::panel_groups(&transaction)?;
-    if groups.membership.remove(instance).is_some() {
-        crate::store::save_panel_groups(&transaction, &groups)?;
-    }
-    crate::weather::remove_data(&transaction, instance)?;
-    crate::ai_host::remove_data(&transaction, instance)?;
-    crate::clipboard_history::remove_data(&transaction, instance)?;
-    crate::clipboard_actions::remove_data(&transaction, instance)?;
-    crate::assistant_state::remove_data(&transaction, instance)?;
-    crate::job_state::remove_data(&transaction, instance)?;
-    crate::job_knowledge::remove_data(&transaction, instance)?;
-    crate::shared_library::remove_data(&transaction, instance)?;
-    crate::labor::remove_data(&transaction, instance)?;
-    crate::reminder_store::remove_data(&transaction, instance)?;
-    crate::todo::remove_data(&transaction, instance)?;
-    crate::pomodoro::remove_data(&transaction, instance)?;
-    crate::pomodoro_window::remove_data(&transaction, instance)?;
+    crate::component_lifecycle::remove_persisted(&transaction, instance)?;
     transaction.commit().map_err(err)?;
     sessions.retain(|_, s| s.instance != instance);
     Ok(())
@@ -958,10 +918,7 @@ fn open_session_inner(
     }
     if clipboard_tool.is_some()
         && (package != crate::clipboard_host::SEARCH
-            || !manifest
-                .capabilities
-                .iter()
-                .any(|c| c == "clipboard.manage")
+            || !crate::clipboard_host::grants(&manifest.capabilities, crate::clipboard_host::TOOLS)
             || !manifest.capabilities.iter().any(|c| c == "ai.generate"))
     {
         return Err("CAPABILITY_DENIED: 固定剪切板工具类型或能力不符".into());
@@ -973,10 +930,10 @@ fn open_session_inner(
             crate::clipboard_host::SEARCH
         };
         if package != expected
-            || !manifest
-                .capabilities
-                .iter()
-                .any(|c| c == "clipboard.manage")
+            || !crate::clipboard_host::grants(
+                &manifest.capabilities,
+                crate::clipboard_host::CONTROL,
+            )
         {
             return Err("CAPABILITY_DENIED: 专用窗口与剪切板类型或能力不符".into());
         }
@@ -1122,6 +1079,17 @@ pub(crate) fn with_capability<T>(
     capability: &str,
     action: impl FnOnce(&mut Session) -> AppResult<T>,
 ) -> AppResult<T> {
+    with_any_capability(store, sessions, window, token, &[capability], action)
+}
+
+pub(crate) fn with_any_capability<T>(
+    store: &Store,
+    sessions: &Sessions,
+    window: &str,
+    token: &str,
+    capabilities: &[&str],
+    action: impl FnOnce(&mut Session) -> AppResult<T>,
+) -> AppResult<T> {
     if window.starts_with("keyboard-") {
         return Err("CAPABILITY_DENIED: 键盘叠加层只读".into());
     }
@@ -1135,8 +1103,15 @@ pub(crate) fn with_capability<T>(
     }
     let definition: String = store.db.lock().map_err(err)?.query_row("SELECT p.manifest FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id WHERE i.id=?1", [&session.instance], |row| row.get(0)).map_err(err)?;
     let manifest: Manifest = serde_json::from_str(&definition).map_err(err)?;
-    if !manifest.capabilities.iter().any(|c| c == capability) {
-        return Err(format!("CAPABILITY_DENIED: 未声明{capability}"));
+    if !manifest
+        .capabilities
+        .iter()
+        .any(|c| capabilities.contains(&c.as_str()))
+    {
+        return Err(format!(
+            "CAPABILITY_DENIED: 未声明{}",
+            capabilities.join("或")
+        ));
     }
     action(session)
 }
@@ -1343,7 +1318,10 @@ pub fn resource_csp(store: &Store, path: &str) -> String {
     if capabilities.iter().any(|value| value == "web.embed") {
         policy = policy.replace("frame-src 'none'", "frame-src https:");
     }
-    if capabilities.iter().any(|value| value == "content.read") {
+    if capabilities.iter().any(|value| {
+        value == crate::component_registry::LEGACY_CONTENT_READ
+            || value == crate::component_registry::HTTPS_IMAGES
+    }) {
         policy = policy.replace("img-src 'self' data:", "img-src 'self' data: https:");
     }
     if capabilities
@@ -1353,18 +1331,7 @@ pub fn resource_csp(store: &Store, path: &str) -> String {
         // 固定AI直聘包显示BOSS职位资料中的公司图片，不因此开放HTTP或嵌入网页。
         policy = policy.replace("img-src 'self' data:", "img-src 'self' data: https:");
     }
-    if capabilities.iter().any(|value| value == "assets.local") {
-        policy = policy
-            .replace(
-                "script-src 'self'",
-                "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
-            )
-            .replace("style-src 'self'", "style-src 'self' 'unsafe-inline'")
-            .replace("img-src 'self' data:", "img-src 'self' blob: data:")
-            .replace("connect-src 'none'", "connect-src 'self'");
-        policy.push_str("; worker-src 'self' blob:");
-    }
-    policy
+    crate::asset_permissions::apply(policy, &capabilities)
 }
 
 pub fn resource(store: &Store, path: &str) -> AppResult<(Vec<u8>, String)> {
@@ -1904,6 +1871,79 @@ mod tests {
             "本地资产能力不授予外部图片"
         );
     }
+    #[test]
+    fn scoped_assets_upgrade_keeps_old_resource_policy_and_rejects_invalid_declarations() {
+        let root = std::env::temp_dir().join(format!("souldesk-assets-policy-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        manifest["capabilities"] = json!(["storage.instance", "assets.local"]);
+        let old = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &old).unwrap();
+        let old_policy = resource_csp(
+            &store,
+            &format!("local.example.clock/{}/dist/index.html", old.digest),
+        );
+        manifest["version"] = json!("2.0.0");
+        manifest["capabilities"] = json!(["storage.instance", "assets.scoped", "styles.inline"]);
+        let new = stage(&store, &fixture(&root, &manifest, None)).unwrap();
+        activate(&store, &new).unwrap();
+        let current = resource_csp(&store, "local.example.clock/dist/index.html");
+        assert!(current.contains("style-src 'self' 'unsafe-inline'"));
+        assert!(current.contains("worker-src 'none'"));
+        assert!(!current.contains("unsafe-eval") && !current.contains("blob:"));
+        assert_eq!(
+            resource_csp(
+                &store,
+                &format!("local.example.clock/{}/dist/index.html", new.digest)
+            ),
+            current
+        );
+        assert_eq!(
+            resource_csp(
+                &store,
+                &format!("local.example.clock/{}/dist/index.html", old.digest)
+            ),
+            old_policy
+        );
+        assert!(
+            old_policy.contains("worker-src 'self' blob:") && old_policy.contains("'unsafe-eval'")
+        );
+        manifest["version"] = json!("3.0.0");
+        for capabilities in [
+            json!(["assets.scoped", "assets.local"]),
+            json!(["runtime.eval"]),
+        ] {
+            manifest["capabilities"] = capabilities;
+            assert!(stage(&store, &fixture(&root, &manifest, None))
+                .err()
+                .unwrap()
+                .starts_with("CAPABILITY_DENIED:"));
+            assert_eq!(
+                resource_csp(&store, "local.example.clock/dist/index.html"),
+                current
+            );
+        }
+    }
+
+    #[test]
+    fn content_manifest_rejects_mixed_legacy_and_scoped_permissions() {
+        let mut manifest: Manifest =
+            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+        let legacy = crate::component_registry::LEGACY_CONTENT_READ;
+        for capability in [
+            crate::component_registry::HTTPS_IMAGES,
+            "content.source.itime-calendar",
+        ] {
+            manifest.capabilities = vec![capability.into()];
+            assert!(validate_manifest(&manifest).is_ok());
+            manifest.capabilities.push(legacy.into());
+            assert!(validate_manifest(&manifest)
+                .unwrap_err()
+                .contains("不能与细分"));
+        }
+    }
+
     #[test]
     fn embedded_web_policy_is_separate_from_native_and_dynamic_code_permissions() {
         let root = std::env::temp_dir().join(format!("souldesk-embed-policy-{}", Uuid::new_v4()));

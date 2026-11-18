@@ -12,7 +12,7 @@ function create(defaults: Record<string, any> = {}) {
       if (verify) Object.assign(hotspotEvidence, { source: args.source, startedAt: Date.now(), completedAt: 0, outcome: 'loading', error: '', itemCount: null });
       contentStatus.loading++;
       try {
-        const result = await host.request('content.get', args);
+        const result = await host.request('content.get', { ...args, cache: true, ...(options.forceRefresh === true ? { forceRefresh: true } : {}) });
         stage = 'validation';
         const data = validateBody(args.source, result.data);
         if (verify) {

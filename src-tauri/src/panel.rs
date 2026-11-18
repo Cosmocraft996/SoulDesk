@@ -209,6 +209,72 @@ impl Groups {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EdgeStyle {
+    #[default]
+    Classic,
+    Frost,
+    Glow,
+    Paw,
+    Rocket,
+    Basketball,
+    Jordan,
+    Shinobu,
+}
+
+impl EdgeStyle {
+    pub fn size(self) -> (f64, f64) {
+        match self {
+            Self::Classic => (12., 100.),
+            Self::Frost => (22., 58.),
+            Self::Glow => (14., 68.),
+            _ => (42., 48.),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct EdgePosition {
+    pub side: crate::desktop_geometry::EdgeSide,
+    pub offset: f64,
+}
+
+impl Default for EdgePosition {
+    fn default() -> Self {
+        Self {
+            side: Default::default(),
+            offset: 0.5,
+        }
+    }
+}
+
+impl EdgePosition {
+    pub fn dragged(
+        self,
+        area: crate::desktop_geometry::WorkArea,
+        height: u32,
+        x: i32,
+        dy: i64,
+    ) -> Self {
+        use crate::desktop_geometry::EdgeSide;
+        let travel = f64::from(area.height.saturating_sub(height));
+        Self {
+            side: if (i64::from(x) - i64::from(area.left)) * 2 < i64::from(area.width) {
+                EdgeSide::Left
+            } else {
+                EdgeSide::Right
+            },
+            offset: if travel > 0. {
+                (self.offset + dy as f64 / travel).clamp(0., 1.)
+            } else {
+                self.offset
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Preferences {
@@ -217,6 +283,8 @@ pub struct Preferences {
     pub slide_in_ms: u32,
     pub slide_out_ms: u32,
     pub desktop_double_click: bool,
+    pub edge: EdgePosition,
+    pub edge_style: EdgeStyle,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -226,6 +294,8 @@ impl Default for Preferences {
             slide_in_ms: 250,
             slide_out_ms: 250,
             desktop_double_click: true,
+            edge: EdgePosition::default(),
+            edge_style: EdgeStyle::default(),
         }
     }
 }
@@ -241,6 +311,9 @@ impl Preferences {
         }
         if self.slide_in_ms > 1000 || self.slide_out_ms > 1000 {
             return Err("滑入、滑出时长须为0～1000毫秒；0表示无动效".into());
+        }
+        if !(0.0..=1.0).contains(&self.edge.offset) {
+            return Err("挂件位置须在工作区内".into());
         }
         Ok(())
     }
@@ -267,18 +340,6 @@ impl Layout {
         }
         Ok(())
     }
-}
-
-pub fn can_auto_collapse(
-    focused: bool,
-    editing: bool,
-    interacting: bool,
-    menu: bool,
-    dialog: bool,
-    detail: bool,
-    inside: bool,
-) -> bool {
-    !editing && !interacting && !menu && !dialog && !detail && (!focused || !inside)
 }
 
 #[cfg(test)]
@@ -500,6 +561,8 @@ mod tests {
     fn old_preferences_get_defaults_and_animation_accepts_zero_through_one_second() {
         let mut p: Preferences = serde_json::from_str(r#"{"ratio":0.5,"tint":0.2}"#).unwrap();
         assert!(p.desktop_double_click);
+        assert_eq!(p.edge_style, EdgeStyle::Classic);
+        assert_eq!(p.edge, EdgePosition::default());
         assert_eq!(p.slide_in_ms, 250);
         p.slide_in_ms = 0;
         p.slide_out_ms = 1000;
@@ -511,22 +574,54 @@ mod tests {
         assert!(p.validate().is_err());
     }
     #[test]
-    fn panel_auto_collapse_on_mouse_leave_or_focus_loss_keeps_interaction_guards() {
-        assert!(!can_auto_collapse(
-            true, false, false, false, false, false, true
-        ));
-        for (focused, inside) in [(true, false), (false, true), (false, false)] {
-            assert!(can_auto_collapse(
-                focused, false, false, false, false, false, inside
-            ));
-            for at in 0..5 {
-                let mut guards = [false; 5];
-                guards[at] = true;
-                assert!(!can_auto_collapse(
-                    focused, guards[0], guards[1], guards[2], guards[3], guards[4], inside
-                ));
+    fn panel_edge_docking_and_offset_follow_scaled_work_area() {
+        use crate::desktop_geometry::{EdgeSide, WorkArea};
+        let area = WorkArea {
+            left: -1920,
+            top: -40,
+            width: 1920,
+            height: 1040,
+            scale_factor: 1.5,
+        };
+        let position = EdgePosition::default();
+        let left = position.dragged(area, 150, -1919, -900);
+        assert_eq!(
+            left,
+            EdgePosition {
+                side: EdgeSide::Left,
+                offset: 0.
             }
+        );
+        assert_eq!(left.side.window_left(area, 63), -1920);
+        let right = left.dragged(area, 72, -1, 484);
+        assert_eq!(
+            right,
+            EdgePosition {
+                side: EdgeSide::Right,
+                offset: 0.5
+            }
+        );
+        assert_eq!(right.side.window_left(area, 63), -63);
+        assert_eq!(right.dragged(area, 72, -1, i64::MAX).offset, 1.);
+        assert_eq!(right.dragged(area, 1100, -1, 10).offset, right.offset);
+        let preferences = Preferences {
+            edge_style: EdgeStyle::Shinobu,
+            edge: left,
+            ..Preferences::default()
+        };
+        let restored: Preferences =
+            serde_json::from_str(&serde_json::to_string(&preferences).unwrap()).unwrap();
+        assert_eq!(restored.edge, left);
+        assert_eq!(restored.edge_style, EdgeStyle::Shinobu);
+        assert!(Preferences {
+            edge: EdgePosition {
+                offset: 1.01,
+                ..left
+            },
+            ..restored
         }
+        .validate()
+        .is_err());
     }
     #[test]
     fn panel_layout_rejects_invalid_coordinates_and_undersized_widgets() {

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SoulDesk 组件筛选与手动验证，本机保存草稿和提交结果。">
+  <title>SoulDesk 组件验收台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">SD</span><div>SoulDesk<small>组件验收台</small></div></div>
+    <div class="side-caption">组件分类</div>
+    <nav id="categories" aria-label="组件分类"></nav>
+    <div class="sidebar-note"><span class="local-dot"></span>本机工作区<p>筛选、记录，再提交。<br>你的选择不会直接删除组件。</p></div>
+  </aside>
+  <main>
+    <header class="page-header">
+      <div><div class="eyebrow">SOULDESK / COMPONENT REVIEW</div><h1>挑选你的桌面组件<span>。</span></h1><p class="subtitle">逐项使用，留下选择。让桌面只保留你需要的东西。</p></div>
+      <div class="build-stamp"><span>本次验收构建</span><strong id="build">正在加载</strong><small>64 项组件 · 本地验收</small></div>
+    </header>
+    <section class="summary" aria-label="筛选进度">
+      <div class="progress-cell"><span>筛选进度</span><div><strong id="selected-count">0</strong><span>/ 64</span></div><div class="progress-track"><div id="progress-bar"></div></div></div>
+      <button class="stat" data-decision-filter="keep"><span class="stat-dot keep"></span>保留<strong id="keep-count">0</strong></button>
+      <button class="stat" data-decision-filter="trim"><span class="stat-dot trim"></span>裁剪<strong id="trim-count">0</strong></button>
+      <button class="stat" data-decision-filter="undecided"><span class="stat-dot undecided"></span>待定<strong id="undecided-count">0</strong></button>
+      <div class="verified-stat"><span>已验证</span><strong id="verified-count">0</strong><small>含部分通过与失败</small></div>
+    </section>
+    <section class="workspace">
+      <div class="toolbar">
+        <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"></circle><path d="m15 15 5 5"></path></svg><input id="search" type="search" placeholder="搜索名称、功能或组件标识" aria-label="搜索组件"></label>
+        <label class="filter"><span>筛选</span><select id="decision-filter"><option value="all">全部选择</option><option value="unselected">未筛选</option><option value="keep">保留</option><option value="trim">裁剪</option><option value="undecided">待定</option></select></label>
+        <label class="filter"><span>验证</span><select id="result-filter"><option value="all">全部结果</option><option value="untested">待验证</option><option value="passed">通过</option><option value="partial">部分通过</option><option value="failed">失败</option></select></label>
+      </div>
+      <div class="list-caption"><span id="visible-count">正在读取组件清单…</span><span>筛选意向与验证结果分别记录</span></div>
+      <div id="fatal" class="error-banner" role="alert" hidden></div>
+      <div id="records" class="records" aria-label="组件清单"></div>
+      <div id="empty" class="empty" hidden><span>没有匹配的组件</span><p>试试其他关键词或清除筛选条件。</p><button id="reset-filters" class="secondary">清除筛选条件</button></div>
+    </section>
+    <footer class="action-bar"><div class="save-info"><span id="save-dot" class="save-dot"></span><span id="save-status" role="status" aria-live="polite">正在读取草稿…</span><button id="retry-save" class="text-button" hidden>重试保存</button></div><div class="actions"><button id="export" class="secondary" disabled>导出备份</button><button id="submit" class="primary" disabled>提交筛选结果 <span aria-hidden="true">↗</span></button></div></footer>
+  </main>
+  <dialog id="submit-dialog" aria-labelledby="submit-title"><div class="dialog-top"><span class="eyebrow">SAVE A REVIEW</span><button id="cancel-submit" class="icon-button" aria-label="关闭提交窗口">×</button></div><h2 id="submit-title">保存这次筛选结果</h2><p>结果将保存到本机项目目录。提交后告诉我“已提交”，即可继续汇总。</p><div id="submission-summary" class="submission-summary"></div><p id="submission-note" class="muted"></p><div class="dialog-actions"><button id="back-submit" class="secondary">继续填写</button><button id="confirm-submit" class="primary">提交到本机</button></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

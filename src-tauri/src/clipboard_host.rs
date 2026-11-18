@@ -25,11 +25,72 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 pub(crate) const HISTORY: &str = "local.souldesk.widgetjs.clipboard";
 pub(crate) const SEARCH: &str = "local.souldesk.widgetjs.clipboard-search";
-const CAPABILITY: &str = "clipboard.manage";
+pub(crate) const CAPABILITY: &str = "clipboard.manage";
+pub(crate) const CONTROL: &str = "clipboard.control";
+pub(crate) const HISTORY_ACCESS: &str = "clipboard.history";
+pub(crate) const COPY: &str = "clipboard.copy";
+pub(crate) const PASTE: &str = "clipboard.paste";
+pub(crate) const SEARCH_ACCESS: &str = "clipboard.search";
+pub(crate) const TOOLS: &str = "clipboard.tools";
+
+pub(crate) fn grants(capabilities: &[String], operation: &str) -> bool {
+    capabilities
+        .iter()
+        .any(|cap| cap == CAPABILITY || cap == operation)
+}
+
+pub(crate) fn validate_permissions(package: &str, capabilities: &[String]) -> AppResult<()> {
+    let scoped = [CONTROL, HISTORY_ACCESS, COPY, PASTE, SEARCH_ACCESS, TOOLS];
+    let has = |name: &str| capabilities.iter().any(|cap| cap == name);
+    if !scoped.into_iter().any(has) {
+        return Ok(());
+    }
+    let allowed = match package {
+        HISTORY => &[CONTROL, HISTORY_ACCESS, COPY, PASTE][..],
+        SEARCH => &[CONTROL, SEARCH_ACCESS, TOOLS][..],
+        _ => return Err("CAPABILITY_DENIED: 剪切板权限仅供对应固定组件使用".into()),
+    };
+    if has(CAPABILITY)
+        || !has(CONTROL)
+        || scoped.iter().any(|cap| has(cap) && !allowed.contains(cap))
+        || (has(PASTE) && !has(COPY))
+    {
+        return Err("CAPABILITY_DENIED: 剪切板细分权限组合无效".into());
+    }
+    Ok(())
+}
+
+fn with_permission<T>(
+    store: &Store,
+    sessions: &widgets::Sessions,
+    window: &str,
+    token: &str,
+    operation: &str,
+    action: impl FnOnce(&mut widgets::Session) -> AppResult<T>,
+) -> AppResult<T> {
+    widgets::with_any_capability(
+        store,
+        sessions,
+        window,
+        token,
+        &[CAPABILITY, operation],
+        action,
+    )
+}
+
+fn action_permission(paste: bool) -> &'static str {
+    if paste {
+        PASTE
+    } else {
+        COPY
+    }
+}
+
 struct Source {
     consumer: Consumer,
     kind: Kind,
     state: Value,
+    can_observe: bool,
 }
 #[derive(Default)]
 struct Live {
@@ -100,7 +161,7 @@ fn source(store: &Store, id: &str) -> AppResult<Source> {
     };
     let manifest: widgets::Manifest =
         serde_json::from_str(&manifest).map_err(|_| "DATA_UNAVAILABLE: 剪切板清单无效")?;
-    if !manifest.capabilities.iter().any(|cap| cap == CAPABILITY) {
+    if !grants(&manifest.capabilities, CONTROL) {
         return Err("CAPABILITY_DENIED: 未声明固定剪切板能力".into());
     }
     let mut state = clipboard_history::status(store, id)?;
@@ -116,6 +177,14 @@ fn source(store: &Store, id: &str) -> AppResult<Source> {
         },
         kind,
         state,
+        can_observe: grants(
+            &manifest.capabilities,
+            if kind == Kind::History {
+                HISTORY_ACCESS
+            } else {
+                SEARCH_ACCESS
+            },
+        ),
     })
 }
 fn candidates(store: &Store) -> AppResult<Vec<String>> {
@@ -242,6 +311,9 @@ impl Service {
                 .begin_popup(store, &spec.instance, target, None)
                 .map(ShortcutAction::Show);
         }
+        if !current.can_observe {
+            return Err("CAPABILITY_DENIED: 未声明剪切板搜索权限".into());
+        }
         let text = self
             .runtime
             .lock()
@@ -344,7 +416,7 @@ impl Service {
         target: Option<Target>,
     ) -> AppResult<Popup> {
         let _native = store.native_actions.lock().map_err(err)?;
-        widgets::with_capability(store, sessions, window, token, CAPABILITY, |session| {
+        with_permission(store, sessions, window, token, CONTROL, |session| {
             self.begin_popup(store, &session.instance, target, None)
         })
     }
@@ -409,9 +481,10 @@ impl Service {
         sessions: &widgets::Sessions,
         window: &str,
         token: &str,
+        operation: &str,
     ) -> AppResult<Popup> {
         let _native = store.native_actions.lock().map_err(err)?;
-        widgets::with_capability(store, sessions, window, token, CAPABILITY, |session| {
+        with_permission(store, sessions, window, token, operation, |session| {
             let current = source(store, &session.instance)?;
             if current.kind != Kind::History
                 || clipboard_surface::role(window, &session.instance) != Some(Kind::History)
@@ -437,7 +510,8 @@ impl Service {
         request: clipboard_actions::Request,
         desktop: &mut impl clipboard_actions::Desktop,
     ) -> AppResult<Value> {
-        let popup = self.bound_popup(store, sessions, window, token)?;
+        let permission = action_permission(request.paste);
+        let popup = self.bound_popup(store, sessions, window, token, permission)?;
         let id = popup.instance.clone();
         let request_id = request.request_id.clone();
         let presentation = request.presentation_id.clone();
@@ -448,7 +522,7 @@ impl Service {
                 if self.stopped.load(Ordering::Acquire) {
                     return Err("SESSION_EXPIRED: 剪切板后台已退出".into());
                 }
-                widgets::with_capability(store, sessions, window, token, CAPABILITY, |session| {
+                with_permission(store, sessions, window, token, permission, |session| {
                     let current = source(store, &session.instance)?;
                     if session.instance != id
                         || current.kind != Kind::History
@@ -568,7 +642,18 @@ impl Service {
         if self.stopped.load(Ordering::Acquire) {
             return Err("SESSION_EXPIRED: 剪切板后台已退出".into());
         }
-        widgets::with_capability(store, sessions, window, token, CAPABILITY, |session| {
+        let permission = match method {
+            "clipboard.status" | "clipboard.surface" | "clipboard.hide" | "clipboard.hover" => {
+                CONTROL
+            }
+            "clipboard.actionStatus" => COPY,
+            "clipboard.peek" => SEARCH_ACCESS,
+            "clipboard.query" | "clipboard.get" => HISTORY_ACCESS,
+            "clipboard.mutate" if args["command"]["type"] == "configure" => CONTROL,
+            "clipboard.mutate" => HISTORY_ACCESS,
+            _ => return Err("CAPABILITY_DENIED: 未开放的剪切板操作".into()),
+        };
+        with_permission(store, sessions, window, token, permission, |session| {
             if clipboard_surface::role(window, &session.instance).is_some()
                 && !self.current_window(window, &session.instance)
                 && !matches!(method, "clipboard.status" | "clipboard.actionStatus")
@@ -727,7 +812,7 @@ impl Service {
                             ..Default::default()
                         };
                     }
-                    if source.state["captureEnabled"] != true {
+                    if !source.can_observe || source.state["captureEnabled"] != true {
                         live.listening = false;
                         live.text.clear();
                         live.pending_open = false;
@@ -750,7 +835,7 @@ impl Service {
         }
         let consumers: Vec<_> = sources
             .iter()
-            .filter(|s| s.state["captureEnabled"] == true)
+            .filter(|s| s.can_observe && s.state["captureEnabled"] == true)
             .map(|s| s.consumer.clone())
             .collect();
         // 系统读取期间不持原生操作锁/SQLite锁，停用、删除与退出无需等待外部剪贴板所有者。
@@ -800,6 +885,7 @@ impl Service {
                 continue;
             };
             if current.consumer.config_revision != delivery.consumer.config_revision
+                || !current.can_observe
                 || current.state["captureEnabled"] != true
                 || !sources.iter().any(|s| {
                     s.consumer.instance == current.consumer.instance && s.kind == current.kind
@@ -997,12 +1083,12 @@ pub(crate) async fn gateway(
             };
             let p = {
                 let _native = core.store.native_actions.lock().map_err(err)?;
-                widgets::with_capability(
+                with_permission(
                     &core.store,
                     &core.sessions,
                     &window,
                     &token,
-                    CAPABILITY,
+                    TOOLS,
                     |session| {
                         let current = source(&core.store, &session.instance)?;
                         if current.kind != Kind::Search {
@@ -1028,12 +1114,12 @@ pub(crate) async fn gateway(
             empty(&args)?;
             {
                 let _native = core.store.native_actions.lock().map_err(err)?;
-                widgets::with_capability(
+                with_permission(
                     &core.store,
                     &core.sessions,
                     &window,
                     &token,
-                    CAPABILITY,
+                    TOOLS,
                     |session| {
                         core.ai.tool(&core.store, &window, &session.instance)?;
                         Ok(())
@@ -1062,9 +1148,13 @@ pub(crate) async fn gateway(
         if method == "clipboard.act" {
             let request: clipboard_actions::Request =
                 serde_json::from_value(args).map_err(|_| "INVALID_ARGUMENT: 剪切板动作参数无效")?;
-            let p = core
-                .clipboard
-                .bound_popup(&core.store, &core.sessions, &window, &token)?;
+            let p = core.clipboard.bound_popup(
+                &core.store,
+                &core.sessions,
+                &window,
+                &token,
+                action_permission(request.paste),
+            )?;
             if request.paste && p.target.is_none() {
                 return Err("TARGET_UNAVAILABLE: 未捕获原应用目标，可使用仅复制".into());
             }
@@ -1124,12 +1214,12 @@ pub(crate) async fn gateway(
             let value: Search =
                 serde_json::from_value(args).map_err(|_| "INVALID_ARGUMENT: 搜索只接受content")?;
             let _native = core.store.native_actions.lock().map_err(err)?;
-            return widgets::with_capability(
+            return with_permission(
                 &core.store,
                 &core.sessions,
                 &window,
                 &token,
-                CAPABILITY,
+                SEARCH_ACCESS,
                 |session| {
                     let current = source(&core.store, &session.instance)?;
                     if current.kind != Kind::Search
@@ -1195,12 +1285,80 @@ mod tests {
         package: &str,
         capability: &str,
     ) -> (String, String, String) {
-        let manifest = json!({"schemaVersion":1,"id":package,"name":"剪切板宿主检查","version":"0.1.0","hostApiMajor":1,"entry":"dist/index.html","defaultSize":{"width":500,"height":400},"minSize":{"width":200,"height":160},"capabilities":[capability],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}});
+        add_with(s, sessions, package, &[capability])
+    }
+    fn add_with(
+        s: &Store,
+        sessions: &widgets::Sessions,
+        package: &str,
+        capabilities: &[&str],
+    ) -> (String, String, String) {
+        let manifest = json!({"schemaVersion":1,"id":package,"name":"剪切板宿主检查","version":"0.1.0","hostApiMajor":1,"entry":"dist/index.html","defaultSize":{"width":500,"height":400},"minSize":{"width":200,"height":160},"capabilities":capabilities,"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}});
         s.db.lock().unwrap().execute("INSERT OR IGNORE INTO widget_packages(id,manifest,directory,digest) VALUES(?1,?2,'clipboard-test','clipboard-test')",rusqlite::params![package,manifest.to_string()]).unwrap();
         let id = widgets::create_instance(s, package).unwrap();
         let window = format!("float-{id}");
         let session = widgets::open_display_session(s, sessions, &window, &id, None).unwrap();
         (id, window, session["token"].as_str().unwrap().into())
+    }
+    #[test]
+    fn scoped_clipboard_control_does_not_grant_history_paste_or_system_capture() {
+        let (store, sessions, service) = fixture();
+        let row = add_with(&store, &sessions, HISTORY, &[CONTROL, COPY]);
+        configure(&service, &store, &sessions, &row, 0, true);
+        assert!(service
+            .access(
+                &store,
+                &sessions,
+                &row.1,
+                &row.2,
+                "clipboard.status",
+                Value::Null
+            )
+            .is_ok());
+        assert!(service
+            .access(
+                &store,
+                &sessions,
+                &row.1,
+                &row.2,
+                "clipboard.query",
+                json!({})
+            )
+            .is_err());
+        assert!(with_permission(
+            &store,
+            &sessions,
+            &row.1,
+            &row.2,
+            action_permission(false),
+            |_| Ok(())
+        )
+        .is_ok());
+        assert!(with_permission(
+            &store,
+            &sessions,
+            &row.1,
+            &row.2,
+            action_permission(true),
+            |_| Ok(())
+        )
+        .is_err());
+        let mut reader = Fake::new(1);
+        reader.text("隔离夹具");
+        assert!(service.step(&store, &mut reader).unwrap().is_empty());
+        assert_eq!(reader.sequences, 0);
+        for (package, names) in [
+            (HISTORY, vec![CONTROL, PASTE]),
+            (SEARCH, vec![CONTROL, HISTORY_ACCESS]),
+            (SEARCH, vec![CONTROL, CAPABILITY]),
+            ("local.test.foreign", vec![CONTROL]),
+        ] {
+            assert!(validate_permissions(
+                package,
+                &names.into_iter().map(str::to_owned).collect::<Vec<_>>()
+            )
+            .is_err());
+        }
     }
     fn config(revision: u64, enabled: bool) -> Value {
         json!({"requestId":uid(),"command":{"type":"configure","expectedRevision":revision,"captureEnabled":enabled,"shortcutEnabled":false,"pasteEnabled":false,"shortcut":"Super+Alt+V","historyExpiredHours":12}})

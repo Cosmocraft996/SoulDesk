@@ -1,7 +1,7 @@
 {
-  "schemaVersion":1,"id":"local.souldesk.widgetjs.gold","name":"黄金价格","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.gold","name":"黄金价格","version":"0.1.1","hostApiMajor":1,"loadCheck":1,
   "entry":"dist/index.html","defaultSize":{"width":320,"height":260},"minSize":{"width":240,"height":200},
-  "capabilities":["storage.instance","content.read"],
+  "capabilities":["storage.instance","content.source.gold", "content.source.gold-trends"],
   "settingsSchema":{"type":"object","additionalProperties":false,"required":["background","foreground","primary","border","radius"],"properties":{
     "background":{"type":"string","title":"背景颜色","maxLength":7,"default":"#202026"},
     "foreground":{"type":"string","title":"文字颜色","maxLength":7,"default":"#f4f0e8"},

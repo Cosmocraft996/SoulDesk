@@ -6,6 +6,9 @@
     "edge"
   ],
   "permissions": [
-    "allow-window-action"
+    "allow-window-action",
+    "allow-drag-panel-edge",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

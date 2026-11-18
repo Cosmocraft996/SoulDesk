@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { stopOwnedChild } from './child-cleanup.mjs';
 const executable = resolve(process.argv[2] ?? 'src-tauri/target/debug/souldesk.exe');
 const selectedPackage = process.argv[4];
-if (selectedPackage && !['convert-files', 'preview-all', 'time-progress', 'wave-progress', 'clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'trump-clock', 'deadline', 'calendar', 'countdown', 'countdown-list', 'birthday-list', 'todo', 'calendar-large', 'pomodoro', 'note', 'wooden-fish', 'forex', 'dashboard', 'energy-label', 'base-panel', 'convert', 'photo', 'sticker', 'water-reminder', 'labor', 'server', 'hotspots', 'coins'].includes(selectedPackage)) throw new Error('只接受已有受控表单检查的组件或全部隐藏加载检查');
+const contentUpgradeFrom = ['content-upgrade', 'audit-upgrade'].includes(selectedPackage) && process.argv[5] ? resolve(process.argv[5]) : null;
+if (['content-upgrade', 'audit-upgrade'].includes(selectedPackage) && !contentUpgradeFrom) throw new Error('缺少升级前的标准ZIP目录');
+if (selectedPackage && !['assets', 'content-upgrade', 'audit-upgrade', 'convert-files', 'preview-all', 'time-progress', 'wave-progress', 'clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'trump-clock', 'deadline', 'calendar', 'countdown', 'countdown-list', 'birthday-list', 'todo', 'calendar-large', 'pomodoro', 'note', 'wooden-fish', 'forex', 'dashboard', 'energy-label', 'base-panel', 'convert', 'photo', 'sticker', 'water-reminder', 'labor', 'server', 'hotspots', 'coins'].includes(selectedPackage)) throw new Error('只接受已有受控表单检查的组件或全部隐藏加载检查');
 if (!existsSync(executable)) throw new Error('请先构建桌面调试程序');
 mkdirSync('artifacts', { recursive: true });
 const report = resolve(process.argv[3] ?? `artifacts/desktop-integration-widgetjs-${randomUUID()}.json`);
@@ -29,6 +31,7 @@ for (const phase of ['widgetjs', 'widgetjs-resume']) {
   const output = openSync(`${report}.${phase}.log`, 'wx');
   const args = ['--desktop-integration-' + phase, report];
   if (selectedPackage) args.push('--widgetjs-check-package=' + selectedPackage);
+  if (contentUpgradeFrom) args.push((selectedPackage === 'audit-upgrade' ? '--widgetjs-audit-upgrade-from=' : '--widgetjs-content-upgrade-from=') + contentUpgradeFrom);
   if (fixture) args.push('--widgetjs-server-url=' + fixture.url);
   const child = spawn(executable, args, { windowsHide: true, stdio: ['ignore', output, output] });
   const result = { phase, pid: child.pid, status: 'running' }; launch.phases.push(result); record();
@@ -54,4 +57,4 @@ for (const phase of ['widgetjs', 'widgetjs-resume']) {
 }
 } finally { await fixture?.close(); }
 launch.status = 'passed'; record();
-console.log(selectedPackage === 'preview-all' ? '全部预置隐藏试加载及登记重启检查完成；功能、交互、视觉和普通安装未验。' : selectedPackage === 'convert-files' ? '单实例原生文件选择、五种格式解码、磁盘导出及重启已检查；HEIC、双实例和完整视觉未验。' : '真实宿主/消息桥/表单保存/双实例/面板切换/进程重启已检查；人工视觉及普通安装未验。');
+console.log(contentUpgradeFrom ? '旧版标准ZIP导入、显式升级、历史资源策略及实例数据重启保持已检查。' : selectedPackage === 'assets' ? '资源细分真实WebView允许/拒绝、五款隐藏加载及登记重启已检查；人工视觉及普通安装未验。' : selectedPackage === 'preview-all' ? '全部预置隐藏试加载及登记重启检查完成；功能、交互、视觉和普通安装未验。' : selectedPackage === 'convert-files' ? '单实例原生文件选择、五种格式解码、磁盘导出及重启已检查；HEIC、双实例和完整视觉未验。' : '真实宿主/消息桥/表单保存/双实例/面板切换/进程重启已检查；人工视觉及普通安装未验。');

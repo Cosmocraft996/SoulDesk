@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.server",
   "name": "服务器监控",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",
@@ -17,10 +17,10 @@
   "capabilities": [
     "storage.instance",
     "servers.monitor",
-    "assets.local",
+    "assets.scoped",
     "clipboard.write",
     "links.open",
-    "documents.user"
+    "documents.save", "documents.drop"
   ],
   "settingsSchema": {
     "type": "object",

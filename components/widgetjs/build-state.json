@@ -1,0 +1,809 @@
+{
+  "schemaVersion": 1,
+  "inputs": [
+    [
+      ".gitattributes",
+      "6b2fe82db624eec48aa0780dbd9f8b2ac5a2653b210d162e8fa9c90241122157"
+    ],
+    [
+      "components/widgetjs/ai-assistant",
+      "1cfce759b2e4df578cea312a9c469c5a4a921d3c4d0b48912ab60b60d19bd4e3"
+    ],
+    [
+      "components/widgetjs/ai-job",
+      "b68b506f559f910d92db0ac599ef71e254136a6ead45890de9a57df542ffb156"
+    ],
+    [
+      "components/widgetjs/ai-mermaid",
+      "ec659f88e4ec9e195f77da0086787c478e7640cd9c8e9353bb745abf53292d6c"
+    ],
+    [
+      "components/widgetjs/ai-mindmap",
+      "a8d8fb46eb603f470f487c6dc23846acbbab0b54c901b58f49a38d888aab9754"
+    ],
+    [
+      "components/widgetjs/ai-source",
+      "30722526d4e96e9b9c24c8833045c1818dc80cda7137869a7b8af726eb6d128d"
+    ],
+    [
+      "components/widgetjs/ai-translate",
+      "27ee3a5873185d6beb8e38ec8f4ddb51435188cba57e68c8ea0a8fa52f126f8d"
+    ],
+    [
+      "components/widgetjs/base-panel",
+      "763b198427e200b4a9f704e312f3d7a9460146b6a87ee531db935d068925f743"
+    ],
+    [
+      "components/widgetjs/birthday-list",
+      "a4532201a6f3dbca87310bfd4d716599dd4088e9fdd9733e70e290152337a50e"
+    ],
+    [
+      "components/widgetjs/birthday-list-source",
+      "6547803c83c0d0c7aca14ce8e7151dfc3ff7fcac3d948a2ae144c56a0dd7a319"
+    ],
+    [
+      "components/widgetjs/calendar",
+      "9579cfc72ad0e7d54b55b1429b8101460a98f6cd8a4127a1956b072f1b517352"
+    ],
+    [
+      "components/widgetjs/calendar-large",
+      "7dd987c2206282652d22666f49493fb1b9dea603803b99ce2bdcb0116b0f5967"
+    ],
+    [
+      "components/widgetjs/calendar-large-source",
+      "46fd539cc2cf8de3f29c0f53f7f512e7543e62a0b3ef37b58c87c10a0826ddbe"
+    ],
+    [
+      "components/widgetjs/calendar-source",
+      "2ea273583c9e1833cd27d5e2c4cdaea1984215a19084fd2131a2a616c46f250a"
+    ],
+    [
+      "components/widgetjs/clipboard",
+      "e1f0f6e19d0dc9da188ca4e951e28713d76717352032a612498d7d9d87361120"
+    ],
+    [
+      "components/widgetjs/clipboard-search",
+      "b4f08777e8bd30881400c314734c80aa8a0ccbaaaafcfb4e69a888e0fe3ab1c8"
+    ],
+    [
+      "components/widgetjs/clipboard-source",
+      "c904dc9a745ad6fd69bd6a3f40624285c237948d056fa85f49b0f0ac3674423b"
+    ],
+    [
+      "components/widgetjs/clock",
+      "262077f3a696ee2e172c528ba3e3d61dff96aea110e0fc1ad5d0a94e50bc3e04"
+    ],
+    [
+      "components/widgetjs/clock-source",
+      "5e5fd2c271770472fde218d10ede151ebbb5c9c89be13b2ef95b003c01c8dfd7"
+    ],
+    [
+      "components/widgetjs/coin-common",
+      "1e9855623be385f047c56130cfb3ae04dd56c58bb0c7e062d37783cdf225f145"
+    ],
+    [
+      "components/widgetjs/coin-medium",
+      "47839b75eaae86805308160946cea50c442da497c0186f7701e951c6181faf5d"
+    ],
+    [
+      "components/widgetjs/coin-medium-source",
+      "db22b47abcec59e15f563d1795388fb5a0316be09eda935a47b7cef2e1743eb1"
+    ],
+    [
+      "components/widgetjs/coin-small",
+      "36178fbf9b2849e2877e40eff097b1444d07ac6311f12245b9cbcbac6d0741d0"
+    ],
+    [
+      "components/widgetjs/coin-small-source",
+      "aa71fc5f714a625d790a95a49b32707588d811d3ee1479146034375cbfa49bbd"
+    ],
+    [
+      "components/widgetjs/convert",
+      "c7b84756f182495f7bfbf9841e525573aeb4b94e1a0587dbd70d008395ff7f32"
+    ],
+    [
+      "components/widgetjs/convert-source",
+      "9b08daa30a9d74b19d275e9d39c0f8c4470dae655bc7021d8bb386ad1a49c0c7"
+    ],
+    [
+      "components/widgetjs/countdown",
+      "dd127298e6c2be37066b06a923d2024859de5cd11bf65fff1c093ed5cf645354"
+    ],
+    [
+      "components/widgetjs/countdown-list",
+      "ab4f87b7486f4d2eeb992ab0efd9c529d2db4a26b94d4dc62c16a073a22c111e"
+    ],
+    [
+      "components/widgetjs/countdown-source",
+      "f7b9fc1d9f8ee00d61a3d539f24c29aa9592893bd36a52e4e1039cc4c13b7acb"
+    ],
+    [
+      "components/widgetjs/dashboard",
+      "524f368faaea56e63cb427b398a5fe110558df2c679187b21f6d67c74b41401c"
+    ],
+    [
+      "components/widgetjs/deadline",
+      "35cf279308d006da49ac11319f3c0acf596bcd94b04557a57d7ca3daa8f67ee1"
+    ],
+    [
+      "components/widgetjs/deadline-source",
+      "ab1d8308d8b4e83b7e6cf9ef1a074420153f04f22add20bb82ee9fe3b48443e4"
+    ],
+    [
+      "components/widgetjs/dynamic-island",
+      "6f351ab9fc8976ead3535d08f232a75096a306fc033b742ce697badae64c7c66"
+    ],
+    [
+      "components/widgetjs/energy-label",
+      "2643d39daec52ab331785c72986e178ee8afc321de04d847e953f8751e4fd832"
+    ],
+    [
+      "components/widgetjs/excalidraw",
+      "5ad9fa77ce4c2bdb2f98ff618804a0368112990395973dc3e7e81c008d2ed827"
+    ],
+    [
+      "components/widgetjs/excalidraw-source",
+      "dfcf0d1bdfa2d0f0b779e4d86099b5361a4bdecbc3773077835bdca35a333801"
+    ],
+    [
+      "components/widgetjs/flip-clock",
+      "460856dab5503065e068703fa8f8c02191019231493d29515e1f9aa85a74fd9d"
+    ],
+    [
+      "components/widgetjs/forex",
+      "b78de4f66cc9d25cce93230904c7746073c2be1152ca19715876a4353dc319db"
+    ],
+    [
+      "components/widgetjs/glitch-clock",
+      "b13609553b2cbafbda9eede7db2acbf287871e5f07405378bc42cdc6c31008b0"
+    ],
+    [
+      "components/widgetjs/gold",
+      "605079e25ec7ce85a8ae6441883a0ec8473b640a02c5c3613905c469a61786a0"
+    ],
+    [
+      "components/widgetjs/gold-source",
+      "7e739130e93955c1eb6386d8b329f4c85362cbde397bde083dc87d1748ba7710"
+    ],
+    [
+      "components/widgetjs/grid",
+      "7273551aec028b2911214a58905747acafd6e619c980d71ebf1383d444cc58b4"
+    ],
+    [
+      "components/widgetjs/hardware-common",
+      "f7492463fbebad5fe269b1fb3cbf89ecef78df860318d109eaaa24273bba40e3"
+    ],
+    [
+      "components/widgetjs/hotspot-bangumi",
+      "56af97783308a8771fa97c91dfa73c9fc6aec4c6225d5de1c70580008b4d09c5"
+    ],
+    [
+      "components/widgetjs/hotspot-bilibili",
+      "fcac91335747045fb7bc42e32e5831d70ee8a70c28d2514822332f74b0b918da"
+    ],
+    [
+      "components/widgetjs/hotspot-bilibili-rcmd",
+      "3cf8ad2c88190d15f8ab348ef0046541a3dcfe1b2306b1225a87f0700f8158a4"
+    ],
+    [
+      "components/widgetjs/hotspot-cls-telegraph",
+      "8409b120121b1aeb9a2804a46fd749f158169fe6997a5e2b32bfabad5dd90567"
+    ],
+    [
+      "components/widgetjs/hotspot-douyin",
+      "57375195461e09d817927f2dcbec445ac8487b19f95b172d6de4db463a55ea61"
+    ],
+    [
+      "components/widgetjs/hotspot-source",
+      "de181875710e23718eb811c7508c5ce0b3682525454fccbfbb4834911d07e0da"
+    ],
+    [
+      "components/widgetjs/hotspot-tou-tiao",
+      "8c47802fb28ff6c2d023d720b8288798696440ebe81066c570a8271f901cc545"
+    ],
+    [
+      "components/widgetjs/hotspot-weibo",
+      "adf5545ac8ffdf92508430637193de0f302ee84586adbe21e88cea4addf0512d"
+    ],
+    [
+      "components/widgetjs/hotspot-world-cup",
+      "72ece1c39f0d009623310a670e1b7b13d45bffe410d9e80df1c547b4ebb3565d"
+    ],
+    [
+      "components/widgetjs/hotspot-zhihu",
+      "4d771fcead5e3511f8a7953bf8d398dcf29ec5bd6cb0ce018eade4e9b060176b"
+    ],
+    [
+      "components/widgetjs/job-source",
+      "6ec5717cebdb781c2a9a78c7a0cb2befcfcd67d84be40d30a5a7428b43159225"
+    ],
+    [
+      "components/widgetjs/key-stroke",
+      "a586d4c65bbcae0873e2b690126121b5172e81674fcfebe4eb62b0d2b1de26a0"
+    ],
+    [
+      "components/widgetjs/key-stroke-source",
+      "6988e6baec4050aec4eba0dfe262dbb23f9ebbd42e726f7281fe66597fe6e152"
+    ],
+    [
+      "components/widgetjs/labor",
+      "9868206fe9adfc1b29d9beea7b2b9ee3d2f077f0ecc7f0893be4c8576629fdec"
+    ],
+    [
+      "components/widgetjs/labor-source",
+      "13452dd4784d7a13da860d152d8f1eb7839beeaf9fca5fe0ebee1d650f4b2c86"
+    ],
+    [
+      "components/widgetjs/metal",
+      "4bfd4f6737a3579843e9518b503287108214a10c8003688298e3f9d6c658fa49"
+    ],
+    [
+      "components/widgetjs/mickey-clock",
+      "96ee9b3502685ffa345ec6a3dba07816a657e4f7514f5f83572b11bc80ccbfc9"
+    ],
+    [
+      "components/widgetjs/mindmap",
+      "768108c146d2846423178a3fd162b4c6a512064a2e83fccc18e73256608585e4"
+    ],
+    [
+      "components/widgetjs/mindmap-source",
+      "0709caddff407385608205f7df30d8184844332320d06075bc87389162cc4c7d"
+    ],
+    [
+      "components/widgetjs/note",
+      "69f562c63fc4dc0a53227a4ec5f84d78ef5fc75cb949fff7a8f102c35fd1c680"
+    ],
+    [
+      "components/widgetjs/phone-reminder",
+      "81d31a76eff077d5f8c3243895322a48330ffeb39084174bcf8325d0223411a4"
+    ],
+    [
+      "components/widgetjs/photo",
+      "05120f2e428a3e508905f5571d6e93913b29a9134ef3888d767408792f61f13e"
+    ],
+    [
+      "components/widgetjs/photo-common",
+      "cee395a90b9fc84ea0a1f927252e9250cc8eefa6ff5963fcf92aaa2a532a83f6"
+    ],
+    [
+      "components/widgetjs/pomodoro",
+      "37cecd6a80382065f7e68406f0011107180d861b509c046ad945cf1f11c3b0a3"
+    ],
+    [
+      "components/widgetjs/pomodoro-source",
+      "f5184bbea570e18083b0b43c2da901688b385cb8345b7d956c728b3620aec677"
+    ],
+    [
+      "components/widgetjs/progress-common",
+      "fb8f6621c58a261c7ce6e689721f21934238035bd083fc26f6d55ddd8ded9db0"
+    ],
+    [
+      "components/widgetjs/reminder-source",
+      "25d9836ee5c2dd0f761b7a7515f00f760601ba71cd86617073701035904354b4"
+    ],
+    [
+      "components/widgetjs/server",
+      "8763173eb69370890d641b1e002212644c2e0363518d06180aa1f9c358b0251f"
+    ],
+    [
+      "components/widgetjs/server-source",
+      "3ac6b6e30fdcdea011b47742099af72e31b32d7393611635c9de1992edc86fa0"
+    ],
+    [
+      "components/widgetjs/shared-library",
+      "512230377a88959048b5852f5685176d2cd7cc08f354934350c5047204f9d6fb"
+    ],
+    [
+      "components/widgetjs/sit-reminder",
+      "84a94a480617d1708624742bf4d166f6ab4dd1c7bf1ffb92bffbde3baf041354"
+    ],
+    [
+      "components/widgetjs/sticker",
+      "b9eca38d0be24031565cf186e26b67902dd1dadf67332c3c6aa1571ea064b7c8"
+    ],
+    [
+      "components/widgetjs/stock",
+      "7be7144a9fe96f4558a19462eaa6409cbdb2620337ba3ba678ba88df80777d7b"
+    ],
+    [
+      "components/widgetjs/stock-medium",
+      "b7d62449a693da81c1fc548b5bba8a0bd5fa8a651e4ad94e1d5dce3a525f0bb3"
+    ],
+    [
+      "components/widgetjs/stock-medium-source",
+      "0b8d8fa1ad3cde145c87d9c667deb6c79e4f94a8698b0bf4c839b1562cd61267"
+    ],
+    [
+      "components/widgetjs/stock-small",
+      "e48e4b1995237657b8a892ce159d9da2334807b1ef6d44fb22a1de7cd2126a08"
+    ],
+    [
+      "components/widgetjs/stock-small-source",
+      "eeee7814aa0b8a667f5b8bc74663135863a312584b19746b50c797afbe820f53"
+    ],
+    [
+      "components/widgetjs/stock-source",
+      "da81f9e90e30c67076a1f5845dc3e89d563a1ae6339c3ef884307edf3fb51de4"
+    ],
+    [
+      "components/widgetjs/text-clock",
+      "5035dd025f4f76b28a59010cf1e541066833cde0f7805f39ff8daef8094d7fe7"
+    ],
+    [
+      "components/widgetjs/time-progress",
+      "043824a71beb9d0ead93b20f442e58a78ee1c693f2dd9f492d55f01cb2864212"
+    ],
+    [
+      "components/widgetjs/todo",
+      "d6d7ce127d0c05b025820af077636c4a05d39939eacbf6b40d5849f935a55541"
+    ],
+    [
+      "components/widgetjs/todo-source",
+      "05fb0d9f9f1b2ccc4e841a7d8cc1fb67f4a2f88114b775ff2481160976781d2f"
+    ],
+    [
+      "components/widgetjs/trump-clock",
+      "cc7d7e7382ccb9fbcef9b897b40265635a771e2aad141f7bad7325d7bd65499a"
+    ],
+    [
+      "components/widgetjs/water-reminder",
+      "eb79da74b82cc5cc55a8e6b54a5f0b8c12ac994dabb792b2626e4215a8ade8d3"
+    ],
+    [
+      "components/widgetjs/wave-progress",
+      "664c776694c57b0ca4326f41738a37d63273e68b0c081a6c9be931da3516afcb"
+    ],
+    [
+      "components/widgetjs/weather-large",
+      "acc75302144969b82ae003df8b339cefc1be7063da66ead439074b1e590f75e5"
+    ],
+    [
+      "components/widgetjs/weather-medium",
+      "b91cef41dc291b4c343128dc4192d96a8151eb15efd42789c5a2054045ef1052"
+    ],
+    [
+      "components/widgetjs/weather-small",
+      "94a65364c3d01d2011c296e3051005e8d924aa0b7b5b1cbdc8d5d59c26e61bd3"
+    ],
+    [
+      "components/widgetjs/weather-source",
+      "068cffc1906eb358adef5231d02c8998b43073612062d459386fe4b2c75ef2f2"
+    ],
+    [
+      "components/widgetjs/wooden-fish",
+      "745c5aff3a53eabc9c9c6ef8116f537687d4a7524c6de7e55b41b26b32eb0971"
+    ],
+    [
+      "package.json",
+      "0ef6cf66647526c16d137c61f7098525689de0d8f1d417fb412d470ac970a0ce"
+    ],
+    [
+      "pnpm-lock.yaml",
+      "67feacaf74be158df8323dd843d8dee9d241cb9d009657bf0056c90beecd83fd"
+    ],
+    [
+      "pnpm-workspace.yaml",
+      "f7e73ae97bc27a128f1f772f63a8f5c6410fe519cc2f552c79b2507ff69a99d4"
+    ],
+    [
+      "scripts/adapt-widgetjs-ai.mjs",
+      "8e5793c05260c82041b53f51dd43519324ff50dcf3aa02ecd02e264f9f286f37"
+    ],
+    [
+      "scripts/adapt-widgetjs-assistant.mjs",
+      "f86899de87b42280d8b5264e0aeb75826660d698fadcf6bb9f27827cb1c20891"
+    ],
+    [
+      "scripts/adapt-widgetjs-clipboard.mjs",
+      "abfa0579182882780d0b8bbefec059d8149324e70b63f38f6c22824bbd935a88"
+    ],
+    [
+      "scripts/adapt-widgetjs-job.mjs",
+      "22674d895a2592a2d2e89852827f878b516fd5bc47150021a81d17f838f8cd2b"
+    ],
+    [
+      "scripts/adapt-widgetjs-reminders.mjs",
+      "f7f4bc09516427ea1bb4222804090501322b6a6ea757fa2a8a533a8ce12b3831"
+    ],
+    [
+      "scripts/build-excalidraw.mjs",
+      "8b60c5a1b86956b84546db1f12a94d928a00ed6a9f725627f00fc2ca78e8e119"
+    ],
+    [
+      "scripts/build-widgetjs-entries.mjs",
+      "a01acbd527f8c05e453bc0f81ecd42dd392481df5337b0f77e8e3e8f8e3f1bb8"
+    ],
+    [
+      "scripts/build-widgetjs.mjs",
+      "615af1e971fc3de81f2e4458a05c623d2d00bf275faac4025a6bef4f75ac2442"
+    ],
+    [
+      "scripts/widgetjs-build-state.mjs",
+      "7e35256cf09437814caa2fcc6a54931516bb47a5e6c0045234b573e240194539"
+    ],
+    [
+      "scripts/widgetjs-entry.mjs",
+      "5fa4135e2f601f4b220e6eff42e3eec68fefbfc79331800fa6d9929a936d4afa"
+    ],
+    [
+      "scripts/widgetjs-hotspots.mjs",
+      "191162062930c5b1a788dd25c50cc5bc8460b6c430b6b02a7b3e142732a2fd43"
+    ],
+    [
+      "sdk/host.d.ts",
+      "f01a94256ee94d060c94b6aa42fdbf2be100eb128938cfa52a7ca6a4042ce0a4"
+    ],
+    [
+      "sdk/host.js",
+      "5e7013a8de42462a8c5a687d5a214578e7142abb8fa4df4f4bd59fb711801d3a"
+    ]
+  ],
+  "packages": [
+    {
+      "id": "local.souldesk.widgetjs.ai-assistant",
+      "version": "0.1.2",
+      "digest": "23e72f100788f7408a2b42d2aace675ceb1fb96ab558a2a5ad39e56bda171daa",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.ai-job",
+      "version": "0.1.0",
+      "digest": "f09793f3d5ca66cdb5dfbc46dd9f2534154ecde74e066ea6f07ea881942ef487",
+      "files": 18
+    },
+    {
+      "id": "local.souldesk.widgetjs.ai-mermaid",
+      "version": "0.1.4",
+      "digest": "911f66c7b849b659093120b2e78c80e3376c1d84addcdead9e758786c5110633",
+      "files": 58
+    },
+    {
+      "id": "local.souldesk.widgetjs.ai-mindmap",
+      "version": "0.1.4",
+      "digest": "324bce24d313c9e11ac362e214e25221f2efdc04bbe3c9fa4a91662b9ccac1ff",
+      "files": 13
+    },
+    {
+      "id": "local.souldesk.widgetjs.ai-translate",
+      "version": "0.1.3",
+      "digest": "afdb442738ac359df19cfe3ee7fd8565fbe4048e7a7ce3ff0b2495db316fb41d",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.base-panel",
+      "version": "0.1.0",
+      "digest": "e978e482aa5021ce611efbca80343f68fc8df67942cf069c5db56c0ba68097ef",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.birthday-list",
+      "version": "0.2.1",
+      "digest": "93f4a0d320618b4fa2c07009b84093b7fa155d08a12b3bbe527f2bc86a6aed95",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.calendar",
+      "version": "0.1.2",
+      "digest": "ec21b32ebe24e91766a919ea7413f45cc3203365a8c8248621fea5236d37f611",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.calendar-large",
+      "version": "0.2.3",
+      "digest": "7fb9326da691b2e1748bc75c7164c995c6be2c41c7b5df9636afe559397e14ee",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.clipboard",
+      "version": "0.1.2",
+      "digest": "6eccbc7c9d1f9935c1bfd466b6a8b4269dd5dca33149e948cc1923f368d91da7",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.clipboard-search",
+      "version": "0.1.2",
+      "digest": "6df6b3ffe0245cb61322b55b19e3240b54da6f72ac51228fbb0bdae0a27ab487",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.clock",
+      "version": "0.1.0",
+      "digest": "5ac7ae901bd8420fb64a50b59ba28ace00ceda35988075eb692ea620ab007d86",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.coin-medium",
+      "version": "0.1.1",
+      "digest": "bab64ef46e2e60ba0088b18424bf756d3f62d20243e7c6579030e287ee98b8f5",
+      "files": 16
+    },
+    {
+      "id": "local.souldesk.widgetjs.coin-small",
+      "version": "0.1.1",
+      "digest": "c1c639a57ad6e432f148b98f6bc38cdbebdae65f0213f21195b293ee4b08fc6c",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.convert",
+      "version": "0.1.2",
+      "digest": "d60752d7b6d8b0d342bcc444b5d31f03ae703a576ef86e75340b70be24517df8",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.countdown",
+      "version": "0.2.1",
+      "digest": "8964e6debb69235eacafdb4a9fce758a6ecbfda4292546fd00dee5ce13e0733d",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.countdown-list",
+      "version": "0.2.1",
+      "digest": "0e50d2c8f402abf38110e1c6ccb929fb26b232a2a8d593be04d1ad5572abd61e",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.dashboard",
+      "version": "0.1.0",
+      "digest": "cf009b71231cf2b2ff4e4517bf2f88632b3923d2a1156393084ed308043edf3e",
+      "files": 12
+    },
+    {
+      "id": "local.souldesk.widgetjs.deadline",
+      "version": "0.1.0",
+      "digest": "b82db0253629067d2e27a459d06b95d300e90c933732ca41f681b64c18672051",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.dynamic-island",
+      "version": "0.1.0",
+      "digest": "879658db0adcaaa09642da16ebfcfc49dc3148f56ba43c9fc67b0d02bf737b4d",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.energy-label",
+      "version": "0.1.0",
+      "digest": "dad040a673a7f5324889ef3485c4ed9e4ab2897a7478e3c775e5def75727f2f5",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.excalidraw",
+      "version": "0.1.2",
+      "digest": "9df207f166b9d5e3e4a0db8ef33526000f25da498c5a65a76eb60f0491059405",
+      "files": 250
+    },
+    {
+      "id": "local.souldesk.widgetjs.flip-clock",
+      "version": "0.1.0",
+      "digest": "a3fd7ac7f2f31d078425487e2236c1088087cef28174da2e4e3e5eae36e16707",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.forex",
+      "version": "0.1.2",
+      "digest": "b23c181ec77e4faaa39b4fb079faa2def2e1aaa0cb40a6e6c7da04e88347a95b",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.glitch-clock",
+      "version": "0.1.0",
+      "digest": "27e0aa1b28337aaf44a2750aa35707aa380fa4cee3faf44f19a0e64334d4cb7a",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.gold",
+      "version": "0.1.1",
+      "digest": "158c56da6c55527db5832e6ff6ea879efaeb9c5e4fd53e1279d27a10ccce5be3",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.grid",
+      "version": "0.1.0",
+      "digest": "62557acc04f5e418d61fd0d4ff693f369e918ebb82561a0e9254aa0c8d768209",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-bangumi",
+      "version": "0.1.2",
+      "digest": "1a9b0f8eb02724bdc53c890aed97481ff4739b47088054067004add3bdbe3ae9",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-bilibili",
+      "version": "0.1.2",
+      "digest": "28f05d43032999125a8d83a6fde937d26908a77ccaa5eaf8c80d92b80f52d050",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
+      "version": "0.1.2",
+      "digest": "1c854ef84e117f65e8b26668c0a80ebe76624fccee3e08ad596301f7193be68c",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-cls-telegraph",
+      "version": "0.1.2",
+      "digest": "d502a86b0caed7b60a98d0be756c949845cb597f64319c65d06a232fbf81678c",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-douyin",
+      "version": "0.1.2",
+      "digest": "82ae2ebebb2213746fd06b73151e536268072cb65855c488f288cc122437bd7e",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-tou-tiao",
+      "version": "0.1.2",
+      "digest": "a5b799cfa7502339e8c4da51fd1cce81e1756fefde4b66546634968ce42fa977",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-weibo",
+      "version": "0.1.2",
+      "digest": "70532ee471eb5571bc1f8a99e168cd3a8199d202a0a8bb04980f3b6710b6fd5c",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-world-cup",
+      "version": "0.1.2",
+      "digest": "1f1aa110d89f183b5cd891cd7df637b41dd66c1e5bc6bdeb0793d9d232eef455",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.hotspot-zhihu",
+      "version": "0.1.2",
+      "digest": "cb8d03f58ca41d2dc552c1fc03ea91d1720a033efe3a72a5856eae778b02daf6",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.key-stroke",
+      "version": "0.1.0",
+      "digest": "8c0138a67f2acfe2f61b74c9030d178c2e0256069d253580c3bdbe1cddddd3d1",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.labor",
+      "version": "0.1.1",
+      "digest": "bfe9ce4b4e42300bf2271d7d18f9ec79e4d572e7eb439b865e4157911ffd00df",
+      "files": 18
+    },
+    {
+      "id": "local.souldesk.widgetjs.metal",
+      "version": "0.1.1",
+      "digest": "3bae2b4bc4d4bd223cc386e95a5406be21f621e7d185bd692114ef861d93b5a0",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.mickey-clock",
+      "version": "0.1.0",
+      "digest": "fa893601d9daf361e0ed7dcefa3c8e28b00aa43377a740763ad7cf57b3141f2f",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.mindmap",
+      "version": "0.2.3",
+      "digest": "9a503ac96372a41c4275c660772f3c20390cefd5b422d65f26a9fe874d08e5b5",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.note",
+      "version": "0.1.0",
+      "digest": "c2770ca6ae68a9d34d4c82007b5206ba1414ca7d83308f71e36564a0fbd977fc",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.phone-reminder",
+      "version": "0.1.0",
+      "digest": "610f448df90d930ae0a65fff04f7e0c29494e44ad8fee491ab47c76d87e38d74",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.photo",
+      "version": "0.1.0",
+      "digest": "90687a715e8acffdb5d7dd78a586a9384d993a1bea5ed00d541f49c89c681ea2",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.pomodoro",
+      "version": "0.3.0",
+      "digest": "1e7cdd373db2fe6d92f7076565a41404219edf9129d210d23b4a2b9000ad7b6f",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.server",
+      "version": "0.1.2",
+      "digest": "bfde0c90ee352a6ce4d47e22625d8a1340d443287d1a7d1fe28e743251227a34",
+      "files": 23
+    },
+    {
+      "id": "local.souldesk.widgetjs.sit-reminder",
+      "version": "0.1.0",
+      "digest": "cd561d121b95da229d7cd6997a0d7789e574c41a83b376b967db7cdaf4e0d456",
+      "files": 17
+    },
+    {
+      "id": "local.souldesk.widgetjs.sticker",
+      "version": "0.1.2",
+      "digest": "7ab261befe3f58605566b1163055f85a6bef505876c02d9690111647fe26f11c",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.stock",
+      "version": "0.1.1",
+      "digest": "b7bcab76a8ae09d41a58706e8b3fbe33f7efd8cb26da569fa074cb16fe359b3b",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.stock-medium",
+      "version": "0.1.1",
+      "digest": "ef42268d67e19dcf4bfeeee84e1d83b086238c9263e1627795a05ef11a8d8985",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.stock-small",
+      "version": "0.1.1",
+      "digest": "82db2e49fbf36d6e2499619bcb543c649fa12949ae14da992ac5d0c89430ab35",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.text-clock",
+      "version": "0.1.0",
+      "digest": "967a7066b6ab7e4395477f8b350bdc024b3257c2bc749aedd990ef275990c324",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.time-progress",
+      "version": "0.1.0",
+      "digest": "ec27c12ecd73e60351ea6016100a3fe0e98aa9226705ea815b378c3b1b7c1e22",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.todo",
+      "version": "0.2.1",
+      "digest": "52294ccca816278412b65bfb726b55d00d4754e87645dc035cf7a4dd24d6347a",
+      "files": 7
+    },
+    {
+      "id": "local.souldesk.widgetjs.trump-clock",
+      "version": "0.1.0",
+      "digest": "d95816a5f8672be87fea4e9b48645195a5522575270314bef67e905516991075",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.water-reminder",
+      "version": "0.1.0",
+      "digest": "b1db10bea45a9fa4effe080a993d4af3506dcd021048bef3446e5de4ef1004bf",
+      "files": 9
+    },
+    {
+      "id": "local.souldesk.widgetjs.wave-progress",
+      "version": "0.1.0",
+      "digest": "c37b540d06a6efdc4b618ef6043ca945ac755bba5d392a2564a3aa6d4cd2891e",
+      "files": 8
+    },
+    {
+      "id": "local.souldesk.widgetjs.weather-large",
+      "version": "0.1.0",
+      "digest": "b7600f7c30f795efb4791f31e6dfe16d6a1c618504af43eeebc33ebdf195e8d1",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.weather-medium",
+      "version": "0.1.0",
+      "digest": "39cd935d42d7d526a56744493bfc150d8e8f046b56618fd3f0f253298e837699",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.weather-small",
+      "version": "0.1.0",
+      "digest": "944466ff35c30dd89e7ea557fa328af7e70c2a0fbcf1692415a8a7782998d9fe",
+      "files": 6
+    },
+    {
+      "id": "local.souldesk.widgetjs.wooden-fish",
+      "version": "0.1.0",
+      "digest": "fa540513906a9f814342cf6faafd4272869580bd6b59a7fe93a48bdd37255c3a",
+      "files": 9
+    }
+  ]
+}

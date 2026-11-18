@@ -20,6 +20,25 @@ pub struct PanelGeometry {
     pub effective_ratio: f64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EdgeSide {
+    Left,
+    #[default]
+    Right,
+}
+
+impl EdgeSide {
+    pub fn window_left(self, area: WorkArea, width: u32) -> i32 {
+        match self {
+            Self::Left => area.left,
+            Self::Right => {
+                (i64::from(area.left) + i64::from(area.width.saturating_sub(width))) as i32
+            }
+        }
+    }
+}
+
 pub fn panel_geometry(
     area: WorkArea,
     ratio: f64,

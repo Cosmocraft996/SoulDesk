@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.mindmap",
   "name": "思维导图",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",
@@ -17,8 +17,8 @@
   "capabilities": [
     "storage.instance",
     "storage.document",
-    "documents.user",
-    "assets.local",
+    "documents.open", "documents.save", "documents.drop",
+    "assets.scoped", "styles.inline", "images.blob", "assets.fetch",
     "storage.shared"
   ],
   "settingsSchema": {

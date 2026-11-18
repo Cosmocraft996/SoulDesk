@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEventHandler, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
 import { invoke } from './host';
 import { listen } from '@tauri-apps/api/event';
@@ -13,6 +13,7 @@ export function WidgetSurface({ instance, inPanel = false, snapEdges, items, onD
   children: ReactNode; notice?: ReactNode; onError: (message: string) => void;
 }) {
   const [menu, setMenu] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [desktopEdges, setDesktopEdges] = useState<SnapEdge[]>([]);
   useEffect(() => {
     if (inPanel) return;
@@ -30,18 +31,26 @@ export function WidgetSurface({ instance, inPanel = false, snapEdges, items, onD
     return () => { void invoke('window_action', { action: 'menu-close', instance }).catch(() => {}); };
   }, [inPanel, menu, instance]);
   const button = (item: SurfaceAction) => <button className="icon-button" key={item.label} title={item.label} aria-label={item.label} disabled={item.disabled} onClick={() => { setMenu(false); item.action(); }}><Icon name={item.icon} /></button>;
-  return <section className={`widget-surface${menu ? ' menu-open' : ''}`}>
+  const quickActions = items.filter(item => !item.more);
+  return <section className={`widget-surface${menu ? ' menu-open' : ''}`} onKeyDown={event => {
+    if (event.key === 'Escape' && menu) {
+      event.stopPropagation();
+      setMenu(false);
+      menuButton.current?.focus();
+    }
+  }}>
     <div className="surface-chrome">
       <button className="drag-handle icon-button" title="拖动组件" aria-label="拖动组件" onPointerDown={onDrag}><Icon name="grip" /></button>
       <div className="surface-toolbar">
-        {items.filter(item => !item.more).map(button)}
-        <button className="icon-button" title="更多功能" aria-label="更多功能" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="more" /></button>
+        <div className="surface-quick-actions">{quickActions.map(button)}</div>
+        <button ref={menuButton} className="icon-button" title="更多功能" aria-label="更多功能" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="more" /></button>
       </div>
     </div>
-    {children}
     {menu && <div className="surface-menu"><div className="surface-actions">
+      <div className="surface-compact-actions">{quickActions.map(button)}</div>
       {items.filter(item => item.more).map(button)}
     </div>{notice}</div>}
+    {children}
     <button className="resize-handle icon-button" title="调整组件尺寸" aria-label="调整组件尺寸" onPointerDown={onResize}><Icon name="resize" /></button>
     {!menu && notice}
     <div className="snap-highlights" aria-hidden="true">

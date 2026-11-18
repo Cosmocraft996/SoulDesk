@@ -118,7 +118,11 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `itime-calendar`只接受`{source:'itime-calendar'}`，请求原iTime固定公开接口`https://itime.fun/api/v2/event/public/calendar`，不接收年份、月份、URL或其他额外参数。data保留原`{code,message,data}`结构；前端核对业务码、日期唯一性/有效性、文本上限和status。休/班只取源status，未提供的日期不推测安排；fetchedAt为本机读取时间，不代表源数据更新时间。此来源需要含它的新主程序，沿用content.read的会话检查、代理、禁止重定向、8秒和2 MiB边界。
 
-声明`content.read`的包可加载HTTPS图片；其他组件沿用仅同来源和data图片。策略按资源对应的固定包版本计算，升级不会给旧版本页面补授新权限。图片由WebView使用系统网络加载，当前不保证跟随应用内自定义代理；JSON请求由Rust使用应用网络设置。默认禁止网页直接fetch、外部脚本、嵌套页面和表单导航。本地mp3可以同来源播放。
+组件通过`content.source.<source>`声明允许的`content.get`来源，仅接受登记表中的完整能力名。来源对应表见[公开内容](../docs/18-公开内容来源与图片权限.md)及[金融组件](../docs/19-架构审计收尾.md)。宿主在读取缓存或请求网络前校验来源，等待返回后再次核对会话。调用参数、响应和刷新行为沿用原接口。
+
+`images.https`独立允许浏览器加载HTTPS图片，继续使用原域名范围。策略按资源对应的固定包版本计算，图片由WebView使用系统网络加载，当前不保证跟随应用内自定义代理。读取JSON仍走声明来源对应的宿主接口。浏览器同源和data图片及其他基础策略保持。
+
+旧`content.read`继续包含原固定来源及HTTPS图片许可。旧权限不能与`content.source.*`或`images.https`混用。使用细分权限的新包须先更新宿主，再独立导入或显式更新预置组件。见[18-公开内容来源与图片权限](../docs/18-公开内容来源与图片权限.md)。
 
 黄金另有固定来源`gold`和`gold-trends`，均只读118.AU9999，不接收合约或URL参数。前者返回精确价格字符串、统计值或null、原报价毫秒时间戳，后者返回原分时时间及精确价格数组。宿主保留这两个请求的原x-custom-referer固定头，不接收组件传入的请求头；其他内容来源沿用无自定义头的请求。报价/图源错误分别处理，不把缺失统计值显示为0，也不把图源失败当成无有效报价。
 
@@ -130,7 +134,9 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `coin-index`接受原14项目录中的`instrument`，只读固定OKX公开指数路径，返回`{instrument,price,reference,basis,timestamp}`，价格为严格十进制字符串。basis为open24h、sodUtc8或null，必须分别标注；timestamp为来源毫秒时间，不是接收时间。此来源的JSON请求按当前会话所属实例设置选择网络：`proxyMode=inherit|direct|http|socks5`，另有proxyHost、proxyPort；从数据库读取，不接受消息指定其他实例，使用独立代理不改全局配置。其他内容来源仍使用主程序网络设置。隐藏试加载拒绝联网，真实代理及界面验证单列。
 
-`content.read`另开放`host.request('content.peek',{source:'coin-index',instrument})`，仅返回该实例、币种及有效网络口径匹配的进程内展示快照，无记录时返回null，不发起网络请求。快照沿用原data/source/fetchedAt，并附`cached:true`和最多48个真实`{timestamp,price}`采样；不改写来源时间或把缓存标成新报价。最多保留128个实例，删除实例或退出后清理。页面重建时应先恢复快照再报告ready，随后后台更新；跨币种/网络不得复用，缓存不写入实例存储或磁盘。该接口沿用正式会话与能力校验，隐藏试加载不可读取。
+普通公开内容可通过`host.request('content.get',{source,cache:true,forceRefresh:true})`显式使用宿主内存缓存；`forceRefresh`可省略，表示常规读取。仅适用于九个热点来源及`itime-calendar`，具体时长见[16-公开内容请求缓存](../docs/16-公开内容请求缓存.md)。手动刷新绕过已保存结果，可以共用在途的新请求；失败不缓存、不返回旧结果充当成功，命中时保留原`source`和`fetchedAt`。来源、参数及网络设置不同不共用，黄历跨日失效。旧包不传`cache:true`时保持直接读取；这一选项不改变能力授权，也不作用于行情或价格警报。新日历包兼容旧宿主时只针对明确的元数据不支持错误退回原请求，网络失败不自动重试。
+
+`content.source.coin-index`和旧`content.read`也允许`host.request('content.peek',{source:'coin-index',instrument})`。该方法仅返回实例、币种和当前网络配置匹配的进程内展示快照，无记录时返回null，无网络请求。快照沿用原data/source/fetchedAt，并附`cached:true`和最多48个实际`{timestamp,price}`采样。最多保留128个实例，删除实例或退出后清理。页面重建时先恢复快照再报告ready，随后后台更新。正式会话可读取，隐藏试加载拒绝。
 
 `links.open` 开放同名方法，参数为 `{url}`，用于用户点击后打开系统默认浏览器；仅接收无凭证、无自定义端口的HTTPS公开域名，拒绝本地地址、文件及脚本协议。当前Windows使用参数数组交给系统URL处理器，不通过命令解释器。内容与链接能力均核对当前实例会话和声明权限，隐藏试加载拒绝调用，试加载页面应明确显示“不联网”。这些能力仅完成源码/核心检查，真实联网与桌面交互以13的证据为准。
 
@@ -145,11 +151,25 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 ## 本地文档与编辑器（当前0.5.0移植源码）
 
-`documents.user`开放`documents.open/save`，参数包含普通文件名`fileName`和扩展名数组`extensions`；打开可带`multiple:true`，保存需带base64编码的`data`。仅允许画板、图形库、JSON、常见图片、文本和ZIP等固定格式。每次调用均显示原生文件对话框，不接受组件指定的任意路径，也不返回持久文件句柄。打开最多32个文件、合计16 MiB，返回`[{name,mime,data}]`；保存上限32 MiB，成功返回`{name,size}`。取消返回null，错误拒绝；保存采用同目录临时文件完整写入后替换，失败保留目标。会话失效或隐藏试加载拒绝操作。
+新版按需声明`documents.open`和`documents.save`，分别调用同名方法。旧`documents.user`兼容原打开、保存和拖放行为，新旧声明不可混用。参数包含普通文件名`fileName`和扩展名数组`extensions`，打开可带`multiple:true`，保存须带base64编码的`data`。每次调用显示原生文件对话框，由用户选择文件。打开最多32个文件、合计16 MiB，返回`[{name,mime,data}]`。保存上限32 MiB，成功返回`{name,size}`，采用同目录临时文件写入后替换。取消返回null，选择后继续核对会话和权限。支持格式及错误规则沿用原协议。
 
-声明`documents.user`的正式桌面窗口及包含此类可见组件的面板启用浏览器HTML文件拖放；管理窗口、普通组件窗口和隐藏试加载保留原生拖放处理器。拖入的文件只由用户当前操作交给页面，不授予任意路径读取。实际Windows拖放仍待验证。
+`documents.drop`控制正式桌面或侧栏窗口是否启用浏览器文件拖放，面板按其中可见组件计算窗口策略。管理窗口和隐藏试加载沿用原生拖放处理。拖放数据由用户当前操作交给页面。实际Windows拖放仍待验证。
 
-`assets.local`供画板等受信任本地库使用，允许同来源字体请求、blob图片、同来源/blob工作线程、库所需的内联样式和动态代码/WASM；不开放外部脚本或任意外网请求。画板字体子集库使用动态函数，因而需要`unsafe-eval`，仅给声明此能力的包。
+本地资源细分模式须声明`assets.scoped`，再按实际需要声明下列能力。模式标志本身不增加资源权限，并显式禁止未声明的工作线程，避免浏览器回退到脚本的同来源许可。
+
+| 能力 | 浏览器侧增量 |
+| --- | --- |
+| `styles.inline` | 库生成的内联样式 |
+| `images.blob` | Blob图片；原有同源及data图片不变 |
+| `assets.fetch` | 本地资源同来源的fetch/XHR读取，例如字体子集数据；不开放任意外网 |
+| `runtime.wasm` | WASM编译，不因此允许动态JavaScript |
+| `runtime.eval` | 动态JavaScript；浏览器同时隐含允许WASM，不能单独禁止 |
+| `workers.local` | 同来源工作线程 |
+| `workers.blob` | Blob工作线程 |
+
+普通外部脚本/CSS、同源字体及静态图片继续遵循原基础策略。DOM直接设置`element.style.width`等样式属性无需`styles.inline`；动态style标签及样式文本受CSP约束。同来源按浏览器来源划分，不是按包目录隔离。细分能力不授予宿主文件、网络、剪贴板或后台接口，其他业务能力附带的既有浏览器许可保持。
+
+旧`assets.local`继续按原样兼容：内联样式、Blob图片、同来源读取、同源/Blob线程及动态代码/WASM全开。不能与`assets.scoped`混用；细分项缺少模式标志会拒绝导入。资源使用各自包摘要绑定的清单，旧资源不会继承新版权限。新版五款组件需要包含本次能力登记的主程序，旧宿主会明确拒绝未知能力；应先升级宿主，再显式升级组件，不自动改写旧包或实例数据。能力分配与验证见[17-本地资源权限细分](../docs/17-本地资源权限细分.md)。
 
 `web.embed`允许HTTPS子页面及演示/全屏，保留禁止弹窗、顶层导航和表单导航；远程子页面没有宿主消息端口。`clipboard.read`与`clipboard.write`分别映射浏览器剪贴板权限，仍受WebView的安全上下文、用户操作和系统权限约束。隐藏试加载不授予剪贴板、演示或全屏权限。组件不能指定其他实例取得权限；旧版本资源不会取得新版清单的能力。真实文件对话框、剪贴板及嵌入行为仍待桌面验证。
 
@@ -283,7 +303,7 @@ AI图形仅开放SVG所需内联样式及用户手势全屏；保持脚本`self`
 
 ## 剪切板固定能力（后台已接通，组件界面待接）
 
-新增`clipboard.manage`仅允许固定包`local.souldesk.widgetjs.clipboard`和`local.souldesk.widgetjs.clipboard-search`。这不是浏览器的`clipboard.read/write`授权；页面不能指定其他实例、注入采样或直接累加使用次数。隐藏试加载拒绝所有`clipboard.*`方法，正式请求从鉴权到保存保留同一会话锁。宿主快捷窗口、动作入口和全局快捷键链路已接通；原Vue界面、两款标准包和本地AI入口已接通，真实桌面/剪贴板/输入尚未验。
+剪贴板原生权限仅供固定包`local.souldesk.widgetjs.clipboard`和`local.souldesk.widgetjs.clipboard-search`。旧`clipboard.manage`保留原行为，新包声明`clipboard.control`以及对应操作权限。历史组件使用`clipboard.history`、`clipboard.copy`、`clipboard.paste`，粘贴须同时声明复制。AI剪贴板使用`clipboard.search`、`clipboard.tools`。启动采集还需要对应历史或搜索能力和已保存的用户开关。浏览器`clipboard.read/write`是独立权限。隐藏试加载拒绝这些原生操作，正式请求继续绑定会话、实例和专用窗口。[操作对应表](../docs/19-架构审计收尾.md)
 
 - `clipboard.status({})`（也可null）：返回revision、configRevision、kind（history/search）、captureEnabled、shortcutEnabled、pasteEnabled、shortcut、historyExpiredHours、count、listening与lastError，以及actionRevision/actionError。动作回执损坏时actionRevision为null并单列actionError，不阻断历史采集。另返回searchPlatform（google/bing/baidu，默认google）、shortcutRegistered/shortcutState/shortcutError。shortcutState为disabled/pending/registered/failed，显示真实登记结果；三个开关默认false，保存配置不冒称注册或监听成功。listening表示后台已建立观察。新AI剪切板默认Super+Alt+S，历史默认Super+Alt+V。
 - `clipboard.query({keyword?,page?,size?,favoritesOnly?})`：仅历史组件，默认页1/每页10，最多100；内容及标签不区分大小写，按最近使用倒序，返回revision/total/hasMore/items。

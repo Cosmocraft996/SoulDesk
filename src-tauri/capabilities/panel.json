@@ -12,6 +12,8 @@
     "allow-close-session",
     "allow-widget-request",
     "allow-window-action",
+    "allow-drag-panel-edge",
+    "allow-panel-view",
     "allow-surface-failed",
     "allow-set-panel"
     ,"allow-save-panel-layout", "allow-manage-panel-group"

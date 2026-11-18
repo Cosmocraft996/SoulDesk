@@ -4,13 +4,11 @@ fn main() {
             "snapshot",
             "update_preset",
             "save_panel_layout",
+            "panel_view",
             "manage_panel_group",
             "app_update",
             "set_panel",
-            "surface_activate",
-            "surface_pointer",
-            "surface_failed",
-            "set_panel",
+            "drag_panel_edge",
             "surface_activate",
             "surface_pointer",
             "surface_failed",
@@ -48,5 +46,5 @@ fn main() {
             "desktop_widget_view",
             "desktop_widget_activate",
         ]));
-    tauri_build::try_build(attributes).expect("Tauri 鏋勫缓閰嶇疆鏃犳晥");
+    tauri_build::try_build(attributes).expect("Tauri 构建配置无效");
 }

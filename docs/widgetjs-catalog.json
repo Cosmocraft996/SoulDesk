@@ -228,6 +228,24 @@
         "scope": "真实宿主与WebView中的程序化拖放、真实图片编解码、内存ZIP、独立设置和重启；不等于原生文件选择/保存或实际鼠标",
         "heicVerified": true,
         "nativeFileFlowVerified": false
+      },
+      "resourcePermissions": {
+        "version": "0.1.1",
+        "mode": "assets.scoped",
+        "capabilities": [
+          "assets.scoped",
+          "images.blob",
+          "runtime.eval",
+          "workers.blob"
+        ],
+        "legacyCompatible": true,
+        "requiresUpdatedHost": true,
+        "report": "artifacts/assets-permissions-delivery-20261118.json",
+        "document": "docs/17-本地资源权限细分.md",
+        "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
+        "hiddenPreviewAndRegistryRestartPassed": true,
+        "functionalChecks": 14,
+        "functionalReport": "artifacts/desktop-integration-assets-convert-20261118-v3.json"
       }
     },
     {
@@ -373,7 +391,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-bangumi",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-bangumi-ui-checks.json",
         "nativeChecks": 10,
@@ -407,7 +425,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-bilibili",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-bilibili-ui-checks.json",
         "nativeChecks": 10,
@@ -441,7 +459,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-bilibili-rcmd-ui-checks.json",
         "nativeChecks": 10,
@@ -473,7 +491,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-cls-telegraph",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-cls-telegraph-ui-checks.json",
         "nativeChecks": 10,
@@ -507,7 +525,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-douyin",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-douyin-ui-checks.json",
         "nativeChecks": 10,
@@ -539,7 +557,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-tou-tiao",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-tou-tiao-ui-checks.json",
         "nativeChecks": 10,
@@ -571,7 +589,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-world-cup",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-world-cup-ui-checks.json",
         "nativeChecks": 10,
@@ -810,6 +828,22 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
+      },
+      "resourcePermissions": {
+        "version": "0.2.2",
+        "mode": "assets.scoped",
+        "capabilities": [
+          "assets.scoped",
+          "styles.inline",
+          "images.blob",
+          "assets.fetch"
+        ],
+        "legacyCompatible": true,
+        "requiresUpdatedHost": true,
+        "report": "artifacts/assets-permissions-delivery-20261118.json",
+        "document": "docs/17-本地资源权限细分.md",
+        "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
+        "hiddenPreviewAndRegistryRestartPassed": true
       }
     },
     {
@@ -833,7 +867,7 @@
       "sourceRepository": "rtugeek/ai",
       "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
       "souldeskId": "local.souldesk.widgetjs.ai-assistant",
-      "notes": "已接通原八站图标/六份Vue模板与SCSS、1/2/4网格、每格选站、手动登录、代理、左右/四档宽度/置顶、说明和专用侧边窗；后台默认关闭。核心470通过/2忽略、前端333、最终63预置专项及Release通过；缓存隔离补丁后51项助手专项通过。真实窗口/网页登录/代理/快捷键未调用，仍待手动，不以导航结束冒称已登录。",
+      "notes": "已接通原八站图标/六份Vue模板与SCSS、1/2/4网格、每格选站、手动登录、代理、左右/四档宽度/置顶、说明和专用侧边窗；后台默认关闭。核心470通过/2忽略、前端333、最终63预置专项及Release通过；缓存隔离补丁后51项助手专项通过。真实窗口/网页登录/代理/快捷键未调用，仍待手动，不以导航结束冒称已登录。 2026-11-18资源按用途打包：标准包0.1.2，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "credentials",
@@ -895,7 +929,7 @@
       "sourceRepository": "rtugeek/ai",
       "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
       "souldeskId": "local.souldesk.widgetjs.ai-mindmap",
-      "notes": "保留原Vue/提示词/图标/主题及真实Markmap节点、缩放/适应/折叠、复制/继续展开/PNG；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "notes": "保留原Vue/提示词/图标/主题及真实Markmap节点、缩放/适应/折叠、复制/继续展开/PNG；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。 2026-11-18资源按用途打包：标准包0.1.3，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "credentials",
@@ -954,7 +988,7 @@
       "sourceRepository": "rtugeek/ai",
       "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
       "souldeskId": "local.souldesk.widgetjs.ai-mermaid",
-      "notes": "保留原Vue/提示词/图标、11图表/源码编辑、真实Mermaid/缩放平移适应/复制/PNG/主题与显式全屏；自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "notes": "保留原Vue/提示词/图标、11图表/源码编辑、真实Mermaid/缩放平移适应/复制/PNG/主题与显式全屏；自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。 2026-11-18资源按用途打包：标准包0.1.3，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "credentials",
@@ -1013,7 +1047,7 @@
       "sourceRepository": "rtugeek/ai",
       "sourceRevision": "0160f55feabd19421953c687eba033a707a8c3c2",
       "souldeskId": "local.souldesk.widgetjs.ai-translate",
-      "notes": "保留原Vue/提示词/图标、20语言双向翻译/复制/主题和本地有限历史；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。",
+      "notes": "保留原Vue/提示词/图标、20语言双向翻译/复制/主题和本地有限历史；用户自填模型连接，默认关闭。 2026-11-16原模板/真实离线图形结构/隔离库/假密钥HTTP回环通过，未调用真实模型。终态模型快照不覆盖已保存草稿，取消部分结果按原输入保存。真实自有服务/PNG/剪贴板/全屏和桌面待手动。 2026-11-18资源按用途打包：标准包0.1.3，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "credentials",
@@ -1070,7 +1104,26 @@
       "sourceRepository": "rtugeek/excalidraw",
       "sourceRevision": "5771e20a9eb40365d75170589b1d7a8ab1cb1af4",
       "souldeskId": "local.souldesk.widgetjs.excalidraw",
-      "notes": "完整Excalidraw 0.18.0、原234字体/工作线程、图形库/图片/文件导入导出、实例自动保存及失败重试；原生文件对话框/剪贴板/嵌入与桌面行为待验"
+      "notes": "完整Excalidraw 0.18.0、原234字体/工作线程、图形库/图片/文件导入导出、实例自动保存及失败重试；原生文件对话框/剪贴板/嵌入与桌面行为待验",
+      "resourcePermissions": {
+        "version": "0.1.1",
+        "mode": "assets.scoped",
+        "capabilities": [
+          "assets.scoped",
+          "styles.inline",
+          "images.blob",
+          "assets.fetch",
+          "runtime.wasm",
+          "runtime.eval",
+          "workers.local"
+        ],
+        "legacyCompatible": true,
+        "requiresUpdatedHost": true,
+        "report": "artifacts/assets-permissions-delivery-20261118.json",
+        "document": "docs/17-本地资源权限细分.md",
+        "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
+        "hiddenPreviewAndRegistryRestartPassed": true
+      }
     },
     {
       "upstreamId": "itime.fun.birthday_list",
@@ -1164,7 +1217,7 @@
       "sourceRepository": null,
       "sourceRevision": "deployed-sha256:ecc1caa391c917c613de62b9c59351e26b367c3adf086e53869ad09b9ebf3095",
       "souldeskId": "local.souldesk.widgetjs.calendar",
-      "notes": "保留原纯历法模块、分周/农历/节日、休班徽章和黄历详情；固定原公开API，实例周开始日/主题；读取失败保留旧数据、缺失不推测休班，桌面证据另记",
+      "notes": "保留原纯历法模块、分周/农历/节日、休班徽章和黄历详情；固定原公开API，实例周开始日/主题；读取失败保留旧数据、缺失不推测休班，桌面证据另记 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
       "verification": {
         "nativeReport": "artifacts/desktop-integration-widgetjs-calendar-20261115.json",
@@ -1198,7 +1251,7 @@
       "sourceRepository": null,
       "sourceRevision": "deployed-sha256:727c3e3a2e8d19d2967ca27bb40d4cc25bc4e20513785975b93b19307669299d",
       "souldeskId": "local.souldesk.widgetjs.calendar-large",
-      "notes": "本地标准包已预置，原引擎、未来重复定义清理、网格边线、61条公开数据和双实例重启通过；实际桌面/指针和系统通知另待验 2026-11-16本地0.2.0已接入同类型可选共享库与原生去重提醒，默认私有、切源私有暂停、断开恢复；编辑/详情会话保护与共享删除提示已修正，真实双视图/通知/升级待验。原云同步仍未完成。",
+      "notes": "本地标准包已预置，原引擎、未来重复定义清理、网格边线、61条公开数据和双实例重启通过；实际桌面/指针和系统通知另待验 2026-11-16本地0.2.0已接入同类型可选共享库与原生去重提醒，默认私有、切源私有暂停、断开恢复；编辑/详情会话保护与共享删除提示已修正，真实双视图/通知/升级待验。原云同步仍未完成。 2026-11-18公开内容缓存：标准包0.2.2，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "sourceEvidence": "artifacts/widgetjs-itime-deployment.json",
       "localImplementation": {
         "source": "components/widgetjs/calendar-large-source/SOURCE_FILES.json",
@@ -1686,6 +1739,22 @@
         "scope": "正式宿主消息桥、原生HTTP和真实WebView之间的程序化表单/绘图/同步/重启；远端为127.0.0.1固定数据夹具，不等于真实服务器监控",
         "fixtureOnly": true,
         "actualRemoteAgentVerified": false
+      },
+      "resourcePermissions": {
+        "version": "0.1.1",
+        "mode": "assets.scoped",
+        "capabilities": [
+          "assets.scoped"
+        ],
+        "legacyCompatible": true,
+        "requiresUpdatedHost": true,
+        "report": "artifacts/assets-permissions-delivery-20261118.json",
+        "document": "docs/17-本地资源权限细分.md",
+        "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
+        "hiddenPreviewAndRegistryRestartPassed": true,
+        "functionalChecks": 12,
+        "functionalReport": "artifacts/desktop-integration-assets-server-20261118.json",
+        "fixtureOnly": true
       }
     },
     {
@@ -1763,7 +1832,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-weibo",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-weibo-ui-checks.json",
         "nativeChecks": 10,
@@ -1820,7 +1889,7 @@
       "sourceRepository": "rtugeek/clipboard",
       "sourceRevision": "2482fc6b238983f3fe8f2aecf042d92a9b29c9e2",
       "souldeskId": "local.souldesk.widgetjs.clipboard-search",
-      "notes": "原700×54顶部条、三搜索平台和直接搜索快捷键；本地原AI导图/翻译、独立窗口/作业/加密文档，密钥不进URL，只预填不自动生成。默认关闭采集/快捷键，真实剪切板/模型/桌面待手动。",
+      "notes": "原700×54顶部条、三搜索平台和直接搜索快捷键；本地原AI导图/翻译、独立窗口/作业/加密文档，密钥不进URL，只预填不自动生成。默认关闭采集/快捷键，真实剪切板/模型/桌面待手动。 2026-11-18资源按用途打包：标准包0.1.1，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "credentials",
@@ -1869,7 +1938,7 @@
       "sourceRepository": "rtugeek/clipboard",
       "sourceRevision": "2482fc6b238983f3fe8f2aecf042d92a9b29c9e2",
       "souldeskId": "local.souldesk.widgetjs.clipboard",
-      "notes": "原文本历史、搜索/分页、收藏/三标签、编辑/删除/清理与12/24/48小时；DPAPI保护，受控复制/显式粘贴与UUID回执，草稿/未知结果/重启恢复离线检查通过，真实系统输入与桌面待手动。",
+      "notes": "原文本历史、搜索/分页、收藏/三标签、编辑/删除/清理与12/24/48小时；DPAPI保护，受控复制/显式粘贴与UUID回执，草稿/未知结果/重启恢复离线检查通过，真实系统输入与桌面待手动。 2026-11-18资源按用途打包：标准包0.1.1，独立依赖和数据合同保持，体积及相关验证见15；原人工/外部服务验收边界保留。",
       "scopeDecision": {
         "report": "artifacts/widgetjs-decision-scope-audit-20261116.json",
         "group": "background_interaction",
@@ -1953,7 +2022,7 @@
       "sourceRepository": "widget-js/hotspot",
       "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
       "souldeskId": "local.souldesk.widgetjs.hotspot-zhihu",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。",
+      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
       "acceptance": {
         "report": "artifacts/widgetjs-hotspot-zhihu-ui-checks.json",
         "nativeChecks": 10,
@@ -2032,6 +2101,19 @@
         "notificationUpdateAccepted": true,
         "notificationHistoryRemovalVerified": true,
         "actualNotificationDisplayVerified": false
+      },
+      "resourcePermissions": {
+        "version": "0.1.1",
+        "mode": "assets.scoped",
+        "capabilities": [
+          "assets.scoped"
+        ],
+        "legacyCompatible": true,
+        "requiresUpdatedHost": true,
+        "report": "artifacts/assets-permissions-delivery-20261118.json",
+        "document": "docs/17-本地资源权限细分.md",
+        "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
+        "hiddenPreviewAndRegistryRestartPassed": true
       }
     },
     {

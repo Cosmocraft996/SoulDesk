@@ -4,3 +4,5 @@
 原Vue/SCSS模板保留，WidgetJS/Electron接口替换为SoulDesk固定能力；不运行原远程代码。
 AI导图和翻译复用已移植的rtugeek/ai固定0160f55feabd19421953c687eba033a707a8c3c2，相关GPL许可证随包提供；依赖许可证见THIRD_PARTY_LICENSES.txt。
 历史与两类工具文档按Windows用户、实例及工具加密，密钥仅保存在后台。采集、快捷键及跨应用粘贴默认关闭。
+
+2026-11-18：按固定角色独立打包，图形引擎按需载入；功能、宿主能力及持久数据格式保持。

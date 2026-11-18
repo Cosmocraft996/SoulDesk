@@ -108,13 +108,14 @@ function formatDateRange(dates: string[]) {
   return `${toMonthDay(sorted[0])} - ${toMonthDay(sorted[sorted.length - 1])}`
 }
 
-async function fetchSchedule() {
+async function fetchSchedule(forceRefresh = false) {
   try {
     loading.value = true
     errorMsg.value = ''
     const res = await client.get(hubApiUrl, {
       params: { id: hubApiId },
       responseType: 'json',
+      forceRefresh: forceRefresh === true,
     })
 
     const data = res.data as unknown
@@ -480,7 +481,7 @@ function formatBeijingTime(m: MatchItem) {
       <div v-if="loading || errorMsg" class="status">
         <span v-if="loading">正在加载赛程…</span>
         <span v-else class="error">加载失败：{{ errorMsg }}</span>
-        <button class="retry" type="button" @click="fetchSchedule">
+        <button class="retry" type="button" @click="fetchSchedule(true)">
           刷新
         </button>
       </div>

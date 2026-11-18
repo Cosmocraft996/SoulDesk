@@ -11,6 +11,19 @@ for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'HTMLDialog
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+globalThis.IntersectionObserver = class {
+  constructor(callback) { this.callback = callback; this.nodes = new Set(); }
+  observe(node) {
+    this.nodes.add(node);
+    queueMicrotask(() => {
+      const id = node.dataset.panelInstance;
+      if (this.nodes.has(node) && !globalThis.panelFixture?.outside?.has(id)) this.enter(node);
+    });
+  }
+  enter(node) { this.callback([{ target: node, isIntersecting: true }]); }
+  unobserve(node) { this.nodes.delete(node); }
+  disconnect() { this.nodes.clear(); }
+};
 Object.defineProperty(dom.window.HTMLElement.prototype, 'clientWidth', { get: () => 600 });
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
@@ -21,6 +34,7 @@ const palette = JSON.parse(readFileSync(new URL('../src/panel-colors.json', impo
 const cache = new Map();
 function moduleUrl(name) {
   if (cache.has(name)) return cache.get(name);
+  if (name.endsWith('.png')) return dataUrl('export default ' + JSON.stringify(new URL('../src/' + name, import.meta.url).href) + ';');
   if (name.endsWith('.json')) return dataUrl('export default ' + readFileSync(new URL('../src/' + name, import.meta.url), 'utf8') + ';');
   const source = name === 'host' ? 'export const invoke=(...args)=>globalThis.panelFixture.invoke(...args);'
     : name === 'WidgetFrame' ? `import {useEffect,createElement} from 'react';export function WidgetFrame({instance}){useEffect(()=>{const f=globalThis.panelFixture;f.mounted.add(instance);f.mounts.push(instance);return()=>f.mounted.delete(instance);},[instance]);return createElement('div',{'data-instance':instance});}`
@@ -47,7 +61,7 @@ const button = label => document.querySelector(`[aria-label="${label}"]`);
 const textButton = (scope, text) => [...scope.querySelectorAll('button')].find(node => node.textContent === text);
 const tab = name => [...document.querySelectorAll('[role="tab"]')].find(node => node.title === name);
 
-async function fixture({ legacy = false, active = null, query = '?panel=1' } = {}) {
+async function fixture({ legacy = false, active = null, locked = false, query = '?panel=1', positions = new Map(), outside } = {}) {
   dom.reconfigure({ url: `http://fixture.local/${query}` });
   const state = {
     packages: [{ id: 'clock', name: '时钟', version: '1.0.0', defaultSize: { width: 300, height: 180 }, minSize: { width: 100, height: 80 } }],
@@ -56,15 +70,23 @@ async function fixture({ legacy = false, active = null, query = '?panel=1' } = {
     panelLayouts: { a: { x: 30, y: 75, width: 320, height: 200 } },
     panel: { ratio: .4, tint: .12, slideInMs: 250, slideOutMs: 250, desktopDoubleClick: true },
     panelOpen: true,
+    panelLocked: locked,
     diagnostics: { shortcut: 'Ctrl+Alt+Space' }, updates: {},
   };
   if (legacy) delete state.panelGroups;
-  const f = { state, mounted: new Set(), mounts: [], calls: [], fail: false, gate: undefined,
+  const f = { state, mounted: new Set(), mounts: [], calls: [], fail: false, gate: undefined, outside, listeners: new Map(),
     async invoke(command, args) {
       f.calls.push([command, args]);
-      if (command === 'snapshot') return structuredClone(state);
+      if (command === 'snapshot') return { ...structuredClone(state), panelScroll: positions.get(state.panelGroups?.active ?? null) };
+      if (command === 'panel_view' && args.update.event === 'scroll') { positions.set(args.update.group, args.update.position); return; }
       if (command === 'create_instance' && f.fail) throw Error('测试添加失败');
+      if (command === 'drag_panel_edge') return f.edgeDragged ?? false;
       if (command === 'set_panel') { Object.assign(state.panel, args); return; }
+      if (command === 'window_action' && ['lock-panel', 'unlock-panel'].includes(args.action)) {
+        if (f.fail) throw Error('测试锁定状态保存失败');
+        state.panelLocked = args.action === 'lock-panel';
+        return;
+      }
       if (command === 'window_action' && args.action === 'resize-panel') {
         if (f.gate) await f.gate;
         if (f.fail) throw Error('测试宽度保存失败');
@@ -93,6 +115,77 @@ async function fixture({ legacy = false, active = null, query = '?panel=1' } = {
   return f;
 }
 test.after(() => dom.window.close());
+
+test('按组跨窗口记住两轴滚动，屏外组件滚近才加载，显式恢复可以加载提前指定的目标', async () => {
+  const positions = new Map();
+  const outside = new Set(['a']);
+  const scroller = () => document.querySelector('.panel-scroll');
+  const scroll = (left, top) => act(async () => {
+    const node = scroller();
+    node.scrollLeft = left; node.scrollTop = top;
+    node.dispatchEvent(new Event('scroll'));
+  });
+  const first = await fixture({ query: '?panel=1&view=first', positions, outside });
+  try {
+    assert.deepEqual([...first.mounted], ['b']);
+    await scroll(17, 340);
+    await click(tab('工作'));
+    assert.equal(scroller().scrollTop, 0);
+    assert.ok(document.querySelector('[data-panel-instance="a"] .frame-message'));
+    assert.equal(first.mounted.has('a'), false);
+    outside.delete('a');
+    await scroll(24, 270);
+    await act(async () => { for (const notify of first.listeners.get('host:changed')) await notify(); });
+    assert.equal(first.mounted.has('a'), true);
+    outside.add('a');
+    await act(async () => { for (const notify of first.listeners.get('host:changed')) await notify(); });
+    assert.equal(first.mounted.has('a'), true);
+    await click(tab('未分组'));
+    assert.equal(scroller().scrollTop, 340);
+    assert.equal(scroller().scrollLeft, 17);
+  } finally { await first.close(); }
+  const second = await fixture({ query: '?panel=1&view=second', active: 'work', positions, outside });
+  try {
+    assert.equal(scroller().scrollTop, 270);
+    assert.equal(scroller().scrollLeft, 24);
+    assert.equal(second.mounted.has('a'), false);
+    second.state.panelTarget = 'a';
+    await act(async () => { for (const notify of second.listeners.get('host:changed')) await notify(); });
+    assert.equal(second.mounted.has('a'), true);
+  } finally { await second.close(); }
+});
+
+test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时仍可手动收起', async () => {
+  const first = await fixture();
+  try {
+    const lock = button('锁定面板');
+    assert.equal(lock.closest('.panel-tools').lastElementChild, lock);
+    assert.equal(lock.title, '锁定面板');
+    assert.equal(lock.getAttribute('aria-pressed'), 'false');
+    await click(lock);
+    assert.equal(first.state.panelLocked, true);
+    assert.equal(lock.title, '解锁面板');
+    assert.equal(lock.getAttribute('aria-pressed'), 'true');
+    const collapse = button('收起组件面板');
+    assert.equal(collapse.disabled, false);
+    await click(collapse);
+    assert.ok(first.calls.some(([command, args]) => command === 'window_action' && args.action === 'collapse'));
+  } finally { await first.close(); }
+
+  const reopened = await fixture({ locked: first.state.panelLocked });
+  try {
+    const lock = button('锁定面板');
+    assert.equal(lock.getAttribute('aria-pressed'), 'true');
+    reopened.fail = true;
+    await click(lock);
+    assert.equal(lock.getAttribute('aria-pressed'), 'true');
+    assert.match(document.querySelector('.panel-notice').textContent, /锁定状态保存失败/);
+    reopened.fail = false;
+    await click(lock);
+    assert.equal(reopened.state.panelLocked, false);
+    assert.equal(lock.getAttribute('aria-pressed'), 'false');
+  } finally { await reopened.close(); }
+});
 
 test('删除确认和移动分组对话框保护面板，取消后解除且不删除实例', async () => {
   const f = await fixture();
@@ -227,6 +320,53 @@ test('左边沿可用左右方向键微调，只提交宽度，不覆盖其他�
   } finally { await f.close(); }
 });
 
+test('八款挂件可预览并保存，左侧停靠时右边沿向右加宽', async () => {
+  const f = await fixture();
+  try {
+    await click(button('面板设置'));
+    const form = document.querySelector('.panel-preferences');
+    const options = [...form.querySelectorAll('input[name="panel-edge-style"]')];
+    assert.deepEqual(options.map(option => option.value), ['classic', 'frost', 'glow', 'paw', 'rocket', 'basketball', 'jordan', 'shinobu']);
+    assert.equal(options[0].checked, true);
+    assert.equal(form.querySelectorAll('.edge-style-preview img').length, 5);
+    await click(options.at(-1));
+    assert.equal(document.querySelector('.edge [data-edge-style]').dataset.edgeStyle, 'classic');
+    await submit(form);
+    assert.equal(f.state.panel.edgeStyle, 'shinobu');
+    const visual = { style: 'shinobu', position: { side: 'left', offset: .2 } };
+    await act(async () => { for (const listener of f.listeners.get('host:panel-edge')) listener({ payload: visual }); });
+    const shell = document.querySelector('.panel-shell');
+    assert.equal(shell.dataset.edgeSide, 'left');
+    assert.equal(shell.style.getPropertyValue('--edge-offset'), '0.2');
+    assert.equal(document.querySelector('.edge [data-edge-style]').dataset.edgeStyle, 'shinobu');
+    await act(async () => button('调整面板宽度').dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' })));
+    assert.ok(Math.abs(f.state.panel.ratio - .42) < 1e-9);
+  } finally { await f.close(); }
+});
+
+test('收起态从宿主初始化挂件，拖动不会触发轻点开关', async () => {
+  const f = await fixture({ query: '?edge=1&style=rocket&side=left' });
+  try {
+    const toggle = button('展开组件面板');
+    assert.equal(toggle.dataset.edgeSide, 'left');
+    assert.equal(toggle.querySelector('[data-edge-style]').dataset.edgeStyle, 'rocket');
+    const pointerClick = () => act(async () => {
+      const down = new MouseEvent('pointerdown', { bubbles: true, button: 0 });
+      Object.defineProperties(down, { isPrimary: { value: true }, pointerId: { value: 1 } });
+      toggle.dispatchEvent(down);
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    const clicks = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action === 'edge-click');
+    f.edgeDragged = true;
+    await pointerClick();
+    assert.equal(clicks().length, 0);
+    f.edgeDragged = false;
+    await pointerClick();
+    await click(toggle);
+    assert.equal(clicks().length, 2);
+  } finally { await f.close(); }
+});
+
 test('桌面外壳接收边线事件，清空及切换实例时移除高亮和旧监听', async () => {
   const f = { listeners: new Map(), errors: [], invoke: async () => {} };
   globalThis.panelFixture = f;
@@ -245,6 +385,27 @@ test('桌面外壳接收边线事件，清空及切换实例时移除高亮和�
     assert.deepEqual(f.errors, []);
   } finally { await act(async () => root.unmount()); }
   assert.equal(f.listeners.get('host:snap-edges').size, 0);
+});
+
+test('组件浮动菜单提供窄卡片的通用操作，按 Esc 返回入口并解除面板保护', async () => {
+  const f = await fixture();
+  try {
+    const surface = document.querySelector('.widget-surface');
+    const more = surface.querySelector('[aria-label="更多功能"]');
+    await click(more);
+    const menu = surface.querySelector('.surface-menu');
+    assert.equal(more.getAttribute('aria-expanded'), 'true');
+    assert.ok(menu.querySelector('.surface-compact-actions [aria-label="隐藏组件"]'));
+    const move = menu.querySelector('[aria-label="移动到分组"]');
+    await act(async () => {
+      move.focus();
+      move.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    assert.equal(more.getAttribute('aria-expanded'), 'false');
+    assert.equal(surface.querySelector('.surface-menu'), null);
+    assert.equal(document.activeElement, more);
+    assert.deepEqual(f.calls.filter(([command, args]) => command === 'window_action' && args.action.startsWith('menu-')).map(([, args]) => args.action), ['menu-open', 'menu-close']);
+  } finally { await f.close(); }
 });
 
 async function canvasFixture() {

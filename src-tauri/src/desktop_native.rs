@@ -333,9 +333,15 @@ pub fn pointer_inside(w: &WebviewWindow) -> Result<bool, String> {
     )
 }
 
-/// 在协调工作线程逐帧移动真实窗口，按原右边界裁剪，避免滑到相邻显示器。
+/// 在协调工作线程逐帧移动真实窗口，按停靠边缘裁剪，避免滑到相邻显示器。
 /// 不使用要求窗口所属线程同步执行的 AnimateWindow，也不改变窗口焦点。
-pub fn slide_panel(w: &WebviewWindow, showing: bool, duration: u32) -> Result<(), String> {
+pub fn slide_panel(
+    w: &WebviewWindow,
+    showing: bool,
+    duration: u32,
+    side: crate::desktop_geometry::EdgeSide,
+) -> Result<(), String> {
+    use crate::desktop_geometry::EdgeSide;
     use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
     if duration == 0 {
         return if showing { show(w) } else { hide(w) };
@@ -354,8 +360,11 @@ pub fn slide_panel(w: &WebviewWindow, showing: bool, duration: u32) -> Result<()
                 (start.elapsed().as_secs_f64() * 1000.0 / duration.min(1000) as f64).min(1.0);
             let eased = 1.0 - (1.0 - progress).powi(3);
             let offset = (width as f64 * if showing { 1.0 - eased } else { eased }).round() as i32;
-            let region =
-                unsafe { CreateRectRgn(0, 0, (width as i32 - offset).max(0), height as i32) };
+            let (clip_left, clip_right, x) = match side {
+                EdgeSide::Left => (offset, width as i32, rect.left - offset),
+                EdgeSide::Right => (0, width as i32 - offset, rect.left + offset),
+            };
+            let region = unsafe { CreateRectRgn(clip_left, 0, clip_right, height as i32) };
             if region.is_null() {
                 return Err(winerr("创建面板滑动裁剪失败"));
             }
@@ -366,7 +375,7 @@ pub fn slide_panel(w: &WebviewWindow, showing: bool, duration: u32) -> Result<()
                 return Err(winerr("设置面板滑动裁剪失败"));
             }
             // 成功后区域由系统拥有。
-            place(w, rect.left + offset, rect.top, width, height, showing)?;
+            place(w, x, rect.top, width, height, showing)?;
             if progress >= 1.0 {
                 break;
             }
@@ -747,7 +756,9 @@ pub fn resize_panel_width(
     w: &WebviewWindow,
     area: crate::desktop_geometry::WorkArea,
     min_width: f64,
+    side: crate::desktop_geometry::EdgeSide,
 ) -> Result<Option<crate::desktop_geometry::PanelGeometry>, String> {
+    use crate::desktop_geometry::EdgeSide;
     use tauri::{Emitter, Manager};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
@@ -795,12 +806,18 @@ pub fn resize_panel_width(
         }
         if point.x != last_x {
             last_x = point.x;
-            let geometry = crate::desktop_geometry::resized_panel_geometry(
+            let delta = i64::from(point.x) - i64::from(start.x);
+            let mut geometry = crate::desktop_geometry::resized_panel_geometry(
                 area,
                 initial_width,
-                i64::from(point.x) - i64::from(start.x),
+                if side == EdgeSide::Left {
+                    -delta
+                } else {
+                    delta
+                },
                 min_width,
             )?;
+            geometry.left = side.window_left(area, geometry.width);
             place(
                 w,
                 geometry.left,
@@ -816,6 +833,72 @@ pub fn resize_panel_width(
         }
         if unsafe { GetAsyncKeyState(key as i32) } >= 0 {
             return Ok(current);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+}
+
+/// 用物理鼠标坐标跟踪拖动，窗口移动时不依赖网页的局部坐标。
+pub enum EdgeDrag {
+    Click,
+    Dropped,
+    Cancelled,
+}
+
+pub fn drag_panel_edge(
+    w: &WebviewWindow,
+    scale_factor: f64,
+    mut preview: impl FnMut(i32, i64) -> Result<(), String>,
+) -> Result<EdgeDrag, String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
+    };
+    let h = handle(w)? as HWND;
+    let key = unsafe {
+        if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            VK_RBUTTON
+        } else {
+            VK_LBUTTON
+        }
+    };
+    let mut start = POINT::default();
+    unsafe {
+        if IsWindowVisible(h) == 0 || GetAsyncKeyState(key as i32) >= 0 {
+            return Ok(EdgeDrag::Click);
+        }
+        if GetCursorPos(&mut start) == 0 {
+            return Err(winerr("读取挂件拖动起点失败"));
+        }
+    }
+    let threshold = (5. * scale_factor).ceil() as i64;
+    let mut moved = false;
+    let mut previous = start;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        if unsafe { GetAsyncKeyState(VK_ESCAPE as i32) < 0 || IsWindowVisible(h) == 0 }
+            || std::time::Instant::now() >= deadline
+        {
+            return Ok(EdgeDrag::Cancelled);
+        }
+        let mut point = POINT::default();
+        if unsafe { GetCursorPos(&mut point) } == 0 {
+            return Err(winerr("读取挂件拖动位置失败"));
+        }
+        let dx = i64::from(point.x) - i64::from(start.x);
+        let dy = i64::from(point.y) - i64::from(start.y);
+        if (moved || dx.abs().max(dy.abs()) >= threshold)
+            && (point.x != previous.x || point.y != previous.y)
+        {
+            moved = true;
+            preview(point.x, dy)?;
+            previous = point;
+        }
+        if unsafe { GetAsyncKeyState(key as i32) >= 0 } {
+            return Ok(if moved {
+                EdgeDrag::Dropped
+            } else {
+                EdgeDrag::Click
+            });
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
     }

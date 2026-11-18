@@ -5,6 +5,7 @@ import { zipSync, unzipSync } from 'fflate';
 import { buildExcalidraw } from './build-excalidraw.mjs';
 import { spawnSync } from 'node:child_process';
 import { hotspotWidgets } from './widgetjs-hotspots.mjs';
+import { assertPackageVersions, inputGroups, packageState, readBuildState, recordBuildState, withBuildLock } from './widgetjs-build-state.mjs';
 export { hotspotWidgets } from './widgetjs-hotspots.mjs';
 
 export const progressWidgets = ['time-progress', 'wave-progress'];
@@ -21,12 +22,14 @@ export const portedWidgets = [...progressWidgets, ...clockWidgets, ...standalone
 export function widgetFiles(name) {
   if (!portedWidgets.includes(name)) throw new Error('未知的已移植组件：' + name);
   if (name === 'excalidraw') return unzipSync(new Uint8Array(readFileSync('components/widgetjs/excalidraw-bundle/preset.zip')));
+  if (aiWidgets.includes(name) || clipboardWidgets.includes(name)) {
+    const family = aiWidgets.includes(name) ? 'ai' : 'clipboard';
+    return unzipSync(new Uint8Array(readFileSync(`components/widgetjs/${family}-bundle/${name}.zip`)));
+  }
   const files = { 'manifest.json': new Uint8Array(readFileSync(`components/widgetjs/${name}/manifest.json`)), 'dist/host.js': new Uint8Array(readFileSync('sdk/host.js')) };
-  const common = progressWidgets.includes(name) ? ['components/widgetjs/progress-common'] : clockWidgets.includes(name) ? ['components/widgetjs/clock-bundle'] : hotspotWidgets.includes(name) ? ['components/widgetjs/hotspot-bundle'] : ['photo','sticker'].includes(name) ? ['components/widgetjs/photo-common'] : countdownWidgets.includes(name) ? ['components/widgetjs/countdown-bundle'] : weatherWidgets.includes(name) ? ['components/widgetjs/weather-bundle'] : reminderWidgets.includes(name)?['components/widgetjs/reminder-bundle']:aiWidgets.includes(name)?['components/widgetjs/ai-bundle']:clipboardWidgets.includes(name)?['components/widgetjs/clipboard-bundle']:jobWidgets.includes(name)?['components/widgetjs/job-bundle']:compiledWidgets.includes(name) ? [`components/widgetjs/${name}-bundle`] : [];
+  const common = progressWidgets.includes(name) ? ['components/widgetjs/progress-common'] : clockWidgets.includes(name) ? ['components/widgetjs/clock-bundle'] : hotspotWidgets.includes(name) ? ['components/widgetjs/hotspot-bundle'] : ['photo','sticker'].includes(name) ? ['components/widgetjs/photo-common'] : countdownWidgets.includes(name) ? ['components/widgetjs/countdown-bundle'] : weatherWidgets.includes(name) ? ['components/widgetjs/weather-bundle'] : reminderWidgets.includes(name)?['components/widgetjs/reminder-bundle']:jobWidgets.includes(name)?['components/widgetjs/job-bundle']:compiledWidgets.includes(name) ? [`components/widgetjs/${name}-bundle`] : [];
   if (hotspotWidgets.includes(name)) files['dist/LICENSE.txt'] = new Uint8Array(readFileSync('components/widgetjs/hotspot-source/LICENSE.txt'));
   if (reminderWidgets.includes(name)) files['dist/LICENSE.txt'] = new Uint8Array(readFileSync('components/widgetjs/reminder-source/LICENSE.txt'));
-  if (aiWidgets.includes(name)) files['dist/LICENSE.txt'] = new Uint8Array(readFileSync('components/widgetjs/ai-source/LICENSE.txt'));
-  if (clipboardWidgets.includes(name)) {files['dist/LICENSE-AI.txt']=new Uint8Array(readFileSync('components/widgetjs/ai-source/LICENSE.txt'));files['dist/SOURCE.txt']=new Uint8Array(readFileSync('components/widgetjs/clipboard-source/SOURCE.txt'));}
   if(jobWidgets.includes(name))files['dist/UPSTREAM_NOTICES.txt']=new Uint8Array(readFileSync('components/widgetjs/job-source/UPSTREAM_NOTICES.txt'));
   for (const source of [...common, `components/widgetjs/${name}`]) {
     for (const item of readdirSync(source, { withFileTypes: true })) {
@@ -45,16 +48,19 @@ export function widgetFiles(name) {
 export function widgetArchive(name) {
   return zipSync(widgetFiles(name), { level: 9, mtime: new Date('2026-11-14T00:00:00Z') });
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const adapted=spawnSync(process.execPath,['scripts/adapt-widgetjs-reminders.mjs'],{stdio:'inherit'});if(adapted.status!==0)process.exit(adapted.status??1);
-  const adaptedAi=spawnSync(process.execPath,['scripts/adapt-widgetjs-ai.mjs'],{stdio:'inherit'});if(adaptedAi.status!==0)process.exit(adaptedAi.status??1);
-  const adaptedAssistant=spawnSync(process.execPath,['scripts/adapt-widgetjs-assistant.mjs'],{stdio:'inherit'});if(adaptedAssistant.status!==0)process.exit(adaptedAssistant.status??1);
-  const adaptedClipboard=spawnSync(process.execPath,['scripts/adapt-widgetjs-clipboard.mjs'],{stdio:'inherit'});if(adaptedClipboard.status!==0)process.exit(adaptedClipboard.status??1);
-  const adaptedJob=spawnSync(process.execPath,['scripts/adapt-widgetjs-job.mjs'],{stdio:'inherit'});if(adaptedJob.status!==0)process.exit(adaptedJob.status??1);
-  for (const name of ['clock', 'hotspot', 'weather', ...compiledWidgets.filter(name=>name!=='excalidraw'), 'countdown','reminder','ai','clipboard','job']) {
+function buildWidgets() {
+  // 先读取旧记录；构建失败或版本冲突时不覆盖旧记录和已交付ZIP。
+  const previous = readBuildState();
+  for (const name of ['reminders', 'ai', 'assistant', 'clipboard', 'job']) {
+    const result = spawnSync(process.execPath, [`scripts/adapt-widgetjs-${name}.mjs`], { stdio: 'inherit', windowsHide: true });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`组件适配失败：${name}`);
+  }
+  for (const name of ['clock', 'hotspot', 'weather', ...compiledWidgets.filter(name=>name!=='excalidraw'), 'countdown','reminder','job']) {
     const config=`components/widgetjs/${name}-source/vite.config.mjs`;
     const result = spawnSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', config], { stdio: 'inherit' });
-    if (result.status !== 0) process.exit(result.status ?? 1);
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`组件编译失败：${name}`);
   }
   copyFileSync('components/widgetjs/convert-bundle/index.html', 'components/widgetjs/convert/index.html');
   copyFileSync('components/widgetjs/gold-bundle/index.html', 'components/widgetjs/gold/index.html');
@@ -80,12 +86,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   writeFileSync('components/widgetjs/countdown-list/index.html',countdownHtml.replace('<body>','<body data-countdown-variant="countdown-list">'));
   const reminderHtml=readFileSync('components/widgetjs/reminder-bundle/index.html','utf8');
   for(const name of reminderWidgets)writeFileSync(`components/widgetjs/${name}/index.html`,reminderHtml.replace('<body>',`<body data-reminder-variant="${name}">`));
-  const aiHtml=readFileSync('components/widgetjs/ai-bundle/index.html','utf8');
-  for(const name of aiWidgets)writeFileSync(`components/widgetjs/${name}/index.html`,aiHtml.replace('<body>',`<body data-ai-variant="${name.slice(3)}">`));
-  const clipboardHtml=readFileSync('components/widgetjs/clipboard-bundle/index.html','utf8');
-  for(const name of clipboardWidgets)writeFileSync(`components/widgetjs/${name}/index.html`,clipboardHtml.replace('<body>',`<body data-clipboard-kind="${name==='clipboard'?'history':'search'}">`));
+  const entries = spawnSync(process.execPath, ['scripts/build-widgetjs-entries.mjs'], { stdio: 'inherit', windowsHide: true });
+  if (entries.error) throw entries.error;
+  if (entries.status !== 0) throw new Error('组件独立角色包构建失败');
   copyFileSync('components/widgetjs/job-bundle/index.html','components/widgetjs/ai-job/index.html');
   buildExcalidraw();
+  const packages = portedWidgets.map(name => packageState(widgetFiles(name)));
+  assertPackageVersions(previous.packages, packages);
   mkdirSync('artifacts', { recursive: true });
   for (const name of portedWidgets) {
     const manifest = JSON.parse(new TextDecoder().decode(widgetFiles(name)['manifest.json']));
@@ -93,4 +100,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     writeFileSync(path, widgetArchive(name));
     console.log(path);
   }
+  recordBuildState(inputGroups(), packages);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try { withBuildLock(buildWidgets); }
+  catch (error) { console.error(`组件构建失败：${error.message}`); process.exitCode = 1; }
 }

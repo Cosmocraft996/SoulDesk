@@ -287,36 +287,37 @@ macro_rules! widgetjs_reminder {
         "dist/jackie_chan.jpg" => "reminder-bundle/jackie_chan.jpg"
     ])};
 }
+// 动态分块和资源由同一构建入口封装，原生预置直接使用完整独立包。
+macro_rules! widgetjs_role {
+    ($directory:literal, $family:literal, $description:literal, $symbol:literal) => {
+        Preset {
+            manifest: include_str!(concat!(
+                "../../components/widgetjs/",
+                $directory,
+                "/manifest.json"
+            )),
+            description: $description,
+            symbol: $symbol,
+            files: &[],
+            prebuilt: Some(include_bytes!(concat!(
+                "../../components/widgetjs/",
+                $family,
+                "-bundle/",
+                $directory,
+                ".zip"
+            ))),
+        }
+    };
+}
 macro_rules! widgetjs_ai {
-    ($directory:literal,$description:literal,$symbol:literal) => {widgetjs_static!($directory,$description,$symbol,"dist/",[],[
-        "dist/app.js"=>"ai-bundle/app.js",
-        "dist/style.css"=>"ai-bundle/style.css",
-        "dist/LICENSE.txt"=>"ai-source/LICENSE.txt",
-        "dist/THIRD_PARTY_LICENSES.txt"=>"ai-bundle/THIRD_PARTY_LICENSES.txt",
-        "dist/exploding_head_3d.png"=>"ai-bundle/exploding_head_3d.png",
-        "dist/globe_showing_asia-australia_3d.png"=>"ai-bundle/globe_showing_asia-australia_3d.png",
-        "dist/bar_chart.png"=>"ai-bundle/bar_chart.png",
-        "dist/robot.png"=>"ai-bundle/robot.png",
-        "dist/chatgpt-icon.png"=>"ai-bundle/chatgpt-icon.png",
-        "dist/grok.png"=>"ai-bundle/grok.png",
-        "dist/google-gemini-icon.png"=>"ai-bundle/google-gemini-icon.png",
-        "dist/deepseek.png"=>"ai-bundle/deepseek.png",
-        "dist/kimi.png"=>"ai-bundle/kimi.png",
-        "dist/qwen.png"=>"ai-bundle/qwen.png",
-        "dist/dou_bao.png"=>"ai-bundle/dou_bao.png",
-        "dist/yuanbao.png"=>"ai-bundle/yuanbao.png"
-    ])};
+    ($directory:literal, $description:literal, $symbol:literal) => {
+        widgetjs_role!($directory, "ai", $description, $symbol)
+    };
 }
 macro_rules! widgetjs_clipboard {
-    ($directory:literal,$description:literal,$symbol:literal) => {widgetjs_static!($directory,$description,$symbol,"dist/",[],[
-        "dist/app.js"=>"clipboard-bundle/app.js",
-        "dist/style.css"=>"clipboard-bundle/style.css",
-        "dist/LICENSE-AI.txt"=>"ai-source/LICENSE.txt",
-        "dist/THIRD_PARTY_LICENSES.txt"=>"clipboard-bundle/THIRD_PARTY_LICENSES.txt",
-        "dist/exploding_head_3d.png"=>"clipboard-bundle/exploding_head_3d.png",
-        "dist/globe_showing_asia-australia_3d.png"=>"clipboard-bundle/globe_showing_asia-australia_3d.png",
-        "dist/bar_chart.png"=>"clipboard-bundle/bar_chart.png"
-    ])};
+    ($directory:literal, $description:literal, $symbol:literal) => {
+        widgetjs_role!($directory, "clipboard", $description, $symbol)
+    };
 }
 pub const PRESETS: &[Preset] = &[
     widgetjs_static!("ai-job","原BOSS手动登录、职位采集与评分、分析/百科/导图/面试；自填模型，后台默认关闭。","⌕","dist/",[],[
@@ -1068,6 +1069,7 @@ pub fn catalog(installed: &[Value]) -> AppResult<Vec<Value>> {
 mod tests {
     use super::*;
     use crate::{store::Store, widgets};
+    use sha2::{Digest, Sha256};
     use std::io::Read;
 
     #[test]
@@ -1087,6 +1089,12 @@ mod tests {
     fn all_presets_load_through_package_pipeline_and_can_be_added_again_after_unregistering() {
         let store =
             Store::open(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string())).unwrap();
+        // 独立包构建记录与Rust预置资源必须一致，避免两个入口各自正确却交付不同内容。
+        let state: Value =
+            serde_json::from_str(include_str!("../../components/widgetjs/build-state.json"))
+                .unwrap();
+        let records = state["packages"].as_array().unwrap();
+        let mut matched = std::collections::HashSet::new();
         for preset in PRESETS {
             let bytes = preset.archive().unwrap();
             assert_eq!(bytes, preset.archive().unwrap());
@@ -1094,10 +1102,18 @@ mod tests {
             let staged = widgets::stage_bytes(&store, bytes).unwrap();
             // 这是核心包管线检查；真实 WebView 消息桥试加载另行验收。
             let manifest = widgets::activate(&store, &staged).unwrap();
+            let mut entries = Vec::new();
             for index in 0..archive.len() {
                 let mut file = archive.by_index(index).unwrap();
+                let mut contents = Vec::new();
+                file.read_to_end(&mut contents).unwrap();
+                entries.push(json!([
+                    file.name(),
+                    contents.len(),
+                    format!("{:x}", Sha256::digest(&contents))
+                ]));
                 if file.name() == "manifest.json" {
-                    let original: Value = serde_json::from_reader(&mut file).unwrap();
+                    let original: Value = serde_json::from_slice(&contents).unwrap();
                     assert_eq!(original, preset.metadata().unwrap());
                 } else if !file.is_dir() {
                     assert!(
@@ -1105,11 +1121,25 @@ mod tests {
                             .is_ok()
                     );
                     if file.name() == "dist/host.js" {
-                        let mut sdk = Vec::new();
-                        file.read_to_end(&mut sdk).unwrap();
-                        assert_eq!(sdk, include_bytes!("../../sdk/host.js"));
+                        assert_eq!(contents, include_bytes!("../../sdk/host.js"));
                     }
                 }
+            }
+            if manifest.id.starts_with("local.souldesk.widgetjs.") {
+                let record = records.iter().find(|r| r["id"] == manifest.id).unwrap();
+                entries.sort_by(|a, b| a[0].as_str().cmp(&b[0].as_str()));
+                assert_eq!(record["version"], manifest.version);
+                assert_eq!(record["files"], entries.len());
+                assert_eq!(
+                    record["digest"],
+                    format!(
+                        "{:x}",
+                        Sha256::digest(serde_json::to_vec(&entries).unwrap())
+                    ),
+                    "{}的独立包与预置资源不一致",
+                    manifest.id
+                );
+                assert!(matched.insert(manifest.id.clone()));
             }
             let id = widgets::create_instance(&store, &manifest.id).unwrap();
             assert!(widgets::stage_bytes(&store, preset.archive().unwrap())
@@ -1125,6 +1155,7 @@ mod tests {
             widgets::activate(&store, &staged).unwrap();
             widgets::unregister_package(&store, &manifest.id).unwrap();
         }
+        assert_eq!(matched.len(), records.len());
     }
 
     #[test]
@@ -1149,15 +1180,52 @@ mod tests {
     #[test]
     fn corrected_widgetjs_versions_upgrade_legacy_instances_without_losing_saved_state() {
         for (name, previous, next) in [
-            ("ai-assistant", "0.1.0", "0.1.1"),
-            ("ai-mindmap", "0.1.1", "0.1.2"),
-            ("ai-mermaid", "0.1.1", "0.1.2"),
-            ("ai-translate", "0.1.1", "0.1.2"),
+            ("ai-assistant", "0.1.0", "0.1.2"),
+            ("ai-mindmap", "0.1.2", "0.1.4"),
+            ("ai-mermaid", "0.1.2", "0.1.4"),
+            ("ai-translate", "0.1.2", "0.1.3"),
+            ("clipboard", "0.1.0", "0.1.2"),
+            ("clipboard-search", "0.1.0", "0.1.2"),
             ("birthday-list", "0.2.0", "0.2.1"),
             ("countdown", "0.2.0", "0.2.1"),
             ("countdown-list", "0.2.0", "0.2.1"),
             ("todo", "0.2.0", "0.2.1"),
-            ("calendar-large", "0.2.0", "0.2.1"),
+            ("calendar-large", "0.2.0", "0.2.3"),
+            ("calendar-large", "0.2.1", "0.2.3"),
+            ("calendar-large", "0.2.2", "0.2.3"),
+            ("calendar", "0.1.1", "0.1.2"),
+            ("hotspot-bangumi", "0.1.1", "0.1.2"),
+            ("hotspot-bilibili", "0.1.1", "0.1.2"),
+            ("hotspot-bilibili-rcmd", "0.1.1", "0.1.2"),
+            ("hotspot-cls-telegraph", "0.1.1", "0.1.2"),
+            ("hotspot-douyin", "0.1.1", "0.1.2"),
+            ("hotspot-tou-tiao", "0.1.1", "0.1.2"),
+            ("hotspot-weibo", "0.1.1", "0.1.2"),
+            ("hotspot-world-cup", "0.1.1", "0.1.2"),
+            ("hotspot-zhihu", "0.1.1", "0.1.2"),
+            ("sticker", "0.1.0", "0.1.2"),
+            ("excalidraw", "0.1.0", "0.1.2"),
+            ("convert", "0.1.0", "0.1.2"),
+            ("mindmap", "0.2.1", "0.2.3"),
+            ("forex", "0.1.0", "0.1.2"),
+            ("sticker", "0.1.1", "0.1.2"),
+            ("metal", "0.1.0", "0.1.1"),
+            ("excalidraw", "0.1.1", "0.1.2"),
+            ("convert", "0.1.1", "0.1.2"),
+            ("gold", "0.1.0", "0.1.1"),
+            ("stock-medium", "0.1.0", "0.1.1"),
+            ("stock-small", "0.1.0", "0.1.1"),
+            ("coin-small", "0.1.0", "0.1.1"),
+            ("coin-medium", "0.1.0", "0.1.1"),
+            ("mindmap", "0.2.2", "0.2.3"),
+            ("server", "0.1.1", "0.1.2"),
+            ("stock", "0.1.0", "0.1.1"),
+            ("ai-mindmap", "0.1.3", "0.1.4"),
+            ("ai-mermaid", "0.1.3", "0.1.4"),
+            ("clipboard", "0.1.1", "0.1.2"),
+            ("clipboard-search", "0.1.1", "0.1.2"),
+            ("labor", "0.1.0", "0.1.1"),
+            ("server", "0.1.0", "0.1.2"),
         ] {
             let package = format!("local.souldesk.widgetjs.{name}");
             let preset = find(&package).unwrap().unwrap();
@@ -1173,6 +1241,59 @@ mod tests {
                 if path == "manifest.json" {
                     let mut manifest: Value = serde_json::from_slice(&body).unwrap();
                     manifest["version"] = json!(previous);
+                    let capabilities = manifest["capabilities"].as_array_mut().unwrap();
+                    let count = capabilities.len();
+                    capabilities.retain(|value| {
+                        !crate::component_registry::is_scoped_content_capability(
+                            value.as_str().unwrap(),
+                        )
+                    });
+                    if capabilities.len() != count || name == "coin-medium" {
+                        capabilities.push(json!(crate::component_registry::LEGACY_CONTENT_READ));
+                    }
+                    for (prefix, legacy) in [
+                        ("documents.", "documents.user"),
+                        ("clipboard.", "clipboard.manage"),
+                    ] {
+                        let count = capabilities.len();
+                        capabilities.retain(|value| {
+                            let value = value.as_str().unwrap();
+                            !value.starts_with(prefix)
+                                || matches!(value, "clipboard.read" | "clipboard.write")
+                        });
+                        if capabilities.len() != count {
+                            capabilities.push(json!(legacy));
+                        }
+                    }
+                    if manifest["capabilities"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|v| v == crate::asset_permissions::SCOPED)
+                    {
+                        let mut capabilities = manifest["capabilities"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter(|v| {
+                                ![
+                                    crate::asset_permissions::SCOPED,
+                                    crate::asset_permissions::STYLES,
+                                    crate::asset_permissions::IMAGES,
+                                    crate::asset_permissions::FETCH,
+                                    crate::asset_permissions::WASM,
+                                    crate::asset_permissions::EVAL,
+                                    crate::asset_permissions::WORKER,
+                                    crate::asset_permissions::BLOB_WORKER,
+                                ]
+                                .iter()
+                                .any(|name| *v == *name)
+                            })
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        capabilities.push(json!("assets.local"));
+                        manifest["capabilities"] = json!(capabilities);
+                    }
                     body = serde_json::to_vec(&manifest).unwrap();
                 } else if path == preset.metadata().unwrap()["entry"].as_str().unwrap() {
                     body.extend_from_slice(b"\n<!-- legacy-upgrade-fixture -->\n");

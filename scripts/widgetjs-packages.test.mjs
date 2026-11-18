@@ -3,8 +3,47 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
+import ts from 'typescript';
 import { widgetFiles, portedWidgets } from './build-widgetjs.mjs';
 import { coins, fallbacks } from '../components/widgetjs/coin-medium-source/coin-model.js';
+
+function imports(path, bytes) {
+  const source = ts.createSourceFile(path, new TextDecoder().decode(bytes), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS), references = [];
+  function visit(node) {
+    const specifier = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
+      : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined;
+    if (specifier && ts.isStringLiteralLike(specifier)) references.push({ path: specifier.text, dynamic: ts.isCallExpression(node) });
+    ts.forEachChild(node, visit);
+  }
+  visit(source); return references;
+}
+
+test('六款角色包的静态/动态模块全部自含，普通入口不加载图形引擎', () => {
+  for (const name of ['ai-assistant', 'ai-mindmap', 'ai-mermaid', 'ai-translate', 'clipboard', 'clipboard-search']) {
+    const files = widgetFiles(name), graph = new Map();
+    for (const [path, bytes] of Object.entries(files).filter(([path]) => path.endsWith('.js'))) {
+      const references = imports(path, bytes);
+      for (const ref of references) {
+        assert.ok(ref.path.startsWith('.'), `${name}/${path}存在包外模块：${ref.path}`);
+        ref.target = posix.normalize(posix.join(posix.dirname(path), ref.path));
+        assert.ok(files[ref.target], `${name}/${path}缺少模块：${ref.target}`);
+      }
+      graph.set(path, references);
+    }
+    const initial = new Set();
+    function visit(path) { if (initial.has(path)) return; initial.add(path); for (const ref of graph.get(path) ?? []) if (!ref.dynamic) visit(ref.target); }
+    visit('dist/app.js');
+    assert.ok([...initial].reduce((n, path) => n + files[path].length, 0) < 1300000, `${name}入口重新带入了重型依赖`);
+    const licenses = new TextDecoder().decode(files['dist/THIRD_PARTY_LICENSES.txt']);
+    assert.equal(/^mermaid@/m.test(licenses), name === 'ai-mermaid', `${name}图表引擎归属错误`);
+    assert.equal(/^markmap-lib@/m.test(licenses), ['ai-mindmap', 'clipboard-search'].includes(name), `${name}导图引擎归属错误`);
+    for (const [path, bytes] of Object.entries(files).filter(([path]) => path.endsWith('.css'))) {
+      for (const match of new TextDecoder().decode(bytes).matchAll(/url\(\s*["']?(\.[^\s"')]+)["']?\s*\)/g)) {
+        assert.ok(files[posix.normalize(posix.join(posix.dirname(path), match[1]))], `${name}缺少样式资源：${match[1]}`);
+      }
+    }
+  }
+});
 test('AI直聘标准包使用固定能力并保留部署来源、原版权声明和全部UI资源',()=>{const files=widgetFiles('ai-job'),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));assert.deepEqual(manifest.capabilities,['jobs.manage','clipboard.write']);assert.equal(manifest.id,'local.souldesk.widgetjs.ai-job');assert.ok(files[manifest.entry]);assert.match(new TextDecoder().decode(files['dist/SOURCE.txt']),/58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f/);assert.match(new TextDecoder().decode(files['dist/UPSTREAM_NOTICES.txt']),/@license MIT/);assert.ok(files['dist/THIRD_PARTY_LICENSES.txt']);assert.ok(files['dist/app.js'].length>1000000);assert.ok(Object.keys(files).filter(path=>path.endsWith('.png')).length>=10);});
 
 test('网页助手包只声明固定能力，保留八站图标与原来源，预览不使用远程iframe',()=>{
@@ -21,16 +60,16 @@ test('网页助手包只声明固定能力，保留八站图标与原来源，�
 test('两款剪切板包按类型声明固定能力，保留51份来源且入口无密钥或远程AI页',()=>{
   const source=JSON.parse(readFileSync('components/widgetjs/clipboard-source/SOURCE_FILES.json','utf8'));assert.equal(source.revision,'2482fc6b238983f3fe8f2aecf042d92a9b29c9e2');assert.equal(source.files.length,51);
   for(const file of source.files)assert.equal(createHash('sha256').update(readFileSync('components/widgetjs/clipboard-source/'+file.path)).digest('hex'),file.sha256,file.path);
-  for(const[name,kind,caps]of[['clipboard','history',['clipboard.manage']],['clipboard-search','search',['clipboard.manage','ai.generate','documents.user','clipboard.write']]]){
+  for(const[name,kind,caps]of[['clipboard','history',['clipboard.control','clipboard.history','clipboard.copy','clipboard.paste']],['clipboard-search','search',['clipboard.control','clipboard.search','clipboard.tools','ai.generate','documents.save','documents.drop','clipboard.write']]]){
     const files=widgetFiles(name),m=JSON.parse(new TextDecoder().decode(files['manifest.json']));assert.deepEqual(m.capabilities,caps);const html=new TextDecoder().decode(files[m.entry]);assert.match(html,new RegExp('data-clipboard-kind="'+kind+'"'));assert.doesNotMatch(html,/apiKey|widgetjs.cn\/ai\/page/);assert.match(new TextDecoder().decode(files['dist/SOURCE.txt']),/2482fc6b/);assert.match(new TextDecoder().decode(files['dist/LICENSE-AI.txt']),/GNU GENERAL PUBLIC LICENSE/);assert.ok(files['dist/THIRD_PARTY_LICENSES.txt']);
   }
 });
 
-test('三款AI生成包保留原三张图标、真实图形和固定能力，入口按类型隔离且不携带密钥',()=>{
+test('三款AI生成包各带所用原图标与固定能力，入口按类型隔离且不携带密钥',()=>{
   const source=JSON.parse(readFileSync('components/widgetjs/ai-source/SOURCE_FILES.json','utf8'));assert.equal(source.revision,'0160f55feabd19421953c687eba033a707a8c3c2');
-  for(const name of ['ai-mindmap','ai-mermaid','ai-translate']){const files=widgetFiles(name),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));assert.ok(manifest.capabilities.includes('ai.generate'));assert.ok(manifest.capabilities.includes('storage.instance'));assert.ok(manifest.capabilities.includes('clipboard.write'));assert.equal(manifest.capabilities.includes('documents.user'),name!=='ai-translate');for(const cap of ['web.embed','assets.local','content.read','clipboard.read'])assert.ok(!manifest.capabilities.includes(cap));
-    for(const file of source.files.filter(item=>['exploding_head_3d.png','globe_showing_asia-australia_3d.png','bar_chart.png'].includes(posix.basename(item.path))))assert.equal(createHash('sha256').update(files['dist/'+posix.basename(file.path)]).digest('hex'),file.sha256);
-    assert.match(new TextDecoder().decode(files[manifest.entry]),new RegExp('data-ai-variant="'+name.slice(3)+'"'));assert.match(new TextDecoder().decode(files['dist/LICENSE.txt']),/GNU GENERAL PUBLIC LICENSE/);assert.ok(files['dist/app.js'].length>1000000,'图形引擎不能被简化为占位文本');
+  for(const name of ['ai-mindmap','ai-mermaid','ai-translate']){const files=widgetFiles(name),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));assert.ok(manifest.capabilities.includes('ai.generate'));assert.ok(manifest.capabilities.includes('storage.instance'));assert.ok(manifest.capabilities.includes('clipboard.write'));assert.equal(manifest.capabilities.includes('documents.save'),name!=='ai-translate');for(const cap of ['web.embed','assets.local','content.read','clipboard.read'])assert.ok(!manifest.capabilities.includes(cap));
+    for(const file of source.files.filter(item=>posix.basename(item.path)===({'ai-mindmap':'exploding_head_3d.png','ai-mermaid':'bar_chart.png','ai-translate':'globe_showing_asia-australia_3d.png'}[name])))assert.equal(createHash('sha256').update(files['dist/'+posix.basename(file.path)]).digest('hex'),file.sha256);
+    assert.match(new TextDecoder().decode(files[manifest.entry]),new RegExp('data-ai-variant="'+name.slice(3)+'"'));assert.match(new TextDecoder().decode(files['dist/LICENSE.txt']),/GNU GENERAL PUBLIC LICENSE/);assert.ok(files['dist/app.js'].length>100000,'组件仍携带真实Vue界面');
   }
 });
 
@@ -81,7 +120,7 @@ test('待办本地包保留原完成音效，声明核心待办能力并保留�
   const audio=provenance.files.find(item=>item.path==='original/ding-B9BOXEwg.mp3');assert.ok(audio);assert.equal(createHash('sha256').update(files['dist/ding-B9BOXEwg.mp3']).digest('hex'),audio.sha256);
   for(const item of provenance.files)assert.equal(createHash('sha256').update(readFileSync('components/widgetjs/todo-source/'+item.path)).digest('hex'),item.sha256,item.path);
 });
-test('大号日历标准包携带原引擎样式，声明固定公开源与待办能力，设置仅含原四项',()=>{const files=widgetFiles('calendar-large'),m=JSON.parse(new TextDecoder().decode(files['manifest.json'])),css=new TextDecoder().decode(files['dist/style.css']);for(const cap of ['storage.instance','todos.manage','content.read'])assert.ok(m.capabilities.includes(cap));assert.deepEqual(Object.keys(m.settingsSchema.properties).sort(),['background','firstDayOfWeek','foreground','radius']);assert.match(css,/\.fc-daygrid-day/);assert.match(css,/\.fc-toolbar/);assert.ok(files['dist/app.js'].length>100000);});
+test('大号日历标准包携带原引擎样式，声明固定公开源与待办能力，设置仅含原四项',()=>{const files=widgetFiles('calendar-large'),m=JSON.parse(new TextDecoder().decode(files['manifest.json'])),css=new TextDecoder().decode(files['dist/style.css']);for(const cap of ['storage.instance','todos.manage','content.source.itime-calendar'])assert.ok(m.capabilities.includes(cap));assert.ok(!m.capabilities.includes('content.read'));assert.deepEqual(Object.keys(m.settingsSchema.properties).sort(),['background','firstDayOfWeek','foreground','radius']);assert.match(css,/\.fc-daygrid-day/);assert.match(css,/\.fc-toolbar/);assert.ok(files['dist/app.js'].length>100000);});
 
 test('番茄钟标准包离线携带原字体和声音，声明固定计时能力并保留来源',()=>{const files=widgetFiles('pomodoro'),m=JSON.parse(new TextDecoder().decode(files['manifest.json'])),source=JSON.parse(readFileSync('components/widgetjs/pomodoro-source/SOURCE_FILES.json','utf8'));assert.deepEqual(m.capabilities,['storage.instance','focus.pomodoro','storage.shared','focus.pomodoro.window']);assert.equal(m.version,'0.3.0');assert.equal(source.upstreamId,'itime.fun.pomodoro');for(const item of source.files){const bytes=readFileSync('components/widgetjs/pomodoro-source/'+item.path);assert.equal(createHash('sha256').update(bytes).digest('hex'),item.sha256,item.path);if(/\.(ttf|wav)$/.test(item.path))assert.deepEqual(files['dist/'+item.path.split('/').at(-1)],new Uint8Array(bytes));}assert.match(new TextDecoder().decode(files['dist/style.css']),/@font-face/);});
 
@@ -132,7 +171,7 @@ test('思维导图保留固定提交的完整本地编辑源码，其余适配�
   for(const item of provenance.files){const path=item.target.replaceAll('\\','/');if(!path.startsWith('editor/')||adapted.has(path))continue;assert.equal(createHash('sha256').update(readFileSync('components/widgetjs/mindmap-source/'+path)).digest('hex'),item.sha256,path);checked++;}
   assert.ok(checked>=20);
   const files=widgetFiles('mindmap'),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));
-  for(const capability of ['storage.instance','storage.document','documents.user'])assert.ok(manifest.capabilities.includes(capability));
+  for(const capability of ['storage.instance','storage.document','documents.open','documents.save','documents.drop'])assert.ok(manifest.capabilities.includes(capability));
 });
 test('服务器监控随包交付原平台与系统图标，并声明固定监控及复制能力',()=>{
   const provenance=JSON.parse(readFileSync('components/widgetjs/server-source/SOURCE_FILES.json','utf8')),files=widgetFiles('server'),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));

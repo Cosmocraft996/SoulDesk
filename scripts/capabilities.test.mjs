@@ -31,6 +31,22 @@ test('面板分组管理仅授予管理窗口与面板，不授予组件展示�
     assert.ok(!cap.permissions.includes('allow-manage-panel-group'));
   }
 });
+test('面板就绪和滚动更新仅授予面板壳', () => {
+  const build = readFileSync(new URL('build.rs', root), 'utf8');
+  assert.ok(build.includes('"panel_view"'));
+  for (const name of ['panel', 'host', 'edge', 'surface', 'detail', 'trial']) {
+    const capability = JSON.parse(readFileSync(new URL(`capabilities/${name}.json`, root), 'utf8'));
+    assert.equal(capability.permissions.includes('allow-panel-view'), name === 'panel');
+  }
+});
+test('挂件原生拖动仅授予展开和收起的面板窗口', () => {
+  const build = readFileSync(new URL('build.rs', root), 'utf8');
+  assert.ok(build.includes('"drag_panel_edge"'));
+  for (const name of ['panel', 'host', 'edge', 'surface', 'detail', 'trial']) {
+    const capability = JSON.parse(readFileSync(new URL(`capabilities/${name}.json`, root), 'utf8'));
+    assert.equal(capability.permissions.includes('allow-drag-panel-edge'), ['panel', 'edge'].includes(name));
+  }
+});
 test('组件本地表单可触发提交事件，同时保持CSP禁止表单导航', () => {
   const frame = readFileSync(new URL('../src/WidgetFrame.tsx', import.meta.url), 'utf8');
   assert.ok(framePermissions().sandbox.split(' ').includes('allow-forms'));

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
   "name": "B站推荐",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",
@@ -16,7 +16,8 @@
   },
   "capabilities": [
     "storage.instance",
-    "content.read",
+    "content.source.bilibili-rcmd",
+    "images.https",
     "links.open"
   ],
   "settingsSchema": {

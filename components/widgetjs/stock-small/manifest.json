@@ -1,7 +1,7 @@
 {
-  "schemaVersion":1,"id":"local.souldesk.widgetjs.stock-small","name":"股票 · 分时","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
+  "schemaVersion":1,"id":"local.souldesk.widgetjs.stock-small","name":"股票 · 分时","version":"0.1.1","hostApiMajor":1,"loadCheck":1,
   "entry":"dist/index.html","defaultSize":{"width":320,"height":300},"minSize":{"width":240,"height":220},
-  "capabilities":["storage.instance","content.read"],
+  "capabilities":["storage.instance","content.source.stock-search", "content.source.stock-minute"],
   "settingsSchema":{"type":"object","additionalProperties":false,"required":["code","marketId","name","upColorRed","background","foreground","primary","border","radius"],"properties":{
     "code":{"type":"string","title":"证券代码","maxLength":32,"default":"01810"},
     "marketId":{"type":"integer","title":"东方财富市场标识","minimum":0,"maximum":157,"default":116},

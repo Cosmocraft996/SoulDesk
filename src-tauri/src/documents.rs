@@ -145,10 +145,21 @@ pub async fn gateway(
     if !["documents.open", "documents.save"].contains(&method) {
         return Err("CAPABILITY_DENIED: 未开放的文档操作".into());
     }
+    let save = method == "documents.save";
+    let grants = [
+        "documents.user",
+        if save {
+            "documents.save"
+        } else {
+            "documents.open"
+        },
+    ];
     let core = app.state::<Core>();
-    widgets::require_capability(&core.store, &core.sessions, window, token, "documents.user")?;
+    widgets::with_any_capability(&core.store, &core.sessions, window, token, &grants, |_| {
+        Ok(())
+    })?;
     let (name, extensions) = validate_options(&args)?;
-    let bytes = if method == "documents.save" {
+    let bytes = if save {
         let data = args["data"]
             .as_str()
             .ok_or("INVALID_ARGUMENT: 缺少文件内容")?;
@@ -169,7 +180,6 @@ pub async fn gateway(
     let handle = app.clone();
     let label = window.to_owned();
     let session = token.to_owned();
-    let save = method == "documents.save";
     let multiple = args["multiple"].as_bool().unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
         let mut picker = handle.dialog().file().set_title(if save { "保存组件文档" } else { "打开组件文档" }).add_filter("组件文档", &extensions.iter().map(String::as_str).collect::<Vec<_>>());
@@ -181,7 +191,7 @@ pub async fn gateway(
             let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
             if !extensions.iter().any(|value| value == &ext) { return Err("INVALID_ARGUMENT: 保存扩展名与选定格式不符".into()); }
             let core = handle.state::<Core>();
-            widgets::require_capability(&core.store, &core.sessions, &label, &session, "documents.user")?;
+            widgets::with_any_capability(&core.store, &core.sessions, &label, &session, &grants, |_| Ok(()))?;
             atomic_write(&path, &bytes)?;
             return Ok(json!({"name":path.file_name().map(|s|s.to_string_lossy()),"size":bytes.len()}));
         }
@@ -189,7 +199,7 @@ pub async fn gateway(
         let Some(selected) = selected else { return Ok(Value::Null); };
         if selected.len() > 32 { return Err("LIMIT: 一次最多打开32个文件".into()); }
         let core = handle.state::<Core>();
-        widgets::require_capability(&core.store, &core.sessions, &label, &session, "documents.user")?;
+        widgets::with_any_capability(&core.store, &core.sessions, &label, &session, &grants, |_| Ok(()))?;
         let mut result = Vec::new(); let mut remaining = OPEN_LIMIT;
         for selected in selected {
             let path = selected.into_path().map_err(err)?;
@@ -198,7 +208,7 @@ pub async fn gateway(
             let bytes = read_selected(&path, remaining)?; remaining -= bytes.len();
             result.push(json!({"name":path.file_name().map(|s|s.to_string_lossy()),"mime":mime_guess::from_path(&path).first_or_octet_stream().to_string(),"data":STANDARD.encode(&bytes)}));
         }
-        widgets::require_capability(&core.store, &core.sessions, &label, &session, "documents.user")?;
+        widgets::with_any_capability(&core.store, &core.sessions, &label, &session, &grants, |_| Ok(()))?;
         Ok(json!(result))
     }).await.map_err(err)?
 }
