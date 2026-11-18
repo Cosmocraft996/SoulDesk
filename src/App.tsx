@@ -14,8 +14,10 @@ import type { PanelLayout } from './panel-layout';
 
 interface Package { id: string; name: string; version: string; preset: boolean; installed: boolean; availableVersion?: string; description?: string; symbol?: string; defaultSize: { width: number; height: number }; minSize: { width: number; height: number } }
 interface Instance { id: string; packageId: string; location: 'desktop' | 'panel'; visible: boolean; pinned: boolean; width: number | null; height: number | null }
+type PanelChanges = Partial<Pick<Snapshot['panel'], 'tint' | 'slideInMs' | 'slideOutMs' | 'desktopDoubleClick' | 'edgeStyle'>>;
 interface Snapshot {
   panelGroups: PanelGroupsState;
+  widgetBackdrop: boolean;
   panelScroll?: PanelScroll; panelTarget?: string | null;
   packages: Package[]; instances: Instance[]; autostart: boolean | null; hiddenAll: boolean; panelOpen: boolean; panelLocked: boolean; panelGeometry?: { effective_ratio: number }; panel: { ratio: number; tint: number; slideInMs: number; slideOutMs: number; desktopDoubleClick: boolean; edge: EdgeVisual['position']; edgeStyle: EdgeStyle }; panelLayouts: Record<string, PanelLayout>; updates: UpdateState;
   diagnostics: { ticks: number; tasks: number; sessions: number; views: number; error: string | null; dataRoot: string; shortcut: string };
@@ -45,16 +47,22 @@ export function App() {
   const [movingGroup, setMovingGroup] = useState<string>();
   const [tab, setTab] = useState<'library' | 'instances' | 'checks'>(query.get('tab') === 'checks' ? 'checks' : 'library');
   const [shortcut, setShortcut] = useState('');
-  const [tint, setTint] = useState(12), [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [resizingPanel, setResizingPanel] = useState(false);
-  const [slideIn, setSlideIn] = useState(250), [slideOut, setSlideOut] = useState(250), [doubleClick, setDoubleClick] = useState(true);
-  const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>('classic');
+  const [panelDraft, setPanelDraft] = useState<PanelChanges>({});
+  const queuedPanelChanges = useRef<PanelChanges | undefined>(undefined);
+  const savingPanel = useRef(false);
+  const snapshotRequest = useRef(0);
   const [edgeVisual, setEdgeVisual] = useState<EdgeVisual>();
   const [effective, setEffective] = useState<number>();
   const [detailPage, setDetailPage] = useState(query.get('page') ?? 'quotes');
   const panelOverlayOpen = menu || !!removing || !!movingGroup;
   const refresh = useCallback(async () => {
-    try { setData(await invoke<Snapshot>('snapshot')); } catch (e) { setMessage(String(e)); }
+    const request = ++snapshotRequest.current;
+    try {
+      const snapshot = await invoke<Snapshot>('snapshot');
+      if (request === snapshotRequest.current) setData(snapshot);
+    } catch (e) { if (request === snapshotRequest.current) setMessage(String(e)); }
   }, []);
   const hasPanelData = panel && !!data;
   useLayoutEffect(() => {
@@ -80,9 +88,6 @@ export function App() {
     const timer = setInterval(refresh, 3000);
     return () => { clearInterval(timer); for (const item of [off, nav, geometry, offPage]) void item.then(fn => fn()); };
   }, [refresh, edge, trial, panel, desktop, detail]);
-  useEffect(() => { if (data?.panel) setTint(data.panel.tint * 100); }, [data?.panel.tint]);
-  useEffect(() => { if (data?.panel) { setSlideIn(data.panel.slideInMs); setSlideOut(data.panel.slideOutMs); setDoubleClick(data.panel.desktopDoubleClick); } }, [data?.panel.slideInMs, data?.panel.slideOutMs, data?.panel.desktopDoubleClick]);
-  useEffect(() => { if (data?.panel.edgeStyle) setEdgeStyle(data.panel.edgeStyle); }, [data?.panel.edgeStyle]);
   useEffect(() => {
     if (!isTauri() || !(panel || edge)) return;
     const off = listen<EdgeVisual>('host:panel-edge', e => setEdgeVisual(e.payload));
@@ -105,6 +110,7 @@ export function App() {
   useEffect(() => { if (data?.panelGeometry) setEffective(data.panelGeometry.effective_ratio); }, [data?.panelGeometry?.effective_ratio]);
   const widthRatio = (data?.panelOpen ? effective : undefined) ?? data?.panel.ratio ?? .4;
   const panelLocked = data?.panelLocked ?? false;
+  const widgetBackdrop = data?.widgetBackdrop === true;
   const resizePanel = async () => {
     if (busy || resizingPanel) return;
     setResizingPanel(true);
@@ -117,18 +123,41 @@ export function App() {
   };
   const edgeOnLeft = activeEdge.position.side === 'left';
   const edgeSize = edgeStyles[activeEdge.style];
-  const savePanel = () => run(() => invoke('set_panel', { tint: tint / 100, slideInMs: slideIn, slideOutMs: slideOut, desktopDoubleClick: doubleClick, edgeStyle }), '面板偏好已保存');
-  const panelControls = <form className="panel-preferences" onSubmit={e => { e.preventDefault(); void savePanel(); }}>
+  const preferences = { ...data?.panel, ...panelDraft };
+  const tint = preferences.tint ?? .12;
+  const { slideInMs: slideIn = 250, slideOutMs: slideOut = 250, desktopDoubleClick: doubleClick = true, edgeStyle = 'classic' } = preferences;
+  const updatePanel = async (change: PanelChanges) => {
+    setPanelDraft(previous => ({ ...previous, ...change }));
+    queuedPanelChanges.current = { ...queuedPanelChanges.current, ...change };
+    if (savingPanel.current) return;
+    savingPanel.current = true;
+    setMessage('');
+    try {
+      do {
+        while (queuedPanelChanges.current) {
+          const next = queuedPanelChanges.current;
+          queuedPanelChanges.current = undefined;
+          try { await invoke('set_panel', next); }
+          catch (error) { setMessage(`保存面板偏好失败：${String(error)}`); }
+        }
+        await refresh();
+      } while (queuedPanelChanges.current);
+    } finally {
+      setPanelDraft({});
+      savingPanel.current = false;
+    }
+  };
+  const panelControls = <fieldset className="panel-preferences" disabled={!data} aria-label="面板偏好">
     <p className="panel-width-hint">面板宽度 <output>{(widthRatio * 100).toFixed(0)}%</output> · 拖动朝屏幕内的边沿调整，松开自动保存。</p>
-    <label className="panel-tint">背景遮罩 <output>{tint.toFixed(0)}%</output><input aria-label="面板背景遮罩" type="range" min="0" max="100" value={tint} onChange={e => setTint(Number(e.target.value))} /></label>
+    <label className="panel-tint">背景遮罩 <output>{Math.round(tint * 100)}%</output><input aria-label="面板背景遮罩" type="range" min="0" max="100" value={Math.round(tint * 100)} onChange={e => void updatePanel({ tint: e.target.valueAsNumber / 100 })} /></label>
     <div className="panel-animation-row">
-      <label>滑入 <output>{slideIn ? `${slideIn}毫秒` : '无动效'}</output><input aria-label="滑入时长" type="range" min="0" max="1000" step="10" value={slideIn} onChange={e => setSlideIn(Number(e.target.value))} /></label>
-      <label>滑出 <output>{slideOut ? `${slideOut}毫秒` : '无动效'}</output><input aria-label="滑出时长" type="range" min="0" max="1000" step="10" value={slideOut} onChange={e => setSlideOut(Number(e.target.value))} /></label>
+      <label>滑入 <output>{slideIn ? `${slideIn}毫秒` : '无动效'}</output><input aria-label="滑入时长" type="range" min="0" max="1000" step="10" value={slideIn} onChange={e => void updatePanel({ slideInMs: e.target.valueAsNumber })} /></label>
+      <label>滑出 <output>{slideOut ? `${slideOut}毫秒` : '无动效'}</output><input aria-label="滑出时长" type="range" min="0" max="1000" step="10" value={slideOut} onChange={e => void updatePanel({ slideOutMs: e.target.valueAsNumber })} /></label>
     </div>
-    <label className="panel-double-click"><input type="checkbox" checked={doubleClick} onChange={e => setDoubleClick(e.target.checked)} />双击桌面空白处开关面板</label>
-    <EdgeStylePicker value={edgeStyle} onChange={setEdgeStyle} />
-    <button disabled={busy}>保存</button><small>面板宽度遵守组件最小尺寸，拖动时按 Esc 可取消。</small>
-  </form>;
+    <label className="panel-double-click"><input type="checkbox" checked={doubleClick} onChange={e => void updatePanel({ desktopDoubleClick: e.target.checked })} />双击桌面空白处开关面板</label>
+    <EdgeStylePicker value={edgeStyle} onChange={style => void updatePanel({ edgeStyle: style })} />
+    <small>面板宽度遵守组件最小尺寸，拖动时按 Esc 可取消。</small>
+  </fieldset>;
   const notice = message && <p className="notice" role="status">{message}</p>;
   const requestRemove = (id: string) => { setMessage(''); setRemoving(id); };
   const removeDialog = removing && <RemoveInstanceDialog name={data?.packages.find(p => p.id === data.instances.find(i => i.id === removing)?.packageId)?.name ?? '组件'} busy={busy} message={message} onCancel={() => setRemoving(undefined)} onConfirm={() => void run(() => action('remove', removing), '实例已删除').then(removed => { if (removed) setRemoving(undefined); })} />;
@@ -141,17 +170,17 @@ export function App() {
     ...(data?.instances.find(i => i.id === id)?.packageId === 'local.souldesk.market' ? [{ label: '自选与警报', icon: 'detail' as const, more: true, disabled: busy, action: () => void run(() => action('detail', id)) }] : []),
     { label: '管理组件', icon: 'settings', more: true, disabled: busy, action: () => void run(() => action('show')) },
   ];
-  const panelToggle = (expanded: boolean) => <PanelEdge visual={activeEdge} expanded={expanded} onError={setMessage} onToggle={() => void (expanded ? run(() => action('collapse')) : action('edge-click').catch(e => setMessage(String(e))))} />;
+  const panelToggle = (expanded: boolean) => <PanelEdge visual={activeEdge} expanded={expanded} onError={setMessage} onHover={() => void action('edge-hover').catch(e => setMessage(String(e)))} onActivate={() => void (expanded ? run(() => action('collapse')) : action('edge-keyboard').catch(e => setMessage(String(e))))} />;
   if (edge) return <>{panelToggle(false)}{message && <span className="edge-error" role="alert" title={message}>!</span>}</>;
   if (trial) return <WidgetFrame instance={trial} />;
   if (detail) return <main className="detail-shell"><WidgetFrame key={version(detail)} instance={detail} page={detailPage} /></main>;
-  if (desktop) return <main className="desktop-shell">
+  if (desktop) return <main className="desktop-shell" data-widget-backdrop={widgetBackdrop || undefined}>
     <WidgetSurface instance={desktop} items={controls(desktop, false)} notice={notice} onError={setMessage} onDrag={e => { if (e.button === 0) void invoke('surface_pointer', { resize: false }).catch(e => setMessage(String(e))); }} onResize={e => { if (e.button === 0) void invoke('surface_pointer', { resize: true }).catch(e => setMessage(String(e))); }}>
     <WidgetFrame key={version(desktop)} instance={desktop} />
     </WidgetSurface>
     {removeDialog}
   </main>;
-  if (panel) return <main data-edge-side={activeEdge.position.side} className={`panel-shell${resizingPanel ? ' resizing-width' : ''}`} style={{ '--panel-tint': data?.panel.tint ?? .12, '--edge-width': `${edgeSize.width}px`, '--edge-height': `${edgeSize.height}px`, '--edge-offset': activeEdge.position.offset } as React.CSSProperties} onFocusCapture={e => void action(e.target instanceof HTMLElement && e.target.matches('input,textarea,select,[contenteditable=true]') ? 'editing' : 'idle')} onBlurCapture={() => void action('idle')} onMouseEnter={() => void action('enter')} onMouseLeave={() => void action('leave')}>
+  if (panel) return <main data-edge-side={activeEdge.position.side} data-widget-backdrop={widgetBackdrop || undefined} className={`panel-shell${resizingPanel ? ' resizing-width' : ''}`} style={{ '--panel-tint': tint, '--edge-width': `${edgeSize.width}px`, '--edge-height': `${edgeSize.height}px`, '--edge-offset': activeEdge.position.offset } as React.CSSProperties} onFocusCapture={e => void action(e.target instanceof HTMLElement && e.target.matches('input,textarea,select,[contenteditable=true]') ? 'editing' : 'idle')} onBlurCapture={() => void action('idle')} onMouseEnter={() => void action('enter')} onMouseLeave={() => void action('leave')}>
     <button className="panel-width-handle" role="separator" aria-orientation="vertical" aria-label="调整面板宽度" aria-valuemin={1} aria-valuemax={100} aria-valuenow={Math.round(widthRatio * 100)} title="拖动调整面板宽度；左右方向键微调" disabled={busy || !data} onPointerDown={e => { if (e.button === 0) { e.preventDefault(); void resizePanel(); } }} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); if (!busy) void run(() => invoke('set_panel', { ratio: Math.max(.01, Math.min(1, widthRatio + ((e.key === 'ArrowLeft') !== edgeOnLeft ? .02 : -.02))) })); } }} />
     {resizingPanel && <output className="panel-width-output">{(widthRatio * 100).toFixed(0)}%</output>}
     <header className="panel-topbar">
@@ -183,6 +212,7 @@ export function App() {
       {data?.instances.map(i => { const p = data.packages.find(p => p.id === i.packageId); return <article className="instance-row" key={i.id}><div className="instance-title"><h2>{p?.name ?? i.packageId}</h2><span className="badge">{i.location === 'desktop' ? '桌面' : '面板'} · {i.visible ? '已显示' : '已隐藏'}{i.pinned ? ' · 置顶' : ''}</span><small>实例 {i.id.slice(0, 8)} · v{p?.version}</small></div><div className="actions"><button disabled={busy || data.hiddenAll} onClick={() => void run(() => action(i.visible ? 'hide' : 'restore', i.id))}>{i.visible ? '隐藏' : '显示'}</button><button disabled={busy || data.hiddenAll} onClick={() => void run(() => action(i.location === 'desktop' ? 'embed' : 'float', i.id))}>{i.location === 'desktop' ? '移入面板' : '放回桌面'}</button>{i.visible && i.location === 'desktop' && <button disabled={busy || data.hiddenAll} onClick={() => void run(() => action('pin', i.id))}>{i.pinned ? '取消置顶' : '置顶'}</button>}{p?.id === 'local.souldesk.market' && <button disabled={busy || data.hiddenAll || !i.visible} onClick={() => void run(() => action('detail', i.id))}>自选与警报</button>}</div>
       <details><summary>尺寸、排序与删除</summary><form className="size-form" key={`${i.id}-${i.location}-${data.panelLayouts[i.id]?.width}-${data.panelLayouts[i.id]?.height}-${i.width}-${i.height}`} onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => invoke('manage_instance', { instance: i.id, action: 'resize', width: Number(f.get('width')), height: Number(f.get('height')) }), '尺寸已保存'); }}><label>宽度<input name="width" type="number" min={p?.minSize.width} max={i.location === "panel" ? 16384 : 1600} defaultValue={(i.location === "panel" ? data.panelLayouts[i.id]?.width : undefined) ?? i.width ?? p?.defaultSize.width} required /></label><label>高度<input name="height" type="number" min={p?.minSize.height} max={i.location === "panel" ? 16384 : 1200} defaultValue={(i.location === "panel" ? data.panelLayouts[i.id]?.height : undefined) ?? i.height ?? p?.defaultSize.height} required /></label><button disabled={busy}>保存尺寸</button><button type="button" disabled={busy || data.instances[0]?.id === i.id} onClick={() => { const ids = data.instances.map(i => i.id), at = ids.indexOf(i.id); [ids[at - 1], ids[at]] = [ids[at], ids[at - 1]]; void run(() => invoke('reorder_instances', { ids })); }}>列表前移</button><button className="danger" type="button" disabled={busy} onClick={() => { if (window.confirm('删除此实例及其配置和自选？已有价格警报与历史会保留，请在警报管理中另行暂停或删除。')) void run(() => invoke('manage_instance', { instance: i.id, action: 'remove' })); }}>删除实例</button></form></details></article>; })}</> : <>
       <div className="heading"><div><small>按你的习惯运行</small><h1>应用设置</h1><p>组件启动时恢复上次的桌面位置，面板与管理窗口保持关闭。</p></div></div>
+      <section className="settings-panel"><h2>组件外观</h2><label className="check"><input type="checkbox" checked={widgetBackdrop} disabled={busy || !data} onChange={e => { void run(() => action(e.target.checked ? 'enable-widget-backdrop' : 'disable-widget-backdrop')); }} />显示宿主衬底</label><p className="muted">为普通组件的透明区域铺上半透明灰底。</p></section>
       <section className="settings-panel"><h2>组件面板</h2><p>点击面板右上角的锁图标可切换锁定，锁定状态会保存。解锁时，鼠标移出或面板失焦后自动收起，编辑、拖动、菜单和对话框操作期间暂缓。可随时使用收起按钮、已启用的桌面空白双击或快捷键收起。时长为0表示无动效。</p>{panelControls}</section>
       <section className="settings-panel"><h2>快捷键与启动</h2><div className="setting-row"><label htmlFor="shortcut">开关辅助面板<small>当前：{data?.diagnostics.shortcut ?? '—'}，冲突时保留原键</small></label><input id="shortcut" placeholder="Ctrl+Alt+Space" value={shortcut} onChange={e => setShortcut(e.target.value)} /><button disabled={busy || !shortcut} onClick={() => void run(() => invoke('set_shortcut', { value: shortcut }), '快捷键已保存')}>保存</button></div><label className="check"><input type="checkbox" disabled={busy || data?.autostart == null} checked={data?.autostart === true} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_autostart', { enabled }), '登录启动设置已保存'); }} />登录后后台启动</label><button onClick={() => void run(() => action('repair'), '已校正可达位置')}>找回屏幕外组件</button></section>
       <UpdateSettings state={data?.updates} refresh={refresh} /><NetworkSettings /><section className="settings-panel"><h2>本地数据与诊断</h2><p>数据目录：{data?.diagnostics.dataRoot ?? '未连接'}</p><p className="muted">{data?.diagnostics.views ?? 0} 个宿主窗口 · {data?.diagnostics.sessions ?? 0} 个组件会话。隐藏组件释放展示，自选与有效规则继续运行。</p><div className="actions"><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: true, sound: false, delay: 3 }), '已安排通知测试')}>测试通知</button><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: false, sound: true, delay: 3 }), '已安排声音测试')}>测试声音</button></div></section>

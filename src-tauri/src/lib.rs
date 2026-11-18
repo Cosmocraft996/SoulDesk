@@ -191,6 +191,8 @@ async fn snapshot(
     value["panel"] = windows::panel_preferences(&app)?;
     value["panelGeometry"] = windows::panel_metrics(&app)?;
     value["panelLayouts"] = core.store.panel_layouts()?;
+    value["widgetBackdrop"] =
+        json!(core.store.preference("widget_backdrop").as_deref() == Some("true"));
     value["updates"] = updates::snapshot(&app)?;
     value["autostart"] = json!(windows::autostart_enabled().ok());
     value["windowTasks"] = json!(core.window_tasks.load(Ordering::Relaxed));
@@ -890,10 +892,15 @@ async fn window_action(
     let label = window.label();
     let allowed = if matches!(action.as_str(), "lock-panel" | "unlock-panel") {
         label == "panel" && instance.is_none()
+    } else if matches!(
+        action.as_str(),
+        "enable-widget-backdrop" | "disable-widget-backdrop"
+    ) {
+        label == "main" && instance.is_none()
     } else if label == "main" {
         action != "resize-panel"
     } else if label == "edge" {
-        action == "edge-click"
+        ["edge-hover", "edge-keyboard"].contains(&action.as_str())
     } else if label.starts_with("detail-") {
         action == "close-detail"
     } else if label == "panel" {
@@ -951,6 +958,17 @@ async fn window_action(
                 "lock-panel" | "unlock-panel" => {
                     windows::set_panel_locked(app, action == "lock-panel")
                 }
+                "enable-widget-backdrop" | "disable-widget-backdrop" => {
+                    app.state::<Core>().store.save_preference(
+                        "widget_backdrop",
+                        if action == "enable-widget-backdrop" {
+                            "true"
+                        } else {
+                            "false"
+                        },
+                    )?;
+                    windows::changed(app)
+                }
                 "resize-panel" => windows::resize_panel_width(app),
                 "pin" => windows::pin(app, id()?),
                 "hide" => windows::hide_instance(app, id()?),
@@ -960,9 +978,8 @@ async fn window_action(
                 "embed" => windows::move_to(app, id()?, "panel"),
                 "detail" => windows::detail(app, id()?),
                 "close-detail" => windows::destroy_window(app, window.label()),
-                "edge-click" => {
-                    if !app.state::<Core>().visibility.lock().map_err(err)?.hidden {
-                        windows::show_panel_from_edge(app)?;
+                "edge-hover" | "edge-keyboard" => {
+                    if windows::show_panel_from_edge(app, action == "edge-hover")? {
                         app.state::<Core>()
                             .edge_hits
                             .fetch_add(1, Ordering::Relaxed);
@@ -1816,7 +1833,7 @@ pub fn run() {
                     });
                 }
                 tauri::WindowEvent::Focused(false) if window.label() == "panel" => {
-                    windows::auto_collapse(app)
+                    windows::panel_focus_lost(app)
                 }
                 tauri::WindowEvent::Focused(focused)
                     if window.label().starts_with("clipboard-") =>

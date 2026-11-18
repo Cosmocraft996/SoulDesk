@@ -13,6 +13,8 @@ use tauri::{
 pub struct Visibility {
     pub hidden: bool,
     pub panel_locked: bool,
+    pub(crate) panel_passive: bool,
+    pub(crate) edge_hover_block: Option<std::time::Instant>,
     pub docked: bool,
     pub epoch: u64,
     pub dialog: bool,
@@ -852,14 +854,35 @@ fn monitor_area(app: &AppHandle, monitor: Option<tauri::Monitor>) -> AppResult<W
     let m = monitor
         .or(app.primary_monitor().map_err(err)?)
         .ok_or("未找到可用显示器")?;
+    Ok(work_area(&m))
+}
+fn work_area(m: &tauri::Monitor) -> WorkArea {
     let a = m.work_area();
-    Ok(crate::desktop_geometry::WorkArea {
+    WorkArea {
         left: a.position.x,
         top: a.position.y,
         width: a.size.width,
         height: a.size.height,
         scale_factor: m.scale_factor(),
-    })
+    }
+}
+fn dock_monitor(app: &AppHandle, settings: &Preferences) -> AppResult<tauri::Monitor> {
+    if let Some(name) = &settings.edge_monitor {
+        if let Some(monitor) = app
+            .available_monitors()
+            .map_err(err)?
+            .into_iter()
+            .find(|m| m.name() == Some(name))
+        {
+            return Ok(monitor);
+        }
+    }
+    app.primary_monitor()
+        .map_err(err)?
+        .ok_or_else(|| "未找到可用显示器".into())
+}
+fn panel_area(app: &AppHandle) -> AppResult<WorkArea> {
+    Ok(work_area(&dock_monitor(app, &read_panel_settings(app)?)?))
 }
 fn read_panel_settings(app: &AppHandle) -> AppResult<Preferences> {
     let raw = app.state::<Core>().store.preference("panel");
@@ -875,7 +898,7 @@ pub fn panel_preferences(app: &AppHandle) -> AppResult<serde_json::Value> {
 }
 pub fn panel_metrics(app: &AppHandle) -> AppResult<serde_json::Value> {
     if let Some(w) = app.get_webview_window("panel") {
-        let area = area(app, false)?;
+        let area = panel_area(app)?;
         let r = native::describe(&w);
         return Ok(
             serde_json::json!({"effective_ratio":r["rect"]["width"].as_f64().unwrap_or(0.)/area.width as f64,"rect":r["rect"]}),
@@ -892,9 +915,14 @@ pub fn save_panel(app: &AppHandle, ratio: f64, tint: f64) -> AppResult<()> {
 pub fn save_panel_settings(app: &AppHandle, settings: Preferences) -> AppResult<()> {
     settings.validate()?;
     let previous = read_panel_settings(app)?;
+    let edge_changed = previous.edge != settings.edge
+        || previous.edge_style != settings.edge_style
+        || previous.edge_monitor != settings.edge_monitor;
     let layout = |settings: &Preferences| -> AppResult<()> {
-        layout_panel(app, false)?;
-        if previous.edge != settings.edge || previous.edge_style != settings.edge_style {
+        if edge_changed || previous.ratio != settings.ratio {
+            layout_panel(app)?;
+        }
+        if edge_changed {
             sync_edge(app, settings)?;
         }
         Ok(())
@@ -906,7 +934,7 @@ pub fn save_panel_settings(app: &AppHandle, settings: Preferences) -> AppResult<
         app.state::<Core>()
             .store
             .save_preference("panel", &serde_json::to_string(&previous).map_err(err)?)?;
-        if let Err(restore) = layout_panel(app, false).and_then(|_| sync_edge(app, &previous)) {
+        if let Err(restore) = layout_panel(app).and_then(|_| sync_edge(app, &previous)) {
             return Err(format!("{e}；恢复面板几何失败：{restore}"));
         }
         return Err(e);
@@ -937,7 +965,7 @@ pub fn change_panel_groups(app: &AppHandle, change: crate::panel::GroupChange) -
         }
     }
     changed(app)?;
-    layout_panel(app, false)
+    layout_panel(app)
 }
 
 fn panel_min_width(app: &AppHandle) -> AppResult<f64> {
@@ -957,7 +985,7 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
         return Err("请先恢复组件显示".into());
     }
     let window = app.get_webview_window("panel").ok_or("面板已关闭")?;
-    let area = area(app, false)?;
+    let area = panel_area(app)?;
     let minimum = panel_min_width(app)?;
     {
         let core = app.state::<Core>();
@@ -973,7 +1001,7 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
             settings.ratio = geometry.effective_ratio;
             save_panel_settings(app, settings)
         } else {
-            layout_panel(app, false)
+            layout_panel(app)
         }
     })();
     {
@@ -983,7 +1011,7 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
         state.epoch += 1;
     }
     if let Err(error) = result {
-        if let Err(restore) = layout_panel(app, false) {
+        if let Err(restore) = layout_panel(app) {
             return Err(format!("{error}；恢复原面板宽度失败：{restore}"));
         }
         return Err(error);
@@ -991,9 +1019,9 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-fn layout_panel(app: &AppHandle, at_pointer: bool) -> AppResult<()> {
+fn layout_panel(app: &AppHandle) -> AppResult<()> {
     if let Some(w) = app.get_webview_window("panel") {
-        let a = area(app, at_pointer)?;
+        let a = panel_area(app)?;
         place_panel(app, &w, panel_geometry(app, a)?)?;
     }
     Ok(())
@@ -1013,7 +1041,7 @@ fn place_panel(
     window: &WebviewWindow,
     geometry: crate::desktop_geometry::PanelGeometry,
 ) -> AppResult<()> {
-    native::place(
+    native::place_docked(
         window,
         geometry.left,
         geometry.top,
@@ -1157,24 +1185,49 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     Ok(())
 }
 pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
-    show_panel_at(app, focus, area(app, true)?)
+    show_panel_at(app, focus, false)
 }
-pub fn show_panel_from_edge(app: &AppHandle) -> AppResult<()> {
-    let monitor = app
-        .get_webview_window("edge")
-        .and_then(|w| w.current_monitor().ok().flatten());
-    show_panel_at(app, true, monitor_area(app, monitor)?)
+pub fn show_panel_from_edge(app: &AppHandle, hover: bool) -> AppResult<bool> {
+    let Some(edge) = app.get_webview_window("edge") else {
+        return Ok(false);
+    };
+    if hidden(app)?
+        || app.get_webview_window("panel").is_some()
+        || !edge.is_visible().map_err(err)?
+    {
+        return Ok(false);
+    }
+    if hover {
+        let blocked = app
+            .state::<Core>()
+            .visibility
+            .lock()
+            .map_err(err)?
+            .edge_hover_block
+            .is_some();
+        if blocked || !native::hover_hits(&edge)? {
+            return Ok(false);
+        }
+    }
+    show_panel_at(app, !hover, hover)?;
+    if hover {
+        // WebView 建窗和滑入期间鼠标可能已离开，结束后补做一次位置检查。
+        auto_collapse(app);
+    }
+    Ok(true)
 }
-fn show_panel_at(app: &AppHandle, focus: bool, area: WorkArea) -> AppResult<()> {
+fn show_panel_at(app: &AppHandle, focus: bool, passive: bool) -> AppResult<()> {
     if hidden(app)? {
         return Ok(());
     }
     let created = app.get_webview_window("panel").is_none();
+    let area = panel_area(app)?;
     let view_id = created.then(|| uuid::Uuid::new_v4().to_string());
     {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
         v.epoch += 1;
+        v.panel_passive = passive;
         if let Some(id) = &view_id {
             v.panel_view = Some(PanelView {
                 id: id.clone(),
@@ -1217,9 +1270,7 @@ fn show_panel_at(app: &AppHandle, focus: bool, area: WorkArea) -> AppResult<()> 
 }
 pub fn collapse(app: &AppHandle) -> AppResult<()> {
     let settings = read_panel_settings(app)?;
-    let mut panel_area = None;
     if let Some(w) = app.get_webview_window("panel") {
-        panel_area = area(app, false).ok();
         if let Err(e) = native::slide_panel(&w, false, settings.slide_out_ms, settings.edge.side) {
             app.state::<Core>().report(e);
         }
@@ -1227,13 +1278,48 @@ pub fn collapse(app: &AppHandle) -> AppResult<()> {
     dispose(app, "panel")?;
     if !hidden(app)? {
         let edge = edge_window(app)?;
-        if let Some(area) = panel_area {
-            place_edge(&edge, area, settings.edge_style, settings.edge)?;
-        }
+        place_edge(
+            &edge,
+            work_area(&dock_monitor(app, &settings)?),
+            settings.edge_style,
+            settings.edge,
+        )?;
         emit_edge(app, "edge", settings.edge_style, settings.edge)?;
         native::show(&edge)?;
+        block_hover_until_exit(app, &edge)?;
     }
     changed(app)
+}
+fn block_hover_until_exit(app: &AppHandle, edge: &WebviewWindow) -> AppResult<()> {
+    let block = native::pointer_inside(edge)?.then(std::time::Instant::now);
+    app.state::<Core>()
+        .visibility
+        .lock()
+        .map_err(err)?
+        .edge_hover_block = block;
+    if let Some(block) = block {
+        let edge = edge.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let inside = edge.is_visible().unwrap_or(false)
+                    && native::pointer_inside(&edge).unwrap_or(false);
+                let core = edge.state::<Core>();
+                if let Ok(mut state) = core.visibility.lock() {
+                    if state.edge_hover_block != Some(block) {
+                        break;
+                    }
+                    if !inside || state.hidden {
+                        state.edge_hover_block = None;
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+    }
+    Ok(())
 }
 pub fn set_panel_locked(app: &AppHandle, locked: bool) -> AppResult<()> {
     let core = app.state::<Core>();
@@ -1281,7 +1367,7 @@ pub fn edge_window(app: &AppHandle) -> AppResult<WebviewWindow> {
     native::prepare(&w)?;
     place_edge(
         &w,
-        monitor_area(app, None)?,
+        work_area(&dock_monitor(app, &settings)?),
         settings.edge_style,
         settings.edge,
     )?;
@@ -1289,10 +1375,9 @@ pub fn edge_window(app: &AppHandle) -> AppResult<WebviewWindow> {
 }
 fn position_edge(app: &AppHandle, w: &WebviewWindow) -> AppResult<()> {
     let settings = read_panel_settings(app)?;
-    let monitor = w.current_monitor().ok().flatten();
     place_edge(
         w,
-        monitor_area(app, monitor)?,
+        work_area(&dock_monitor(app, &settings)?),
         settings.edge_style,
         settings.edge,
     )
@@ -1313,10 +1398,10 @@ fn place_edge(
     position: EdgePosition,
 ) -> AppResult<()> {
     let (width, height) = edge_size(area, style);
-    native::place(
+    native::place_docked(
         w,
         position.side.window_left(area, width),
-        area.top + (f64::from(area.height.saturating_sub(height)) * position.offset).round() as i32,
+        position.top(area, height),
         width,
         height,
         false,
@@ -1337,10 +1422,9 @@ fn emit_edge(
 }
 fn sync_edge(app: &AppHandle, settings: &Preferences) -> AppResult<()> {
     if let Some(w) = app.get_webview_window("edge") {
-        let monitor = w.current_monitor().ok().flatten();
         place_edge(
             &w,
-            monitor_area(app, monitor)?,
+            work_area(&dock_monitor(app, settings)?),
             settings.edge_style,
             settings.edge,
         )?;
@@ -1358,11 +1442,13 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
     }
     let mut settings = read_panel_settings(app)?;
     let original = settings.edge;
-    let area = monitor_area(app, window.current_monitor().map_err(err)?)?;
-    let (_, height) = edge_size(area, settings.edge_style);
+    let origin = dock_monitor(app, &settings)?;
+    let origin_area = work_area(&origin);
+    let (_, origin_height) = edge_size(origin_area, settings.edge_style);
+    let monitors = app.available_monitors().map_err(err)?;
     let expanded = window.label() == "panel";
     let geometry = if expanded {
-        Some(panel_geometry(app, area)?)
+        Some((settings.ratio, panel_min_width(app)?))
     } else {
         None
     };
@@ -1373,29 +1459,51 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
         state.epoch += 1;
     }
     let mut current = original;
-    let preview = |next: EdgePosition, previous: EdgePosition| -> AppResult<()> {
-        if let Some(mut geometry) = geometry {
-            if previous.side != next.side {
-                geometry.left = next.side.window_left(area, geometry.width);
-                place_panel(app, window, geometry)?;
+    let mut target = &origin;
+    let attempt = native::drag_panel_edge(window, origin_area.scale_factor, |start, pointer| {
+        let next_monitor = monitors
+            .iter()
+            .find(|monitor| {
+                let p = monitor.position();
+                let size = monitor.size();
+                (0..i64::from(size.width)).contains(&(i64::from(pointer.0) - i64::from(p.x)))
+                    && (0..i64::from(size.height))
+                        .contains(&(i64::from(pointer.1) - i64::from(p.y)))
+            })
+            .unwrap_or(target);
+        let monitor_changed = target.position() != next_monitor.position();
+        let area = work_area(next_monitor);
+        let (_, height) = edge_size(area, settings.edge_style);
+        let grab_ratio = ((f64::from(start.1)
+            - f64::from(original.top(origin_area, origin_height)))
+            / f64::from(origin_height))
+        .clamp(0., 1.);
+        let next = original.dragged(area, height, pointer, grab_ratio);
+        if monitor_changed || next != current {
+            let move_panel = monitor_changed || current.side != next.side;
+            target = next_monitor;
+            current = next;
+            if let Some((ratio, minimum)) = geometry {
+                if move_panel {
+                    let mut geometry =
+                        crate::desktop_geometry::panel_geometry(area, ratio, minimum)?;
+                    geometry.left = next.side.window_left(area, geometry.width);
+                    place_panel(app, window, geometry)?;
+                }
+            } else {
+                place_edge(window, area, settings.edge_style, next)?;
             }
-        } else {
-            place_edge(window, area, settings.edge_style, next)?;
-        }
-        emit_edge(app, window.label(), settings.edge_style, next)
-    };
-    let attempt = native::drag_panel_edge(window, area.scale_factor, |x, dy| {
-        let next = original.dragged(area, height, x, dy);
-        if next != current {
-            let previous = std::mem::replace(&mut current, next);
-            preview(next, previous)?;
+            emit_edge(app, window.label(), settings.edge_style, next)?;
         }
         Ok(())
     });
     let committed = matches!(&attempt, Ok(native::EdgeDrag::Dropped));
     let result = match attempt {
-        Ok(native::EdgeDrag::Dropped) if current != original => {
+        Ok(native::EdgeDrag::Dropped)
+            if current != original || target.position() != origin.position() =>
+        {
             settings.edge = current;
+            settings.edge_monitor = target.name().cloned();
             save_panel_settings(app, settings).map(|()| true)
         }
         other => other.map(|outcome| !matches!(outcome, native::EdgeDrag::Click)),
@@ -1405,13 +1513,17 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
         state.interacting = false;
         state.epoch += 1;
     }
-    if !committed || result.is_err() {
-        let saved = read_panel_settings(app)?;
-        if current != saved.edge {
-            // 保存失败或取消，恢复最后一次持久化的位置。
-            layout_panel(app, false)?;
-            sync_edge(app, &saved)?;
-        }
+    if (!committed || result.is_err())
+        && (current != original || target.position() != origin.position())
+    {
+        // 保存失败或取消，恢复最后一次持久化的位置。
+        layout_panel(app)?;
+        sync_edge(app, &read_panel_settings(app)?)?;
+    }
+    if !expanded && !matches!(&result, Ok(false)) {
+        block_hover_until_exit(app, window)?;
+    } else if expanded && matches!(&result, Ok(true)) {
+        auto_collapse(app);
     }
     result
 }
@@ -1684,12 +1796,18 @@ pub fn auto_collapse(app: &AppHandle) {
         {
             let core = app.state::<Core>();
             let v = core.visibility.lock().map_err(err)?;
-            if !v.can_auto_collapse(epoch, focused, inside, detail) {
+            if !v.can_auto_collapse(epoch, focused || v.panel_passive, inside, detail) {
                 return Ok(());
             }
         }
         collapse(app)
     });
+}
+pub fn panel_focus_lost(app: &AppHandle) {
+    if let Ok(mut state) = app.state::<Core>().visibility.lock() {
+        state.panel_passive = false;
+    }
+    auto_collapse(app);
 }
 pub fn clamp(w: &WebviewWindow) -> AppResult<()> {
     if w.label().starts_with("float-") {
@@ -1726,7 +1844,7 @@ pub fn clamp(w: &WebviewWindow) -> AppResult<()> {
     Ok(())
 }
 pub fn repair(app: &AppHandle) -> AppResult<()> {
-    layout_panel(app, false)?;
+    layout_panel(app)?;
     for w in app.webview_windows().values() {
         // 专用窗允许收起到工作区外；几何和缩放由其协调器处理。
         if w.label().starts_with("pomodoro-window-") {
@@ -1943,6 +2061,7 @@ pub fn monitor_changes(app: &AppHandle) -> AppResult<()> {
             .map(|m| {
                 let a = m.work_area();
                 serde_json::json!([
+                    m.name(),
                     a.position.x,
                     a.position.y,
                     a.size.width,

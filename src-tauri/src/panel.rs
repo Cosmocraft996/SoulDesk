@@ -251,23 +251,29 @@ impl Default for EdgePosition {
 }
 
 impl EdgePosition {
+    pub fn top(self, area: crate::desktop_geometry::WorkArea, height: u32) -> i32 {
+        area.top + (f64::from(area.height.saturating_sub(height)) * self.offset).round() as i32
+    }
+
     pub fn dragged(
         self,
         area: crate::desktop_geometry::WorkArea,
         height: u32,
-        x: i32,
-        dy: i64,
+        pointer: (i32, i32),
+        grab_ratio: f64,
     ) -> Self {
         use crate::desktop_geometry::EdgeSide;
         let travel = f64::from(area.height.saturating_sub(height));
         Self {
-            side: if (i64::from(x) - i64::from(area.left)) * 2 < i64::from(area.width) {
+            side: if (i64::from(pointer.0) - i64::from(area.left)) * 2 < i64::from(area.width) {
                 EdgeSide::Left
             } else {
                 EdgeSide::Right
             },
             offset: if travel > 0. {
-                (self.offset + dy as f64 / travel).clamp(0., 1.)
+                ((f64::from(pointer.1) - f64::from(area.top) - f64::from(height) * grab_ratio)
+                    / travel)
+                    .clamp(0., 1.)
             } else {
                 self.offset
             },
@@ -285,6 +291,7 @@ pub struct Preferences {
     pub desktop_double_click: bool,
     pub edge: EdgePosition,
     pub edge_style: EdgeStyle,
+    pub edge_monitor: Option<String>,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -296,6 +303,7 @@ impl Default for Preferences {
             desktop_double_click: true,
             edge: EdgePosition::default(),
             edge_style: EdgeStyle::default(),
+            edge_monitor: None,
         }
     }
 }
@@ -563,6 +571,7 @@ mod tests {
         assert!(p.desktop_double_click);
         assert_eq!(p.edge_style, EdgeStyle::Classic);
         assert_eq!(p.edge, EdgePosition::default());
+        assert_eq!(p.edge_monitor, None);
         assert_eq!(p.slide_in_ms, 250);
         p.slide_in_ms = 0;
         p.slide_out_ms = 1000;
@@ -584,7 +593,7 @@ mod tests {
             scale_factor: 1.5,
         };
         let position = EdgePosition::default();
-        let left = position.dragged(area, 150, -1919, -900);
+        let left = position.dragged(area, 150, (-1919, -40), 0.5);
         assert_eq!(
             left,
             EdgePosition {
@@ -593,7 +602,7 @@ mod tests {
             }
         );
         assert_eq!(left.side.window_left(area, 63), -1920);
-        let right = left.dragged(area, 72, -1, 484);
+        let right = left.dragged(area, 72, (-1, 480), 0.5);
         assert_eq!(
             right,
             EdgePosition {
@@ -602,16 +611,37 @@ mod tests {
             }
         );
         assert_eq!(right.side.window_left(area, 63), -63);
-        assert_eq!(right.dragged(area, 72, -1, i64::MAX).offset, 1.);
-        assert_eq!(right.dragged(area, 1100, -1, 10).offset, right.offset);
+        assert_eq!(right.dragged(area, 72, (-1, i32::MAX), 0.5).offset, 1.);
+        assert_eq!(
+            right.dragged(area, 1100, (-1, 10), 0.5).offset,
+            right.offset
+        );
+        let other = WorkArea {
+            left: 0,
+            top: 350,
+            width: 1600,
+            height: 800,
+            scale_factor: 1.,
+        };
+        let crossed = right.dragged(other, 100, (25, 550), 0.25);
+        assert_eq!(
+            crossed,
+            EdgePosition {
+                side: EdgeSide::Left,
+                offset: 0.25
+            }
+        );
+        assert_eq!(crossed.top(other, 100), 525);
         let preferences = Preferences {
             edge_style: EdgeStyle::Shinobu,
-            edge: left,
+            edge: crossed,
+            edge_monitor: Some(r"\\.\DISPLAY2".into()),
             ..Preferences::default()
         };
         let restored: Preferences =
             serde_json::from_str(&serde_json::to_string(&preferences).unwrap()).unwrap();
-        assert_eq!(restored.edge, left);
+        assert_eq!(restored.edge, crossed);
+        assert_eq!(restored.edge_monitor, preferences.edge_monitor);
         assert_eq!(restored.edge_style, EdgeStyle::Shinobu);
         assert!(Preferences {
             edge: EdgePosition {

@@ -310,6 +310,32 @@ pub fn show(w: &WebviewWindow) -> Result<(), String> {
     };
     Ok(())
 }
+
+/// 跨不同缩放的屏幕时，窗口框架可能同步采用系统建议的矩形，再应用一次物理几何。
+pub fn place_docked(
+    w: &WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    show: bool,
+) -> Result<(), String> {
+    place(w, x, y, width, height, show)?;
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(handle(w)? as HWND, &mut rect) } == 0 {
+        return Err(winerr("读取停靠窗口位置失败"));
+    }
+    if (
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    ) != (x, y, width as i32, height as i32)
+    {
+        place(w, x, y, width, height, show)?;
+    }
+    Ok(())
+}
 pub fn hide(w: &WebviewWindow) -> Result<(), String> {
     // 原生附着后的样式由本模块拥有，不让 Tao 的旧窗口标志覆盖 WS_CHILD。
     unsafe {
@@ -331,6 +357,27 @@ pub fn pointer_inside(w: &WebviewWindow) -> Result<bool, String> {
             && point.y >= rect.top
             && point.y < rect.bottom,
     )
+}
+
+pub fn hover_hits(w: &WebviewWindow) -> Result<bool, String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
+    };
+    let h = handle(w)? as HWND;
+    let mut point = POINT::default();
+    unsafe {
+        if IsWindowVisible(h) == 0
+            || GetAsyncKeyState(VK_LBUTTON as i32) < 0
+            || GetAsyncKeyState(VK_RBUTTON as i32) < 0
+        {
+            return Ok(false);
+        }
+        if GetCursorPos(&mut point) == 0 {
+            return Err(winerr("读取挂件鼠标位置失败"));
+        }
+        let hit = WindowFromPoint(point);
+        Ok(hit == h || IsChild(h, hit) != 0)
+    }
 }
 
 /// 在协调工作线程逐帧移动真实窗口，按停靠边缘裁剪，避免滑到相邻显示器。
@@ -375,7 +422,7 @@ pub fn slide_panel(
                 return Err(winerr("设置面板滑动裁剪失败"));
             }
             // 成功后区域由系统拥有。
-            place(w, x, rect.top, width, height, showing)?;
+            place_docked(w, x, rect.top, width, height, showing)?;
             if progress >= 1.0 {
                 break;
             }
@@ -386,7 +433,7 @@ pub fn slide_panel(
     if !showing {
         hide(w)?;
     }
-    let restored = place(w, rect.left, rect.top, width, height, showing);
+    let restored = place_docked(w, rect.left, rect.top, width, height, showing);
     unsafe {
         SetWindowRgn(h, std::ptr::null_mut(), 1);
     }
@@ -848,7 +895,7 @@ pub enum EdgeDrag {
 pub fn drag_panel_edge(
     w: &WebviewWindow,
     scale_factor: f64,
-    mut preview: impl FnMut(i32, i64) -> Result<(), String>,
+    mut preview: impl FnMut((i32, i32), (i32, i32)) -> Result<(), String>,
 ) -> Result<EdgeDrag, String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
@@ -890,7 +937,7 @@ pub fn drag_panel_edge(
             && (point.x != previous.x || point.y != previous.y)
         {
             moved = true;
-            preview(point.x, dy)?;
+            preview((start.x, start.y), (point.x, point.y))?;
             previous = point;
         }
         if unsafe { GetAsyncKeyState(key as i32) >= 0 } {

@@ -9,7 +9,7 @@
   border-radius: 12px;
   container-type: inline-size;
 }
-.widget-surface > .frame-wrap:not([data-transparent-shape]) {
+[data-widget-backdrop] .widget-surface > .frame-wrap:not([data-transparent-shape]) {
   background: rgb(54 62 66 / .84);
 }
 .widget-surface > .frame-wrap .frame-message { background: #363e42; color: #dce4e0; }
@@ -135,7 +135,7 @@
 .panel-shell[data-edge-side=right]>.panel-settings-popover{right:var(--edge-width);width:min(340px,calc(100% - var(--edge-width) - 8px))}
 .panel-shell[data-edge-side=left]>.panel-settings-popover{width:min(340px,calc(100% - var(--edge-width) - 8px))}
 .panel-settings-popover>.icon-button{position:absolute;right:6px;bottom:6px}
-.panel-preferences{gap:16px}
+.panel-preferences{gap:16px;margin:0;padding:0;border:0;min-width:0}
 .panel-preferences>.panel-tint,.panel-animation-row{flex-basis:100%;min-width:0}
 .panel-animation-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .panel-animation-row>label{min-width:0}

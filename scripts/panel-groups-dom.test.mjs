@@ -81,7 +81,17 @@ async function fixture({ legacy = false, active = null, locked = false, query = 
       if (command === 'panel_view' && args.update.event === 'scroll') { positions.set(args.update.group, args.update.position); return; }
       if (command === 'create_instance' && f.fail) throw Error('测试添加失败');
       if (command === 'drag_panel_edge') return f.edgeDragged ?? false;
-      if (command === 'set_panel') { Object.assign(state.panel, args); return; }
+      if (command === 'window_action' && ['enable-widget-backdrop', 'disable-widget-backdrop'].includes(args.action)) {
+        if (f.fail) throw Error('测试衬底保存失败');
+        state.widgetBackdrop = args.action === 'enable-widget-backdrop';
+        return;
+      }
+      if (command === 'set_panel') {
+        if (f.panelGate) await f.panelGate;
+        if (f.failPanel) throw Error('测试偏好保存失败');
+        Object.assign(state.panel, args);
+        return;
+      }
       if (command === 'window_action' && ['lock-panel', 'unlock-panel'].includes(args.action)) {
         if (f.fail) throw Error('测试锁定状态保存失败');
         state.panelLocked = args.action === 'lock-panel';
@@ -301,9 +311,9 @@ test('左边沿主键拖动等待宿主保存，失败撤掉拖动反馈，成�
     await click(button('面板设置'));
     assert.equal(button('面板宽度比例'), null);
     assert.match(document.querySelector('.panel-width-hint').textContent, /55%/);
-    await submit(document.querySelector('.panel-preferences'));
-    const saved = f.calls.filter(([command]) => command === 'set_panel').at(-1)[1];
-    assert.equal(Object.hasOwn(saved, 'ratio'), false, '保存其他偏好不覆盖刚拖好的宽度');
+    await input(button('面板背景遮罩'), '25');
+    assert.deepEqual(f.calls.filter(([command]) => command === 'set_panel').at(-1)[1], { tint: .25 });
+    assert.equal(document.querySelector('.panel-shell').style.getPropertyValue('--panel-tint'), '0.25');
     assert.equal(f.state.panel.ratio, .55);
   } finally { await f.close(); }
 });
@@ -320,7 +330,7 @@ test('左边沿可用左右方向键微调，只提交宽度，不覆盖其他�
   } finally { await f.close(); }
 });
 
-test('八款挂件可预览并保存，左侧停靠时右边沿向右加宽', async () => {
+test('八款挂件选中即保存，左侧停靠时右边沿向右加宽', async () => {
   const f = await fixture();
   try {
     await click(button('面板设置'));
@@ -330,9 +340,8 @@ test('八款挂件可预览并保存，左侧停靠时右边沿向右加宽', as
     assert.equal(options[0].checked, true);
     assert.equal(form.querySelectorAll('.edge-style-preview img').length, 5);
     await click(options.at(-1));
-    assert.equal(document.querySelector('.edge [data-edge-style]').dataset.edgeStyle, 'classic');
-    await submit(form);
     assert.equal(f.state.panel.edgeStyle, 'shinobu');
+    assert.equal(document.querySelector('.edge [data-edge-style]').dataset.edgeStyle, 'shinobu');
     const visual = { style: 'shinobu', position: { side: 'left', offset: .2 } };
     await act(async () => { for (const listener of f.listeners.get('host:panel-edge')) listener({ payload: visual }); });
     const shell = document.querySelector('.panel-shell');
@@ -344,27 +353,95 @@ test('八款挂件可预览并保存，左侧停靠时右边沿向右加宽', as
   } finally { await f.close(); }
 });
 
-test('收起态从宿主初始化挂件，拖动不会触发轻点开关', async () => {
+test('面板偏好连续改动立即预览，只保存修改字段，失败恢复已保存值', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  try {
+    assert.equal(document.querySelector('.panel-preferences button'), null);
+    let release;
+    f.panelGate = new Promise(resolve => { release = resolve; });
+    await input(button('面板背景遮罩'), '30');
+    await input(button('面板背景遮罩'), '60');
+    await input(button('滑入时长'), '80');
+    assert.equal(button('面板背景遮罩').value, '60');
+    assert.equal(button('滑入时长').value, '80');
+    const saves = () => f.calls.filter(([command]) => command === 'set_panel').map(([, args]) => args);
+    assert.deepEqual(saves(), [{ tint: .30 }]);
+    await act(async () => release());
+    assert.deepEqual(saves(), [{ tint: .30 }, { tint: .60, slideInMs: 80 }]);
+    assert.equal(f.state.panel.tint, .60);
+    assert.equal(f.state.panel.slideInMs, 80);
+    f.failPanel = true;
+    await input(button('滑入时长'), '90');
+    assert.equal(button('滑入时长').value, '80');
+    assert.match(document.querySelector('.notice').textContent, /测试偏好保存失败/);
+  } finally { await f.close(); }
+});
+
+test('收起态悬停展开，轻点与拖动不展开，并保留键盘入口', async () => {
   const f = await fixture({ query: '?edge=1&style=rocket&side=left' });
   try {
     const toggle = button('展开组件面板');
     assert.equal(toggle.dataset.edgeSide, 'left');
     assert.equal(toggle.querySelector('[data-edge-style]').dataset.edgeStyle, 'rocket');
-    const pointerClick = () => act(async () => {
-      const down = new MouseEvent('pointerdown', { bubbles: true, button: 0 });
-      Object.defineProperties(down, { isPrimary: { value: true }, pointerId: { value: 1 } });
-      toggle.dispatchEvent(down);
-      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
-    });
-    const clicks = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action === 'edge-click');
-    f.edgeDragged = true;
-    await pointerClick();
-    assert.equal(clicks().length, 0);
-    f.edgeDragged = false;
-    await pointerClick();
+    const pointer = type => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0 });
+      Object.defineProperties(event, { pointerType: { value: 'mouse' }, isPrimary: { value: true }, pointerId: { value: 1 } });
+      toggle.dispatchEvent(event);
+    };
+    const opens = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action.startsWith('edge-')).map(([, args]) => args.action);
+    const waitHover = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
     await click(toggle);
-    assert.equal(clicks().length, 2);
+    await act(async () => { pointer('pointerover'); pointer('pointerout'); });
+    await waitHover();
+    assert.deepEqual(opens(), []);
+    await act(async () => { pointer('pointerover'); pointer('pointerdown'); toggle.click(); pointer('pointerout'); });
+    await waitHover();
+    assert.ok(f.calls.some(([command]) => command === 'drag_panel_edge'));
+    assert.deepEqual(opens(), []);
+    await act(async () => pointer('pointerover'));
+    await waitHover();
+    assert.deepEqual(opens(), ['edge-hover']);
+    await act(async () => toggle.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })));
+    assert.deepEqual(opens(), ['edge-hover', 'edge-keyboard']);
   } finally { await f.close(); }
+});
+
+test('全局宿主衬底默认关闭，切换立即保存，保存失败时沿用已保存状态', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  try {
+    const checkbox = document.querySelector('.settings-panel input[type="checkbox"]');
+    assert.equal(checkbox.labels[0].textContent, '显示宿主衬底');
+    assert.equal(checkbox.checked, false);
+    await click(checkbox);
+    assert.equal(f.state.widgetBackdrop, true);
+    assert.equal(checkbox.checked, true);
+    f.fail = true;
+    await click(checkbox);
+    assert.equal(checkbox.checked, true);
+    assert.match(document.querySelector('.notice').textContent, /测试衬底保存失败/);
+    f.fail = false;
+    await click(checkbox);
+    assert.equal(f.state.widgetBackdrop, false);
+    assert.equal(checkbox.checked, false);
+  } finally { await f.close(); }
+});
+
+test('桌面和面板已展示的组件随全局偏好刷新，无需重建组件会话', async () => {
+  for (const [query, selector, instance] of [['?instance=desktop', '.desktop-shell', 'desktop'], ['?panel=1', '.panel-shell', 'b']]) {
+    const f = await fixture({ query });
+    try {
+      const shell = document.querySelector(selector);
+      assert.equal(shell.hasAttribute('data-widget-backdrop'), false);
+      const rendered = shell.querySelector(`[data-instance="${instance}"]`);
+      assert.ok(rendered);
+      for (const enabled of [true, false]) {
+        f.state.widgetBackdrop = enabled;
+        await act(async () => { for (const callback of f.listeners.get('host:changed')) callback(); });
+        assert.equal(shell.hasAttribute('data-widget-backdrop'), enabled);
+        assert.equal(shell.querySelector(`[data-instance="${instance}"]`), rendered);
+      }
+    } finally { await f.close(); }
+  }
 });
 
 test('桌面外壳接收边线事件，清空及切换实例时移除高亮和旧监听', async () => {

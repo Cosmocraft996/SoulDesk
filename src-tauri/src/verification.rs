@@ -409,13 +409,13 @@ async fn check(
         {
             return Err("侧边入口未显示".into());
         }
-        report.stage("等待鼠标点击侧边入口")?;
+        report.stage("等待鼠标悬停侧边挂件")?;
         let edge_hits = app.state::<Core>().edge_hits.load(Ordering::Relaxed);
         wait_for(
             || {
                 app.state::<Core>().edge_hits.load(Ordering::Relaxed) > edge_hits
                     && app
-                        .get_webview_window("main")
+                        .get_webview_window("panel")
                         .is_some_and(|w| w.is_visible().unwrap_or(false))
             },
             180,

@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { useRef, type PointerEvent } from 'react';
+import { useEffect, useRef, type PointerEvent } from 'react';
 import { invoke } from './host';
 import { Icon } from './Icon';
 import paw from './assets/panel-edge/paw.png';
@@ -45,17 +45,21 @@ export function EdgeStylePicker({ value, onChange }: { value: EdgeStyle; onChang
         <span>{edgeStyles[style].label}</span>
       </label>)}
     </div>
-    <small>按住挂件拖到屏幕左侧或右侧，松开自动保存。</small>
+    <small>悬停展开。按住挂件可跨屏拖动，松开自动保存停靠位置。</small>
   </fieldset>;
 }
 
-export function PanelEdge({ visual, expanded, onToggle, onError }: {
-  visual: EdgeVisual; expanded: boolean; onToggle: () => void; onError: (message: string) => void;
+export function PanelEdge({ visual, expanded, onHover, onActivate, onError }: {
+  visual: EdgeVisual; expanded: boolean; onHover: () => void; onActivate: () => void; onError: (message: string) => void;
 }) {
   const gesture = useRef<{ pointer: number; x: number; y: number; moved: boolean; result: Promise<boolean> } | undefined>(undefined);
+  const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelHover = () => { clearTimeout(hover.current); hover.current = undefined; };
+  useEffect(() => cancelHover, []);
   const label = expanded ? '收起组件面板' : '展开组件面板';
   const start = (event: PointerEvent<HTMLButtonElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
+    cancelHover();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const result = invoke<boolean>('drag_panel_edge').catch(error => {
       onError(`移动挂件失败：${String(error)}`);
@@ -74,17 +78,30 @@ export function PanelEdge({ visual, expanded, onToggle, onError }: {
     type="button"
     className={`edge${expanded ? ' panel-edge-toggle' : ''}`}
     data-edge-side={visual.position.side}
-    title={`${label} · 按住可拖动`}
+    title={`${expanded ? label : '悬停展开组件面板'} · 按住可拖动`}
     aria-label={label}
     aria-expanded={expanded}
+    onPointerEnter={event => {
+      if (expanded || event.pointerType !== 'mouse' || event.buttons) return;
+      cancelHover();
+      hover.current = setTimeout(onHover, 180);
+    }}
+    onPointerLeave={cancelHover}
     onPointerDown={start}
     onPointerMove={track}
-    onPointerCancel={() => { if (gesture.current) gesture.current.moved = true; }}
+    onPointerCancel={() => { cancelHover(); if (gesture.current) gesture.current.moved = true; }}
+    onKeyDown={event => {
+      if (expanded || event.repeat || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      cancelHover();
+      onActivate();
+    }}
     onClick={event => {
       const press = gesture.current;
-      if (event.detail === 0 || !press) { onToggle(); return; }
       gesture.current = undefined;
-      void press.result.then(dragged => { if (!dragged && !press.moved) onToggle(); });
+      if (!expanded) return;
+      if (event.detail === 0 || !press) { onActivate(); return; }
+      void press.result.then(dragged => { if (!dragged && !press.moved) onActivate(); });
     }}
   ><EdgeArtwork style={visual.style} /></button>;
 }

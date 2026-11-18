@@ -978,6 +978,20 @@ async fn execute_panel(
         serde_json::from_value(windows::panel_preferences(app)?).map_err(err)?;
     settings.slide_in_ms = 150;
     settings.slide_out_ms = 150;
+    let primary = app.primary_monitor().map_err(err)?;
+    let secondary = app
+        .available_monitors()
+        .map_err(err)?
+        .into_iter()
+        .find(|monitor| {
+            monitor.name().is_some()
+                && primary
+                    .as_ref()
+                    .is_some_and(|primary| primary.position() != monitor.position())
+        });
+    settings.edge_monitor = secondary
+        .as_ref()
+        .and_then(|monitor| monitor.name().cloned());
     window(app, move |app| windows::save_panel_settings(app, settings)).await?;
     let start = Instant::now();
     panel_ui_event(app, "panel", ".panel-edge-toggle", "const r=node.getBoundingClientRect();if(Math.abs(r.right-innerWidth)>1||Math.abs(r.top+r.height/2-innerHeight/2)>1)return false;node.click()").await?;
@@ -992,6 +1006,22 @@ async fn execute_panel(
     )
     .await?;
     let out_ms = start.elapsed().as_millis();
+    if let Some(monitor) = &secondary {
+        let edge = app.get_webview_window("edge").ok_or("缺少侧边挂件")?;
+        let rect = &crate::desktop_native::describe(&edge)["rect"];
+        let area = monitor.work_area();
+        check(
+            report,
+            "edge-returns-to-secondary-monitor",
+            rect["left"]
+                .as_i64()
+                .zip(rect["width"].as_i64())
+                .is_some_and(|(left, width)| {
+                    left + width == i64::from(area.position.x) + i64::from(area.size.width)
+                }),
+            json!({"rect":rect,"monitor":monitor.name()}),
+        )?;
+    }
     check(
         report,
         "panel-slide-out-releases-its-session",
@@ -1003,19 +1033,19 @@ async fn execute_panel(
         app,
         "edge",
         ".edge",
-        "const r=node.getBoundingClientRect();if(Math.abs(r.right-innerWidth)>1||Math.abs(r.top+r.height/2-innerHeight/2)>1)return false;node.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}))",
+        "const r=node.getBoundingClientRect();if(Math.abs(r.right-innerWidth)>1||Math.abs(r.top+r.height/2-innerHeight/2)>1)return false;node.click()",
     )
     .await?;
     tokio::time::sleep(Duration::from_millis(500)).await;
     check(
         report,
-        "edge-hover-does-not-open-panel",
+        "edge-click-does-not-open-panel",
         app.get_webview_window("panel").is_none()
             && app.state::<Core>().edge_hits.load(Ordering::Relaxed) == edge_hits,
         Value::Null,
     )?;
     let start = Instant::now();
-    panel_ui_event(app, "edge", ".edge", "node.click()").await?;
+    panel_ui_event(app, "edge", ".edge", "node.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))").await?;
     until(
         || {
             Ok(session_count(app, &clock) == 1
@@ -1025,6 +1055,24 @@ async fn execute_panel(
     )
     .await?;
     let in_ms = start.elapsed().as_millis();
+    if let Some(monitor) = &secondary {
+        let panel = app.get_webview_window("panel").ok_or("缺少侧边面板")?;
+        let rect = &crate::desktop_native::describe(&panel)["rect"];
+        let area = monitor.work_area();
+        check(
+            report,
+            "panel-opens-on-secondary-work-area",
+            rect["left"]
+                .as_i64()
+                .zip(rect["width"].as_i64())
+                .is_some_and(|(left, width)| {
+                    left + width == i64::from(area.position.x) + i64::from(area.size.width)
+                })
+                && rect["top"] == area.position.y
+                && rect["height"] == area.size.height,
+            json!({"rect":rect,"monitor":monitor.name()}),
+        )?;
+    }
     check(
         report,
         "panel-slide-in-restores-single-session-and-layout",
