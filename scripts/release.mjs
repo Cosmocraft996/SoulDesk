@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { resolve, join } from 'node:path';
@@ -26,18 +27,71 @@ export function verifySignedArtifact(payload, encodedPublicKey, encodedSignature
   if (trusted.split('\t').find(part => part.startsWith('version:')) !== `version:${version}`) throw new Error('安装包签名版本与声明版本不一致');
   return createHash('sha256').update(payload).digest('hex');
 }
+
+export function verifyReleaseDraft(draft, { version, installerName, installerDigest, signature, manifestBytes }) {
+  if (draft?.tag_name !== `v${version}` || draft.draft !== true || draft.prerelease !== false) {
+    throw new Error('发行必须是本版本的正式版草稿');
+  }
+
+  const expectedDigests = {
+    [installerName]: installerDigest,
+    [`${installerName}.sig`]: createHash('sha256').update(signature).digest('hex'),
+    'latest.json': createHash('sha256').update(manifestBytes).digest('hex'),
+  };
+  for (const [name, digest] of Object.entries(expectedDigests)) {
+    const assets = draft.assets?.filter(asset => asset.name === name);
+    if (assets?.length !== 1 || assets[0].state !== 'uploaded' || assets[0].digest !== `sha256:${digest}`) {
+      throw new Error(`草稿附件缺失、未完成上传或内容不一致：${name}`);
+    }
+  }
+
+  const installer = draft.assets.find(asset => asset.name === installerName);
+  if (!Number.isSafeInteger(installer.id) || installer.id < 1) throw new Error('草稿安装包附件编号无效');
+  const downloadUrl = `https://api.github.com/repos/${releaseRepository}/releases/assets/${installer.id}`;
+  const manifest = JSON.parse(manifestBytes.toString('utf8'));
+  const publishedAt = Date.parse(manifest?.pub_date);
+  if (manifest?.version !== version || typeof manifest.notes !== 'string' ||
+      !Number.isFinite(publishedAt) || new Date(publishedAt).toISOString() !== manifest.pub_date) {
+    throw new Error('更新清单的版本、说明或日期无效');
+  }
+  const expectedSignature = signature.toString('utf8').trim();
+  for (const platform of ['windows-x86_64', 'windows-x86_64-nsis']) {
+    const entry = manifest.platforms?.[platform];
+    if (entry?.url !== downloadUrl || typeof entry.signature !== 'string' || entry.signature.trim() !== expectedSignature) {
+      throw new Error(`更新清单的下载地址或签名不匹配：${platform}`);
+    }
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = new URL('../', import.meta.url);
   const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
   const cargo = readFileSync(new URL('src-tauri/Cargo.toml', root), 'utf8').match(/^version = "([^"]+)"/m)?.[1];
   const config = JSON.parse(readFileSync(new URL('src-tauri/tauri.conf.json', root), 'utf8'));
   console.log(`发行配置通过：${verifyRelease(pkg.version, cargo, config, process.env.GITHUB_REF)} → ${releaseRepository}`);
-  if (process.argv.includes('--verify-installer')) {
+  const verifyDraft = process.argv.includes('--verify-draft');
+  if (verifyDraft || process.argv.includes('--verify-installer')) {
     const dir = resolve('src-tauri/target/release/bundle/nsis');
     const files = readdirSync(dir).filter(name => name.endsWith(`_${pkg.version}_x64-setup.exe`));
     if (files.length !== 1) throw new Error('未找到唯一的本版本Windows安装包');
     const file = join(dir, files[0]);
-    const digest = verifySignedArtifact(readFileSync(file), config.plugins.updater.pubkey, readFileSync(`${file}.sig`, 'utf8'), pkg.version);
+    const signature = readFileSync(`${file}.sig`);
+    const digest = verifySignedArtifact(readFileSync(file), config.plugins.updater.pubkey, signature.toString('utf8'), pkg.version);
     console.log(`安装包与签名通过：${file}\nSHA-256：${digest}`);
+    if (verifyDraft) {
+      const releaseId = Number(process.env.RELEASE_ID);
+      if (process.env.GITHUB_REPOSITORY !== releaseRepository || !Number.isSafeInteger(releaseId) || releaseId < 1) {
+        throw new Error('发行仓库或草稿编号无效');
+      }
+      // 打包动作将同一份清单写到工作区并上传。用 GitHub 返回的附件摘要核验实际上传内容。
+      const manifestBytes = readFileSync(new URL('latest.json', root));
+      const draft = JSON.parse(execFileSync('gh', ['api', `repos/${releaseRepository}/releases/${releaseId}`], {
+        encoding: 'utf8',
+        timeout: 30_000,
+      }));
+      if (draft.id !== releaseId) throw new Error('发行草稿编号不匹配');
+      verifyReleaseDraft(draft, { version: pkg.version, installerName: files[0], installerDigest: digest, signature, manifestBytes });
+      console.log('草稿的安装包、签名和更新清单均已核验');
+    }
   }
 }

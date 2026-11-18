@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+    if: github.event.deleted != true
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +45,7 @@ jobs:
       - run: pnpm test:web
       - run: node scripts/desktop.mjs test --locked --lib
       - name: 构建签名安装包及发布草稿
+        id: bundle
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -65,5 +67,20 @@ jobs:
           updaterJsonPreferNsis: true
           tauriScript: node scripts/desktop.mjs
           args: --ci --bundles nsis -- --locked
-      - name: 核验交付签名与版本
-        run: node scripts/release.mjs --verify-installer
+      - name: 核验草稿的安装包、签名和更新清单
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.bundle.outputs.releaseId }}
+        run: node scripts/release.mjs --verify-draft
+      - name: 发布为最新正式版
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.bundle.outputs.releaseId }}
+        run: |
+          $repository = "repos/$env:GITHUB_REPOSITORY"
+          gh api "$repository/releases/$env:RELEASE_ID" --method PATCH -F draft=false -F prerelease=false -f make_latest=true --jq '.html_url'
+          if ($LASTEXITCODE -ne 0) { throw '公开发布失败' }
+          $latest = gh api "$repository/releases/latest" --jq '.id'
+          if ($LASTEXITCODE -ne 0 -or $latest -ne $env:RELEASE_ID) { throw '未能确认最新正式版，请核对 GitHub 发行状态' }
