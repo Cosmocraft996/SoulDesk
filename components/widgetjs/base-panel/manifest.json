@@ -1,12 +1,66 @@
 {
-  "schemaVersion":1,"id":"local.souldesk.widgetjs.base-panel","name":"监控面板","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
-  "entry":"dist/base-panel/index.html","defaultSize":{"width":420,"height":200},"minSize":{"width":360,"height":170},
-  "capabilities":["storage.instance","system.metrics"],
-  "settingsSchema":{"type":"object","additionalProperties":false,"required":["fontSize","background","color","divider","radius"],"properties":{
-    "fontSize":{"type":"integer","title":"字体大小","minimum":8,"maximum":24,"default":14},
-    "background":{"type":"string","title":"背景颜色","maxLength":7,"default":"#000000"},
-    "color":{"type":"string","title":"文字颜色","maxLength":7,"default":"#ffffff"},
-    "divider":{"type":"string","title":"分隔线颜色","maxLength":7,"default":"#ffffff"},
-    "radius":{"type":"integer","title":"圆角","minimum":0,"maximum":60,"default":24}
-  }}
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.base-panel",
+  "name": "监控面板",
+  "version": "0.1.1",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/base-panel/index.html",
+  "defaultSize": {
+    "width": 420,
+    "height": 200
+  },
+  "minSize": {
+    "width": 360,
+    "height": 170
+  },
+  "capabilities": [
+    "storage.instance",
+    "system.metrics"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "fontSize",
+      "background",
+      "color",
+      "divider",
+      "radius"
+    ],
+    "properties": {
+      "fontSize": {
+        "type": "integer",
+        "title": "字体大小",
+        "minimum": 8,
+        "maximum": 24,
+        "default": 14
+      },
+      "background": {
+        "type": "string",
+        "title": "背景颜色",
+        "maxLength": 7,
+        "default": "#000000"
+      },
+      "color": {
+        "type": "string",
+        "title": "文字颜色",
+        "maxLength": 7,
+        "default": "#ffffff"
+      },
+      "divider": {
+        "type": "string",
+        "title": "分隔线颜色",
+        "maxLength": 7,
+        "default": "#ffffff"
+      },
+      "radius": {
+        "type": "integer",
+        "title": "圆角",
+        "minimum": 0,
+        "maximum": 60,
+        "default": 24
+      }
+    }
+  }
 }

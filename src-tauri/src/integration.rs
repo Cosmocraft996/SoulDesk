@@ -205,12 +205,12 @@ pub fn prepare(c: &Config) -> AppResult<()> {
         let store = Store::open(c.root.clone())?;
         let staged = widgets::stage_bytes(
             &store,
-            presets::find("local.example.clock")?
+            presets::verification_fixture("local.fixture.surface")?
                 .ok_or("缺少时钟")?
                 .archive()?,
         )?;
         widgets::activate(&store, &staged)?;
-        let id = widgets::create_instance(&store, "local.example.clock")?;
+        let id = widgets::create_instance(&store, "local.fixture.surface")?;
         std::fs::write(
             c.root.join("seed.json"),
             serde_json::to_vec(&json!({"clock":id})).map_err(err)?,
@@ -230,10 +230,13 @@ pub fn prepare(c: &Config) -> AppResult<()> {
     let store = Store::open(c.root.clone())?;
     let mut seed = json!({});
     for (name, key) in [
-        ("local.example.clock", "clock"),
+        ("local.fixture.surface", "clock"),
         ("local.souldesk.market", "market"),
     ] {
-        let bytes = presets::find(name)?.ok_or("缺少预置包")?.archive()?;
+        let bytes = presets::find(name)?
+            .or(presets::verification_fixture(name)?)
+            .ok_or("缺少预置包")?
+            .archive()?;
         let staged = widgets::stage_bytes(&store, bytes)?;
         widgets::activate(&store, &staged)?;
         let id = widgets::create_instance(&store, name)?;
@@ -438,12 +441,14 @@ async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<(
         let package = c.root.join("external-card.zip");
         std::fs::write(
             &package,
-            presets::find("local.example.card")?.unwrap().archive()?,
+            presets::verification_fixture("local.fixture.document")?
+                .unwrap()
+                .archive()?,
         )
         .map_err(err)?;
         crate::packages::install(app, &package).await?;
-        let card = crate::create_instance(app.clone(), "local.example.card".into()).await?;
-        let second = crate::create_instance(app.clone(), "local.example.card".into()).await?;
+        let card = crate::create_instance(app.clone(), "local.fixture.document".into()).await?;
+        let second = crate::create_instance(app.clone(), "local.fixture.document".into()).await?;
         let absent = app.get_webview_window("panel").is_none();
         window(app, |app| windows::show_panel(app, false)).await?;
         let (first, next) = (card.clone(), second.clone());
@@ -934,7 +939,7 @@ async fn execute_panel(
         windows::restore_instance(app, &id)
     })
     .await?;
-    let added = crate::create_instance(app.clone(), "local.example.clock".into()).await?;
+    let added = crate::create_instance(app.clone(), "local.fixture.surface".into()).await?;
     check(
         report,
         "add-and-restore-keep-panel-closed",
@@ -1182,10 +1187,10 @@ async fn execute_panel(
         Value::Null,
     )?;
     let settings = windows::instance(app, &clock)?["settings"].clone();
-    panel_ui_event(app, "panel", ".surface-chrome", "if(node.querySelectorAll('.surface-toolbar button').length!==4||node.querySelector('[aria-label=置顶]')||node.querySelector('[aria-label=管理组件]'))return false").await?;
+    panel_ui_event(app, "panel", ".surface-chrome", "const labels=[...node.querySelectorAll('.surface-toolbar button')].map(button=>button.getAttribute('aria-label'));if(labels.join('|')!=='放回桌面|隐藏组件|移动到分组|删除实例|更多功能')return false").await?;
     check(
         report,
-        "panel-titlebar-exposes-transfer-hide-delete-and-more",
+        "panel-titlebar-exposes-transfer-hide-group-delete-and-more",
         true,
         Value::Null,
     )?;
@@ -1225,22 +1230,28 @@ async fn execute_panel(
         json!({"desktopGeometry":original,"panelLayout":layout}),
     )?;
     let label = format!("float-{clock}");
-    panel_ui_event(app, &label, ".widget-surface", "const previous=node.style.width;node.style.width='120px';const bounds=node.getBoundingClientRect(),buttons=[...node.querySelectorAll('.surface-toolbar button')],visible=buttons.filter(button=>button.getBoundingClientRect().width>0),fits=visible.length===1&&visible[0].getAttribute('aria-label')==='更多功能'&&visible[0].getBoundingClientRect().right<=bounds.right+1;node.style.width=previous;if(buttons.length!==5||!fits||node.querySelector('.surface-chrome [aria-label=管理组件]'))return false").await?;
+    panel_ui_event(app, &label, ".widget-surface", "const previous=node.style.width;node.style.width='120px';const bounds=node.getBoundingClientRect(),buttons=[...node.querySelectorAll('.surface-toolbar button')],visible=buttons.filter(button=>button.getBoundingClientRect().width>0),fits=visible.map(button=>button.getAttribute('aria-label')).join('|')==='删除实例|更多功能'&&visible[1].getBoundingClientRect().right<=bounds.right+1;node.style.width=previous;if(!fits)return false").await?;
     check(
         report,
         "desktop-titlebar-moves-actions-into-menu-at-minimum-width",
         true,
         Value::Null,
     )?;
-    panel_ui_event(app, &label, "[aria-label='更多功能']", "node.click()").await?;
-    panel_ui_event(app, &label, ".surface-menu [aria-label='管理组件']", "").await?;
+    panel_ui_event(app, &label, ".widget-surface", "const more=node.querySelector('[aria-label=更多功能]');if(!more)return false;node.style.width='120px';more.click()").await?;
+    panel_ui_event(app, &label, ".surface-menu", "const labels=[...node.querySelectorAll('button')].map(button=>button.getAttribute('aria-label'));if(!node.getBoundingClientRect().width||labels.join('|')!=='移入面板|置顶|隐藏组件')return false").await?;
     check(
         report,
-        "more-menu-keeps-management-entry",
+        "compact-more-menu-exposes-overflow-actions",
         true,
         Value::Null,
     )?;
-    panel_ui_event(app, &label, "[aria-label='更多功能']", "node.click()").await?;
+    panel_ui_event(
+        app,
+        &label,
+        ".widget-surface",
+        "node.querySelector('[aria-label=更多功能]').click();node.style.removeProperty('width')",
+    )
+    .await?;
     panel_ui_event(
         app,
         &label,
@@ -1304,7 +1315,8 @@ async fn execute_panel(
         windows::instance(app, &clock).is_err(),
         Value::Null,
     )?;
-    let panel_clock = widgets::create_instance(&app.state::<Core>().store, "local.example.clock")?;
+    let panel_clock =
+        widgets::create_instance(&app.state::<Core>().store, "local.fixture.surface")?;
     let id = panel_clock.clone();
     window(app, move |app| {
         windows::move_to(app, &id, "panel")?;
@@ -1341,8 +1353,8 @@ async fn execute_panel(
     )?;
     window(app, windows::collapse).await?;
     let store = &app.state::<Core>().store;
-    let first = widgets::create_instance_at(store, "local.example.clock", "panel")?;
-    let distant = widgets::create_instance_at(store, "local.example.clock", "panel")?;
+    let first = widgets::create_instance_at(store, "local.fixture.surface", "panel")?;
+    let distant = widgets::create_instance_at(store, "local.fixture.surface", "panel")?;
     store.save_panel_layout(
         &first,
         crate::panel::Layout {
@@ -1415,7 +1427,6 @@ fn widgetjs_saved_state(app: &AppHandle, id: &str) -> AppResult<Value> {
     let instance = windows::instance(app, id)?;
     let mut value = json!({"settings":instance["settings"]});
     if instance["packageId"] == "local.souldesk.widgetjs.note"
-        || instance["packageId"] == "local.souldesk.widgetjs.wooden-fish"
         || instance["packageId"] == "local.souldesk.widgetjs.sticker"
         || instance["packageId"] == "local.souldesk.widgetjs.server"
     {
@@ -1504,7 +1515,6 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
                 "glitch-clock",
                 "mickey-clock",
                 "text-clock",
-                "trump-clock",
                 "deadline",
                 "calendar",
                 "countdown",
@@ -1514,9 +1524,7 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
                 "calendar-large",
                 "pomodoro",
                 "note",
-                "wooden-fish",
                 "forex",
-                "dashboard",
                 "energy-label",
                 "base-panel",
                 "convert",
@@ -1574,9 +1582,7 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
                     "calendar-large",
                     "pomodoro",
                     "note",
-                    "wooden-fish",
                     "forex",
-                    "dashboard",
                     "energy-label",
                     "base-panel",
                     "convert",
@@ -1600,7 +1606,6 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
                     "glitch-clock",
                     "mickey-clock",
                     "text-clock",
-                    "trump-clock",
                 ]
                 .iter()
                 .any(|name| id.strip_prefix("local.souldesk.widgetjs.") == Some(name))
@@ -2494,7 +2499,6 @@ async fn execute_permission_upgrades(
             "hotspot-douyin",
             "hotspot-tou-tiao",
             "hotspot-weibo",
-            "hotspot-world-cup",
             "hotspot-zhihu",
             "calendar",
             "calendar-large",
@@ -2670,7 +2674,7 @@ async fn execute_asset_permissions(
     if c.mode == "widgetjs" {
         for (name, capabilities) in profiles {
             let mut manifest: Value =
-                serde_json::from_str(include_str!("../../examples/clock/manifest.json"))
+                serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
                     .map_err(err)?;
             manifest["id"] = json!(format!("local.test.assets.{name}"));
             manifest["capabilities"] = json!(capabilities);

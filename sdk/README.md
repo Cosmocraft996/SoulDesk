@@ -1,6 +1,6 @@
 # SoulDesk 普通组件接口 v1（G2）
 
-组件为独立静态 ZIP 包，根目录放 `manifest.json`，资源放 `dist/`。`examples/template/` 是最小模板，`examples/clock/` 是时钟示例；执行 `pnpm example:build` 独立生成两个外部包。当前源码也将卡片、时钟和行情作为预置组件编译到主程序，首次添加仍使用同一校验、试加载和消息桥；不会自动创建实例或覆盖已导入版本。指定源码目录时可执行 `node scripts/build-example.mjs examples/template`。
+组件为独立静态 ZIP 包，根目录放 manifest.json，资源放 dist/。examples/market/ 为业务组件参考；tests/fixtures/ 仅用于协议验收，不进入用户预置库。执行 pnpm example:build 可生成独立测试包。
 
 已实现 `settings.get`、`settings.update`、`storage.get` 和 `storage.set`，均要求 `storage.instance`。`host.js` 完成来源与父窗口核对、消息通道握手、请求编号和普通请求的10秒超时；原生文件选择由用户完成或取消，不套用此超时。组件不直接调用Tauri。
 
@@ -114,7 +114,7 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 ## 公开内容与网页链接（当前0.5.0移植源码）
 
-`content.read` 开放 `content.get`，参数为 `{source}`；source限于bilibili、bangumi、bilibili-rcmd、cls-telegraph、douyin、tou-tiao、weibo、world-cup、zhihu、forex及metal。bilibili-rcmd额外接受lastShown（上游视频标识列表）；forex要求from/to，两者限CNY、USD、JPY、EUR、KRW、AUD、HKD、PHP、MYR、SGD、THB、VND、IDR、RUB。metal仅请求固定BiQuote四种合约，原始数字严格转为十进制字符串，保留来源、交易所、市场状态、实际报价时间、过期及源时效；非法身份、缺失价格或超出精度直接失败。不能传任意URL、请求头、Cookie或请求体。宿主使用现有网络设置，GET读取固定接口，禁止重定向，超时8秒，响应上限2 MiB；返回 `{data,source,fetchedAt}`。页面负责检查业务返回码与响应结构，失败保留同一内容源/币种对的上次数据并明确显示失败及旧数据状态，不替代为空榜或虚构汇率。不会把这些公开内容接入币安行情或价格警报。
+`content.read` 开放 `content.get`，参数为 `{source}`；source限于bilibili、bangumi、bilibili-rcmd、cls-telegraph、douyin、tou-tiao、weibo、zhihu、forex及metal。bilibili-rcmd额外接受lastShown（上游视频标识列表）；forex要求from/to，两者限CNY、USD、JPY、EUR、KRW、AUD、HKD、PHP、MYR、SGD、THB、VND、IDR、RUB。metal仅请求固定BiQuote四种合约，原始数字严格转为十进制字符串，保留来源、交易所、市场状态、实际报价时间、过期及源时效；非法身份、缺失价格或超出精度直接失败。不能传任意URL、请求头、Cookie或请求体。宿主使用现有网络设置，GET读取固定接口，禁止重定向，超时8秒，响应上限2 MiB；返回 `{data,source,fetchedAt}`。页面负责检查业务返回码与响应结构，失败保留同一内容源/币种对的上次数据并明确显示失败及旧数据状态，不替代为空榜或虚构汇率。不会把这些公开内容接入币安行情或价格警报。
 
 `itime-calendar`只接受`{source:'itime-calendar'}`，请求原iTime固定公开接口`https://itime.fun/api/v2/event/public/calendar`，不接收年份、月份、URL或其他额外参数。data保留原`{code,message,data}`结构；前端核对业务码、日期唯一性/有效性、文本上限和status。休/班只取源status，未提供的日期不推测安排；fetchedAt为本机读取时间，不代表源数据更新时间。此来源需要含它的新主程序，沿用content.read的会话检查、代理、禁止重定向、8秒和2 MiB边界。
 
@@ -231,9 +231,8 @@ kind固定为stats、info、pull或push。stats按原客户端POST `mem:*`、`cu
 
 Windows CPU使用系统时间差分，内核时间包含空闲时间；多处理器组暂明确不支持。内存是物理内存使用百分比。GPU使用语言无关的Windows性能计数器，先按物理适配器/引擎汇总各进程，再取最繁忙引擎，不能视为原LibreHardwareMonitor首个Load传感器的同一口径。首次CPU/GPU需要两次采样，驱动未提供或读数失败返回null，不能伪造0%。所有实例共享最多每秒一次的缓存，无网页轮询时不采集；超过10秒无读取后，下次重新预热。采集在阻塞任务池执行，query句柄由原生析构释放。
 
-仪表盘沿用三秒轮询和一秒指针过渡，源时间超10秒、未来超5秒及失败明确标识；旧会话的返回不会交给新视图。原生三种指标本机读取及正式会话/实例配置检查已通过，真实WebView画面和设置仍待验收。
 
-打工能耗标识复用该接口与同一有效值/时效模型，以CPU×0.8＋内存×0.2按每20个百分点向上取整分为1～5档，分级使用未舍入的读数。CPU或内存任一无效时等级为缺失，另一个真实指标仍可显示；不可用数据不会显示绿色一级。它的名称、型号、字号和圆角仍按实例保存；两份独立包各自包含`dist/hardware-common/metrics.js`，相对模块保持目录层次，既有标准包校验不变。
+打工能耗标识复用该接口与同一有效值/时效模型，以CPU×0.8＋内存×0.2按每20个百分点向上取整分为1～5档，分级使用未舍入的读数。CPU或内存任一无效时等级为缺失，另一个真实指标仍可显示；不可用数据不会显示绿色一级。它的名称、型号、字号和圆角仍按实例保存；两个组件包各自包含`dist/hardware-common/metrics.js`，相对模块保持目录层次，既有标准包校验不变。
 
 监控面板增加固定的details字段：cpuLogicalCount为系统逻辑处理器数或null；memoryTotalBytes为物理内存总字节的精确字符串或null；gpuAdapter为占用率所选适配器的临时LUID/物理索引，gpuTemperature为`{celsius,error}`，驱动不提供时celsius为null。温度仅向同一适配器查询，不能用另一块GPU的温度补缺。GPU主温度与原硬件库的GPU Core传感器口径仍区分，不开放调用方指定的查询类型或驱动参数。
 

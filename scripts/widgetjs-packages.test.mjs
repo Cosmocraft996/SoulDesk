@@ -101,13 +101,6 @@ test('全部移植包的相对模块和HTML资源完整，原生预置包含每�
   }
 });
 
-test('电子木鱼随包交付原音频和图片，不依赖远程地址', () => {
-  const files = widgetFiles('wooden-fish');
-  for (const target of ['wooden_fish.png', 'hit.mp3', 'bgm.mp3']) {
-    assert.ok(files['dist/' + target]?.length > 1000, target);
-  }
-});
-
 test('倒计时列表独立包选择列表视图，入口不依赖宿主CSP禁止的内联脚本',()=>{
   const files=widgetFiles('countdown-list'),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json'])),html=new TextDecoder().decode(files[manifest.entry]);
   assert.match(html,/<body\s[^>]*data-countdown-variant="countdown-list"/);
@@ -155,14 +148,6 @@ test('主流虚拟币原14项都有随包的可用回退图与实时内容能力
   for(const coin of coins){const path='dist/'+(fallbacks[coin.ccy]||'bitcoin.png');assert.ok(files[path]?.length>100,path);assert.deepEqual([...files[path].slice(0,4)],[137,80,78,71]);}
 });
 
-test('仪表盘保留固定提交的三层原图片，并声明本机监控能力',()=>{
-  const files=widgetFiles('dashboard'),manifest=JSON.parse(new TextDecoder().decode(files['manifest.json']));
-  assert.ok(manifest.capabilities.includes('system.metrics'));
-  for(const [name,hash] of Object.entries({'hitler_body.png':'6dc0bc94c56c80ec5f54c2a43b8d6217903c0cd6','hitler_hand.png':'aedad82ebcf21f7b4d3437e2a4a63180c847b3b2','speedometer.png':'0a156ce6de98c99f443aa97e8c5d52a9bb019285'})){
-    const bytes=files[posix.join(posix.dirname(manifest.entry),name)];assert.ok(bytes);
-    assert.equal(createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex'),hash,name);
-  }
-});
 test('思维导图保留固定提交的完整本地编辑源码，其余适配逐文件列明',()=>{
   const provenance=JSON.parse(readFileSync('components/widgetjs/mindmap-source/SOURCE_FILES.json','utf8'));
   assert.equal(provenance.revision,'9e8ff6ace455e7930117dec3816821ada51c48ab');
@@ -184,3 +169,5 @@ test('打工进度随包交付11张原表情及原许可，声明核心倒计时
   assert.equal(provenance.revision,'714802e66336133396ab55463eb5a26d08fc0788');let checked=0;
   for(const item of provenance.files){if(!item.target.endsWith('.png'))continue;const name=posix.basename(item.target.replaceAll('\\','/'));assert.equal(createHash('sha256').update(files['dist/'+name]).digest('hex'),item.sha256,name);checked++;}assert.equal(checked,11);assert.match(new TextDecoder().decode(files['dist/LICENSE.txt']),/GNU GENERAL PUBLIC LICENSE/);assert.ok(manifest.capabilities.includes('reminders.labor'));
 });
+
+test('当前57包保留必要共享依赖',()=>{ assert.equal(portedWidgets.length,57); for(const name of ['energy-label','base-panel'])assert.ok(widgetFiles(name)['dist/hardware-common/metrics.js']); });

@@ -396,7 +396,7 @@ mod tests {
         .unwrap();
         let staged = widgets::stage_bytes(
             &store,
-            crate::presets::find("local.souldesk.widgetjs.dashboard")
+            crate::presets::find("local.souldesk.widgetjs.base-panel")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -405,8 +405,9 @@ mod tests {
         .unwrap();
         let defaults = widgets::initial_settings(&staged.manifest);
         widgets::activate(&store, &staged).unwrap();
-        let first = widgets::create_instance(&store, "local.souldesk.widgetjs.dashboard").unwrap();
-        let second = widgets::create_instance(&store, "local.souldesk.widgetjs.dashboard").unwrap();
+        let first = widgets::create_instance(&store, "local.souldesk.widgetjs.base-panel").unwrap();
+        let second =
+            widgets::create_instance(&store, "local.souldesk.widgetjs.base-panel").unwrap();
         let sessions = Sessions::default();
         let service = Service::default();
         let label = format!("float-{first}");
@@ -438,7 +439,7 @@ mod tests {
         assert!(service.0.lock().unwrap().is_none());
         let denied = widgets::stage_bytes(
             &store,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -446,7 +447,7 @@ mod tests {
         )
         .unwrap();
         widgets::activate(&store, &denied).unwrap();
-        let no_cap = widgets::create_instance(&store, "local.example.clock").unwrap();
+        let no_cap = widgets::create_instance(&store, "local.fixture.surface").unwrap();
         let no_label = format!("float-{no_cap}");
         let no_session =
             widgets::open_display_session(&store, &sessions, &no_label, &no_cap, None).unwrap();
@@ -465,7 +466,7 @@ mod tests {
             .as_u64()
             .is_some());
         let mut next = defaults.clone();
-        next["monitorType"] = json!("cpu");
+        next["fontSize"] = json!(18);
         widgets::gateway(
             &store,
             &sessions,

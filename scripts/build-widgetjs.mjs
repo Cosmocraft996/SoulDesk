@@ -9,8 +9,8 @@ import { assertPackageVersions, inputGroups, packageState, readBuildState, recor
 export { hotspotWidgets } from './widgetjs-hotspots.mjs';
 
 export const progressWidgets = ['time-progress', 'wave-progress'];
-export const clockWidgets = ['clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'trump-clock'];
-export const standaloneWidgets = ['note', 'wooden-fish', 'forex', 'photo', 'sticker', 'metal', 'grid', 'dashboard', 'energy-label', 'base-panel', 'water-reminder'];
+export const clockWidgets = ['clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock'];
+export const standaloneWidgets = ['note', 'forex', 'photo', 'sticker', 'metal', 'grid', 'energy-label', 'base-panel', 'water-reminder'];
 export const compiledWidgets = ['excalidraw', 'convert', 'gold', 'stock-medium', 'stock-small', 'coin-small', 'coin-medium', 'mindmap', 'server', 'labor', 'deadline', 'calendar', 'birthday-list', 'todo', 'calendar-large', 'pomodoro', 'stock', 'key-stroke'];
 export const countdownWidgets = ['countdown', 'countdown-list'];
 export const weatherWidgets = ['weather-small', 'weather-medium', 'weather-large'];
@@ -36,7 +36,7 @@ export function widgetFiles(name) {
       if (item.isFile() && item.name !== 'manifest.json' && !(source.endsWith('-bundle') && item.name === 'index.html') && !item.name.endsWith('.test.js')) files['dist/' + item.name] = new Uint8Array(readFileSync(join(source, item.name)));
     }
   }
-  if(['dashboard','energy-label','base-panel'].includes(name)){
+  if(['energy-label','base-panel'].includes(name)){
     for(const path of Object.keys(files))if(path.startsWith('dist/')&&path!=='dist/host.js'){
       files[`dist/${name}/${path.slice(5)}`]=files[path];delete files[path];
     }

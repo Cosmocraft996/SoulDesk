@@ -19,6 +19,7 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState<number>();
+  const [viewportHeight, setViewportHeight] = useState(0);
   const available = measuredWidth ?? 400;
   const [loaded, setLoaded] = useState(() => new Set<string>());
   const lastScroll = useRef<PanelScroll | undefined>(undefined);
@@ -32,7 +33,10 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
   useLayoutEffect(() => {
     const node = viewport.current;
     if (!node) return;
-    const measure = () => setMeasuredWidth(Math.max(0, node.clientWidth - 24));
+    const measure = () => {
+      setMeasuredWidth(Math.max(0, node.clientWidth - 24));
+      setViewportHeight(node.clientHeight);
+    };
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     measure();
@@ -122,7 +126,7 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
     }
   };
   const values = Object.values(layouts);
-  const height = Math.max(180, ...values.map(g => g.y + g.height + 12));
+  const height = Math.max(180, ...values.map(g => g.y + g.height + 12)) + viewportHeight * 0.3;
   const width = Math.max(available, ...values.map(g => g.x + g.width));
   return <div ref={viewport} className={`panel-scroll${active ? ' manipulating' : ''}`} onScroll={event => {
     const prev = lastScroll.current;

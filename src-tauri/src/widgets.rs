@@ -1410,10 +1410,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-panel-add-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
-        let desktop = create_instance(&store, "local.example.clock").unwrap();
-        let ungrouped = create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        let desktop = create_instance(&store, "local.fixture.surface").unwrap();
+        let ungrouped = create_instance_at(&store, "local.fixture.surface", "panel").unwrap();
         let groups = store
             .change_panel_groups(
                 crate::panel::GroupChange::Create {
@@ -1422,7 +1423,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        let added = create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        let added = create_instance_at(&store, "local.fixture.surface", "panel").unwrap();
         assert_eq!(store.panel_groups().unwrap().active, groups.active);
         assert_eq!(
             store.panel_groups().unwrap().membership[&added],
@@ -1459,7 +1460,8 @@ mod tests {
             std::env::temp_dir().join(format!("souldesk-panel-add-failure-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
         store
             .change_panel_groups(
@@ -1471,7 +1473,7 @@ mod tests {
             .unwrap();
         let before = store.snapshot().unwrap();
         store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_panel_add BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试分组保存失败'); END;").unwrap();
-        assert!(create_instance_at(&store, "local.example.clock", "panel").is_err());
+        assert!(create_instance_at(&store, "local.fixture.surface", "panel").is_err());
         let after = store.snapshot().unwrap();
         assert_eq!(after["instances"], before["instances"]);
         assert_eq!(after["panelGroups"], before["panelGroups"]);
@@ -1489,7 +1491,8 @@ mod tests {
             ));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["id"] = json!(crate::job_protocol::PACKAGE);
         manifest["capabilities"] = json!([crate::job_protocol::CAPABILITY]);
         let staged = stage(&store, &fixture(&root, &manifest, None)).unwrap();
@@ -1517,10 +1520,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-document-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
-        let other = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
+        let other = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let session = open_session(&store, &sessions, "main", &id).unwrap();
         let token = session["token"].as_str().unwrap();
@@ -1603,10 +1607,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-large-scene-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["capabilities"] = json!(["storage.instance", "storage.document"]);
         import(&store, &fixture(&root, &manifest, None)).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let session = open_session(&store, &sessions, "main", &id).unwrap();
         let token = session["token"].as_str().unwrap();
@@ -1643,7 +1648,8 @@ mod tests {
         let store = Store::open(root.clone()).unwrap();
         let sessions = Sessions::default();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["capabilities"] = json!(["storage.instance", "alerts.manage"]);
         import(&store, &fixture(&root, &manifest, None)).unwrap();
         let id = create_instance(&store, manifest["id"].as_str().unwrap()).unwrap();
@@ -1704,9 +1710,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-upgrade-race-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let old = open_session(&store, &sessions, "main", &id).unwrap();
         manifest["version"] = json!("0.2.0");
@@ -1784,7 +1791,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-static-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         assert!(stage(&store, &fixture(&root, &manifest, Some("dist/backend.dll"))).is_err());
         let staged = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &staged).unwrap();
@@ -1793,7 +1801,7 @@ mod tests {
             "旧包中的非页面文件",
         )
         .unwrap();
-        assert!(resource(&store, "local.example.clock/dist/legacy.exe").is_err());
+        assert!(resource(&store, "local.fixture.surface/dist/legacy.exe").is_err());
         let preview = Arc::new(Mutex::new(Preview {
             settings: initial_settings(&staged.manifest),
             package: staged,
@@ -1831,29 +1839,32 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-image-policy-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         let baseline = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &baseline).unwrap();
         assert_eq!(
-            resource_csp(&store, "local.example.clock/dist/index.html"),
+            resource_csp(&store, "local.fixture.surface/dist/index.html"),
             COMPONENT_CSP
         );
         manifest["version"] = json!("2.0.0");
         manifest["capabilities"] = json!(["storage.instance", "content.read"]);
         let content = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &content).unwrap();
-        assert!(resource_csp(&store, "local.example.clock/dist/index.html")
-            .contains("img-src 'self' data: https:"));
+        assert!(
+            resource_csp(&store, "local.fixture.surface/dist/index.html")
+                .contains("img-src 'self' data: https:")
+        );
         assert_eq!(
             resource_csp(
                 &store,
-                &format!("local.example.clock/{}/dist/index.html", baseline.digest)
+                &format!("local.fixture.surface/{}/dist/index.html", baseline.digest)
             ),
             COMPONENT_CSP
         );
         assert!(resource_csp(
             &store,
-            &format!("local.example.clock/{}/dist/index.html", content.digest)
+            &format!("local.fixture.surface/{}/dist/index.html", content.digest)
         )
         .contains("connect-src 'none'"));
         assert_eq!(
@@ -1864,7 +1875,7 @@ mod tests {
         manifest["capabilities"] = json!(["storage.instance", "assets.local"]);
         let local = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &local).unwrap();
-        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        let policy = resource_csp(&store, "local.fixture.surface/dist/index.html");
         assert!(policy.contains("connect-src 'self'"));
         assert!(policy.contains("worker-src 'self' blob:"));
         assert!(policy.contains("wasm-unsafe-eval"));
@@ -1882,33 +1893,34 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-assets-policy-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["capabilities"] = json!(["storage.instance", "assets.local"]);
         let old = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &old).unwrap();
         let old_policy = resource_csp(
             &store,
-            &format!("local.example.clock/{}/dist/index.html", old.digest),
+            &format!("local.fixture.surface/{}/dist/index.html", old.digest),
         );
         manifest["version"] = json!("2.0.0");
         manifest["capabilities"] = json!(["storage.instance", "assets.scoped", "styles.inline"]);
         let new = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &new).unwrap();
-        let current = resource_csp(&store, "local.example.clock/dist/index.html");
+        let current = resource_csp(&store, "local.fixture.surface/dist/index.html");
         assert!(current.contains("style-src 'self' 'unsafe-inline'"));
         assert!(current.contains("worker-src 'none'"));
         assert!(!current.contains("unsafe-eval") && !current.contains("blob:"));
         assert_eq!(
             resource_csp(
                 &store,
-                &format!("local.example.clock/{}/dist/index.html", new.digest)
+                &format!("local.fixture.surface/{}/dist/index.html", new.digest)
             ),
             current
         );
         assert_eq!(
             resource_csp(
                 &store,
-                &format!("local.example.clock/{}/dist/index.html", old.digest)
+                &format!("local.fixture.surface/{}/dist/index.html", old.digest)
             ),
             old_policy
         );
@@ -1926,7 +1938,7 @@ mod tests {
                 .unwrap()
                 .starts_with("CAPABILITY_DENIED:"));
             assert_eq!(
-                resource_csp(&store, "local.example.clock/dist/index.html"),
+                resource_csp(&store, "local.fixture.surface/dist/index.html"),
                 current
             );
         }
@@ -1935,7 +1947,8 @@ mod tests {
     #[test]
     fn content_manifest_rejects_mixed_legacy_and_scoped_permissions() {
         let mut manifest: Manifest =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         let legacy = crate::component_registry::LEGACY_CONTENT_READ;
         for capability in [
             crate::component_registry::HTTPS_IMAGES,
@@ -1955,7 +1968,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-embed-policy-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["capabilities"] = json!([
             "storage.instance",
             "web.embed",
@@ -1964,7 +1978,7 @@ mod tests {
         ]);
         let embedded = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &embedded).unwrap();
-        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        let policy = resource_csp(&store, "local.fixture.surface/dist/index.html");
         assert!(policy.contains("frame-src https:"));
         assert!(policy.contains("connect-src 'none'"));
         assert!(!policy.contains("'unsafe-eval'"));
@@ -1975,11 +1989,12 @@ mod tests {
             std::env::temp_dir().join(format!("souldesk-ai-graphics-policy-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let mut manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         manifest["capabilities"] = json!(["storage.instance", "ai.generate"]);
         let candidate = stage(&store, &fixture(&root, &manifest, None)).unwrap();
         activate(&store, &candidate).unwrap();
-        let policy = resource_csp(&store, "local.example.clock/dist/index.html");
+        let policy = resource_csp(&store, "local.fixture.surface/dist/index.html");
         assert!(
             policy.contains("style-src 'self' 'unsafe-inline'"),
             "真实图形引擎动态SVG样式须可用"
@@ -2000,10 +2015,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-reimport-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         let path = fixture(&root, &manifest, None);
         import(&store, &path).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let session = open_session(&store, &sessions, "main", &id).unwrap();
         let staged = stage(&store, &path).unwrap();
@@ -2043,10 +2059,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-layout-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
-        let a = create_instance(&store, "local.example.clock").unwrap();
-        let b = create_instance(&store, "local.example.clock").unwrap();
+        let a = create_instance(&store, "local.fixture.surface").unwrap();
+        let b = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let sa = open_session(&store, &sessions, "main", &a).unwrap();
         let sb = open_session(&store, &sessions, "main", &b).unwrap();
@@ -2074,9 +2091,9 @@ mod tests {
             Value::Null
         )
         .is_ok());
-        assert!(unregister_package(&store, "local.example.clock").is_err());
+        assert!(unregister_package(&store, "local.fixture.surface").is_err());
         remove_instance(&store, &sessions, &b).unwrap();
-        unregister_package(&store, "local.example.clock").unwrap();
+        unregister_package(&store, "local.fixture.surface").unwrap();
         assert!(store.snapshot().unwrap()["packages"]
             .as_array()
             .unwrap()
@@ -2115,11 +2132,12 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-g0-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let manifest: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         let package = fixture(&root, &manifest, None);
         import(&store, &package).unwrap();
-        let a = create_instance(&store, "local.example.clock").unwrap();
-        let b = create_instance(&store, "local.example.clock").unwrap();
+        let a = create_instance(&store, "local.fixture.surface").unwrap();
+        let b = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let sa = open_session(&store, &sessions, "main", &a).unwrap();
         let sb = open_session(&store, &sessions, "main", &b).unwrap();
@@ -2142,7 +2160,7 @@ mod tests {
             Value::Null,
         )
         .unwrap();
-        assert_eq!(value["title"], "此刻");
+        assert_eq!(value["title"], "测试标题");
         assert!(gateway(
             &store,
             &sessions,
@@ -2214,8 +2232,8 @@ mod tests {
         let mut incompatible = manifest.clone();
         incompatible["hostApiMajor"] = json!(2);
         assert!(import(&store, &fixture(&root, &incompatible, None)).is_err());
-        assert!(resource(&store, "local.example.clock/dist/index.html").is_ok());
-        assert!(resource(&store, "local.example.clock/dist/%2e%2e/manifest.json").is_err());
+        assert!(resource(&store, "local.fixture.surface/dist/index.html").is_ok());
+        assert!(resource(&store, "local.fixture.surface/dist/%2e%2e/manifest.json").is_err());
         drop(store);
         let reopened = Store::open(root).unwrap();
         assert_eq!(
@@ -2255,7 +2273,8 @@ mod tests {
     #[test]
     fn malformed_configuration_contract_is_rejected_before_registration() {
         let baseline: Manifest =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         for schema in [
             json!({"type":"object","additionalProperties":false,"properties":{"x":{"type":"boolean","default":"yes"}}}),
             json!({"type":"object","additionalProperties":false,"properties":{"x":{"type":"string","maxLength":"3"}}}),
@@ -2287,9 +2306,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-upgrade-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let baseline: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &baseline, None)).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
         let sessions = Sessions::default();
         let session = open_session(&store, &sessions, "main", &id).unwrap();
         gateway(
@@ -2332,7 +2352,7 @@ mod tests {
         );
         assert_eq!(
             db.query_row(
-                "SELECT COUNT(*) FROM widget_versions WHERE package_id='local.example.clock'",
+                "SELECT COUNT(*) FROM widget_versions WHERE package_id='local.fixture.surface'",
                 [],
                 |r| r.get::<_, u64>(0)
             )
@@ -2358,9 +2378,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-staging-{}", Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let baseline: Value =
-            serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
         import(&store, &fixture(&root, &baseline, None)).unwrap();
-        let id = create_instance(&store, "local.example.clock").unwrap();
+        let id = create_instance(&store, "local.fixture.surface").unwrap();
         let before = store.snapshot().unwrap();
         let mut next = baseline.clone();
         next["version"] = json!("0.2.0");

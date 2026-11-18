@@ -18,10 +18,10 @@
   <main>
     <header class="page-header">
       <div><div class="eyebrow">SOULDESK / COMPONENT REVIEW</div><h1>挑选你的桌面组件<span>。</span></h1><p class="subtitle">逐项使用，留下选择。让桌面只保留你需要的东西。</p></div>
-      <div class="build-stamp"><span>本次验收构建</span><strong id="build">正在加载</strong><small>64 项组件 · 本地验收</small></div>
+      <div class="build-stamp"><span>最近验收构建</span><strong id="build">正在加载</strong><small id="catalog-summary">正在读取当前清单</small></div>
     </header>
     <section class="summary" aria-label="筛选进度">
-      <div class="progress-cell"><span>筛选进度</span><div><strong id="selected-count">0</strong><span>/ 64</span></div><div class="progress-track"><div id="progress-bar"></div></div></div>
+      <div class="progress-cell"><span>筛选进度</span><div><strong id="selected-count">0</strong><span id="total-count"></span></div><div class="progress-track"><div id="progress-bar"></div></div></div>
       <button class="stat" data-decision-filter="keep"><span class="stat-dot keep"></span>保留<strong id="keep-count">0</strong></button>
       <button class="stat" data-decision-filter="trim"><span class="stat-dot trim"></span>裁剪<strong id="trim-count">0</strong></button>
       <button class="stat" data-decision-filter="undecided"><span class="stat-dot undecided"></span>待定<strong id="undecided-count">0</strong></button>

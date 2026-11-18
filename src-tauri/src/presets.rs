@@ -527,46 +527,6 @@ pub const PRESETS: &[Preset] = &[
             ),
         ],
     },
-    Preset {
-        manifest: include_str!("../../examples/clock/manifest.json"),
-        description: "显示本地时间与日期，可设置标题、显示或隐藏秒数。",
-        symbol: "◷",
-        prebuilt: None,
-        files: &[
-            (
-                "dist/index.html",
-                include_bytes!("../../examples/clock/index.html"),
-            ),
-            (
-                "dist/style.css",
-                include_bytes!("../../examples/clock/style.css"),
-            ),
-            (
-                "dist/clock.js",
-                include_bytes!("../../examples/clock/clock.js"),
-            ),
-        ],
-    },
-    Preset {
-        manifest: include_str!("../../examples/template/manifest.json"),
-        description: "自定义一段显示文字，每个实例独立保存，亦可用作组件开发示例。",
-        symbol: "▤",
-        prebuilt: None,
-        files: &[
-            (
-                "dist/index.html",
-                include_bytes!("../../examples/template/index.html"),
-            ),
-            (
-                "dist/style.css",
-                include_bytes!("../../examples/template/style.css"),
-            ),
-            (
-                "dist/card.js",
-                include_bytes!("../../examples/template/card.js"),
-            ),
-        ],
-    },
     widgetjs_progress!(
         "time-progress",
         "今天、本周、本月、今年的剩余时间百分比，可独立设置主题。",
@@ -596,21 +556,6 @@ pub const PRESETS: &[Preset] = &[
         "mickey-clock",
         "保留原有图形与手臂指针，随组件尺寸缩放。",
         "◴"
-    ),
-    widgetjs_static!(
-        "dashboard",
-        "原图片仪表盘、CPU/物理内存/GPU占用率、指针动画与实例主题；不可用数据明确提示。",
-        "◴",
-        "dist/dashboard/",
-        [
-            "app.js",
-            "gauge-model.js",
-            "style.css",
-            "speedometer.png",
-            "hitler_hand.png",
-            "hitler_body.png"
-        ],
-        ["dist/hardware-common/metrics.js" => "hardware-common/metrics.js", "dist/hardware-common/verify.js" => "hardware-common/verify.js"]
     ),
     widgetjs_static!(
         "energy-label",
@@ -704,7 +649,6 @@ pub const PRESETS: &[Preset] = &[
         ]
     ),
     widgetjs_clock!("text-clock", "时间、日期、星期与农历，支持设置字体。", "12"),
-    widgetjs_clock!("trump-clock", "保留原有图片表盘，点击显示当前时间。", "◷"),
     widgetjs_static!(
         "note",
         "横线纸便签，自动保存，Ctrl＋滚轮调整字号。",
@@ -804,18 +748,6 @@ pub const PRESETS: &[Preset] = &[
             "dist/style.css" => "deadline-bundle/style.css"
         ]
     ),
-    widgetjs_static!(
-        "wooden-fish",
-        "敲木鱼、功德动画与背景音乐，可独立设置主题。",
-        "♫",
-        [
-            "app.js",
-            "style.css",
-            "wooden_fish.png",
-            "hit.mp3",
-            "bgm.mp3"
-        ]
-    ),
     widgetjs_hotspot!(
         "hotspot-bangumi",
         "B站追番时间表，日期选择、封面取色与点击打开。",
@@ -835,7 +767,6 @@ pub const PRESETS: &[Preset] = &[
     widgetjs_hotspot!("hotspot-douyin", "抖音热搜、热点标签与点击打开。", "热"),
     widgetjs_hotspot!("hotspot-tou-tiao", "头条热榜与新闻跳转。", "讯"),
     widgetjs_hotspot!("hotspot-weibo", "微博热搜、热度标签与搜索跳转。", "热"),
-    widgetjs_hotspot!("hotspot-world-cup", "世界杯赛程、阶段和日期筛选。", "⚽"),
     widgetjs_hotspot!("hotspot-zhihu", "知乎热榜与问题跳转。", "知"),
     widgetjs_static!(
         "forex",
@@ -1003,6 +934,50 @@ pub const PRESETS: &[Preset] = &[
     },
 ];
 
+// 仅供显式历史验收及单元测试使用，不进入用户组件库或当前预置。
+const VERIFICATION_FIXTURES: &[Preset] = &[
+    Preset {
+        manifest: include_str!("../../tests/fixtures/surface/manifest.json"),
+        description: "验证组件包、实例设置及窗口生命周期。",
+        symbol: "◷",
+        prebuilt: None,
+        files: &[
+            (
+                "dist/index.html",
+                include_bytes!("../../tests/fixtures/surface/index.html"),
+            ),
+            (
+                "dist/style.css",
+                include_bytes!("../../tests/fixtures/surface/style.css"),
+            ),
+            (
+                "dist/app.js",
+                include_bytes!("../../tests/fixtures/surface/app.js"),
+            ),
+        ],
+    },
+    Preset {
+        manifest: include_str!("../../tests/fixtures/document/manifest.json"),
+        description: "验证普通文档设置、消息桥及实例隔离。",
+        symbol: "▤",
+        prebuilt: None,
+        files: &[
+            (
+                "dist/index.html",
+                include_bytes!("../../tests/fixtures/document/index.html"),
+            ),
+            (
+                "dist/style.css",
+                include_bytes!("../../tests/fixtures/document/style.css"),
+            ),
+            (
+                "dist/app.js",
+                include_bytes!("../../tests/fixtures/document/app.js"),
+            ),
+        ],
+    },
+];
+
 impl Preset {
     fn metadata(&self) -> AppResult<Value> {
         serde_json::from_str(self.manifest).map_err(err)
@@ -1035,6 +1010,19 @@ pub fn find(id: &str) -> AppResult<Option<&'static Preset>> {
     for preset in PRESETS {
         if preset.metadata()?["id"] == id {
             return Ok(Some(preset));
+        }
+    }
+    #[cfg(test)]
+    if let Some(fixture) = verification_fixture(id)? {
+        return Ok(Some(fixture));
+    }
+    Ok(None)
+}
+
+pub(crate) fn verification_fixture(id: &str) -> AppResult<Option<&'static Preset>> {
+    for fixture in VERIFICATION_FIXTURES {
+        if fixture.metadata()?["id"] == id {
+            return Ok(Some(fixture));
         }
     }
     Ok(None)
@@ -1078,7 +1066,7 @@ mod tests {
             Store::open(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string())).unwrap();
         let before = store.snapshot().unwrap();
         let catalog = catalog(before["packages"].as_array().unwrap()).unwrap();
-        assert_eq!(catalog.len(), 64);
+        assert_eq!(catalog.len(), 58);
         assert!(catalog
             .iter()
             .all(|p| p["preset"] == true && p["installed"] == false));
@@ -1180,6 +1168,19 @@ mod tests {
     #[test]
     fn corrected_widgetjs_versions_upgrade_legacy_instances_without_losing_saved_state() {
         for (name, previous, next) in [
+            ("clock", "0.1.1", "0.1.3"),
+            ("flip-clock", "0.1.1", "0.1.3"),
+            ("glitch-clock", "0.1.1", "0.1.3"),
+            ("mickey-clock", "0.1.1", "0.1.3"),
+            ("text-clock", "0.1.1", "0.1.3"),
+            ("hotspot-bangumi", "0.1.2", "0.1.4"),
+            ("hotspot-bilibili", "0.1.2", "0.1.4"),
+            ("hotspot-bilibili-rcmd", "0.1.2", "0.1.4"),
+            ("hotspot-cls-telegraph", "0.1.2", "0.1.4"),
+            ("hotspot-douyin", "0.1.2", "0.1.4"),
+            ("hotspot-tou-tiao", "0.1.2", "0.1.4"),
+            ("hotspot-weibo", "0.1.2", "0.1.4"),
+            ("hotspot-zhihu", "0.1.2", "0.1.4"),
             ("ai-assistant", "0.1.0", "0.1.2"),
             ("ai-mindmap", "0.1.2", "0.1.4"),
             ("ai-mermaid", "0.1.2", "0.1.4"),
@@ -1194,15 +1195,14 @@ mod tests {
             ("calendar-large", "0.2.1", "0.2.3"),
             ("calendar-large", "0.2.2", "0.2.3"),
             ("calendar", "0.1.1", "0.1.2"),
-            ("hotspot-bangumi", "0.1.1", "0.1.2"),
-            ("hotspot-bilibili", "0.1.1", "0.1.2"),
-            ("hotspot-bilibili-rcmd", "0.1.1", "0.1.2"),
-            ("hotspot-cls-telegraph", "0.1.1", "0.1.2"),
-            ("hotspot-douyin", "0.1.1", "0.1.2"),
-            ("hotspot-tou-tiao", "0.1.1", "0.1.2"),
-            ("hotspot-weibo", "0.1.1", "0.1.2"),
-            ("hotspot-world-cup", "0.1.1", "0.1.2"),
-            ("hotspot-zhihu", "0.1.1", "0.1.2"),
+            ("hotspot-bangumi", "0.1.1", "0.1.4"),
+            ("hotspot-bilibili", "0.1.1", "0.1.4"),
+            ("hotspot-bilibili-rcmd", "0.1.1", "0.1.4"),
+            ("hotspot-cls-telegraph", "0.1.1", "0.1.4"),
+            ("hotspot-douyin", "0.1.1", "0.1.4"),
+            ("hotspot-tou-tiao", "0.1.1", "0.1.4"),
+            ("hotspot-weibo", "0.1.1", "0.1.4"),
+            ("hotspot-zhihu", "0.1.1", "0.1.4"),
             ("sticker", "0.1.0", "0.1.2"),
             ("excalidraw", "0.1.0", "0.1.2"),
             ("convert", "0.1.0", "0.1.2"),

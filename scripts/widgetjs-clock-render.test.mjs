@@ -7,7 +7,7 @@ import { renderToString } from 'vue/server-renderer';
 import { createServer } from 'vite';
 
 const root = 'components/widgetjs/clock-source/';
-const variants = ['clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'trump-clock'];
+const variants = ['clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock'];
 function defaults(variant) {
   const manifest = JSON.parse(readFileSync(`components/widgetjs/${variant}/manifest.json`));
   return Object.fromEntries(Object.entries(manifest.settingsSchema.properties)
@@ -49,8 +49,8 @@ async function atTime(value, run) {
   try { return await run(); } finally { globalThis.Date = NativeDate; }
 }
 
-test('六款原Vue时钟分支实际渲染，独立主题生效且离线渲染不调用宿主', async () => withClock(async shared => {
-  const patterns = { clock: /clock-container/, 'flip-clock': /flipper/, 'glitch-clock': /glitch_container/, 'mickey-clock': /mickey-clock/, 'text-clock': /class="time"/, 'trump-clock': /clock_trump_bg/ };
+test('五款原Vue时钟分支实际渲染，独立主题生效且离线渲染不调用宿主', async () => withClock(async shared => {
+  const patterns = { clock: /clock-container/, 'flip-clock': /flipper/, 'glitch-clock': /glitch_container/, 'mickey-clock': /mickey-clock/, 'text-clock': /class="time"/ };
   for (const variant of variants) {
     resetSettings(shared, variant);
     shared.settings.background = '#123456';
@@ -63,36 +63,6 @@ test('六款原Vue时钟分支实际渲染，独立主题生效且离线渲染�
     assert.match(html, patterns[variant], variant);
     assert.doesNotMatch(html, /<component-frame[\s>]/);
   }
-}));
-
-test('川普表盘默认透明、沿用旧自定义实色，并可重新切换透明', async () => withClock(async shared => {
-  const variant = 'trump-clock';
-  const host = { preview: false, async request(method, args) {
-    assert.equal(method, 'settings.update');
-    return structuredClone(args);
-  } };
-  resetSettings(shared, variant);
-  const { html } = await renderComponent(shared.App, shared, { host, variant });
-  assert.match(html, /--widget-background-color:transparent/);
-  assert.match(html, /clock_trump_bg/);
-
-  // 旧版实例没有透明选项，保存过的实色在升级后继续显示。
-  shared.settings.background = '#123456';
-  const custom = await renderComponent(shared.App, shared, { host, variant });
-  assert.match(custom.html, /--widget-background-color:#123456/);
-  custom.state.dialog.value = { showModal() {}, close() {} };
-  custom.state.openSettings();
-  assert.equal(custom.state.draft.value.transparentBackground, false);
-  custom.state.draft.value.transparentBackground = true;
-  await custom.state.save(new Event('submit'));
-  assert.equal(custom.state.theme.value['--widget-background-color'], 'transparent');
-  assert.equal(shared.settings.background, '#123456');
-
-  custom.state.openSettings();
-  custom.state.draft.value.transparentBackground = false;
-  custom.state.draft.value.background = '#202026';
-  await custom.state.save(new Event('submit'));
-  assert.equal(custom.state.theme.value['--widget-background-color'], '#202026');
 }));
 
 test('模拟同一真实瞬间：表盘时区变更及午夜回绕执行原计算，不混用本地时间', async () => withClock(async shared => {

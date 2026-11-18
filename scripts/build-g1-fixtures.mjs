@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { zipSync, unzipSync } from 'fflate';
-const version = JSON.parse(readFileSync('examples/clock/manifest.json', 'utf8')).version;
-const source = unzipSync(readFileSync(`artifacts/local.example.clock-${version}.zip`));
+const version = JSON.parse(readFileSync('tests/fixtures/surface/manifest.json', 'utf8')).version;
+const source = unzipSync(readFileSync(`artifacts/local.fixture.surface-${version}.zip`));
 mkdirSync('artifacts/g1-fixtures', { recursive: true });
 function build(name, change) {
   const files = { ...source };
@@ -13,7 +13,7 @@ function build(name, change) {
   writeFileSync(`artifacts/g1-fixtures/${name}.zip`, zipSync(files, { level: 9, mtime: new Date('2026-11-12T00:00:00Z') }));
 }
 build('upgrade', manifest => { manifest.settingsSchema.properties.upgradeNote = { type: 'string', default: '兼容升级' }; });
-build('runtime-failure', (_, files) => { files['dist/clock.js'] = new TextEncoder().encode("throw new Error('G1 受控脚本失败');"); });
+build('runtime-failure', (_, files) => { files['dist/app.js'] = new TextEncoder().encode("throw new Error('G1 受控脚本失败');"); });
 build('incompatible', manifest => { manifest.settingsSchema.properties.title = { type: 'integer', default: 1 }; });
 build('unknown-capability', manifest => { manifest.capabilities.push('shell.exec'); });
 build('bad-path', (_, files) => { files['../escape.txt'] = new TextEncoder().encode('拒绝越界'); });

@@ -9,7 +9,7 @@ const executable = resolve(process.argv[2] ?? 'src-tauri/target/debug/souldesk.e
 const selectedPackage = process.argv[4];
 const contentUpgradeFrom = ['content-upgrade', 'audit-upgrade'].includes(selectedPackage) && process.argv[5] ? resolve(process.argv[5]) : null;
 if (['content-upgrade', 'audit-upgrade'].includes(selectedPackage) && !contentUpgradeFrom) throw new Error('缺少升级前的标准ZIP目录');
-if (selectedPackage && !['assets', 'content-upgrade', 'audit-upgrade', 'convert-files', 'preview-all', 'time-progress', 'wave-progress', 'clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'trump-clock', 'deadline', 'calendar', 'countdown', 'countdown-list', 'birthday-list', 'todo', 'calendar-large', 'pomodoro', 'note', 'wooden-fish', 'forex', 'dashboard', 'energy-label', 'base-panel', 'convert', 'photo', 'sticker', 'water-reminder', 'labor', 'server', 'hotspots', 'coins'].includes(selectedPackage)) throw new Error('只接受已有受控表单检查的组件或全部隐藏加载检查');
+if (selectedPackage && !['assets', 'content-upgrade', 'audit-upgrade', 'convert-files', 'preview-all', 'time-progress', 'wave-progress', 'clock', 'flip-clock', 'glitch-clock', 'mickey-clock', 'text-clock', 'deadline', 'calendar', 'countdown', 'countdown-list', 'birthday-list', 'todo', 'calendar-large', 'pomodoro', 'note', 'forex', 'energy-label', 'base-panel', 'convert', 'photo', 'sticker', 'water-reminder', 'labor', 'server', 'hotspots', 'coins'].includes(selectedPackage)) throw new Error('只接受已有受控表单检查的组件或全部隐藏加载检查');
 if (!existsSync(executable)) throw new Error('请先构建桌面调试程序');
 mkdirSync('artifacts', { recursive: true });
 const report = resolve(process.argv[3] ?? `artifacts/desktop-integration-widgetjs-${randomUUID()}.json`);

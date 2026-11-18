@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import palette from './panel-colors.json';
 
@@ -18,6 +18,30 @@ export type GroupChange =
   | { action: 'move'; instance: string; group: string | null };
 type Change = (change: GroupChange) => Promise<boolean>;
 export const ungrouped: PanelGroupsState = { groups: [], active: null, membership: {} };
+
+interface GroupDrag {
+  id: string;
+  pointer: number;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+  moved: boolean;
+  frame?: number;
+}
+
+function dropIndex(strip: HTMLDivElement, id: string, x: number, y: number) {
+  const bounds = strip.getBoundingClientRect();
+  if (x < bounds.left || x >= bounds.right || y < bounds.top || y >= bounds.bottom) return;
+  let index = 0;
+  for (const tab of strip.querySelectorAll<HTMLElement>('[data-panel-group-id]')) {
+    if (tab.dataset.panelGroupId === id) continue;
+    const rect = tab.getBoundingClientRect();
+    if (x < rect.left + rect.width / 2) break;
+    index++;
+  }
+  return index;
+}
 
 const validColor = (color: string | null | undefined): color is string => !!color && /^#[0-9a-f]{6}$/i.test(color);
 function colorStyle(color: string): CSSProperties {
@@ -72,6 +96,72 @@ export function PanelGroups({ state, instances, busy, message, onChange }: {
   const [editing, setEditing] = useState<{ id: string; name: string }>();
   const [removing, setRemoving] = useState<string>();
   const [coloring, setColoring] = useState<{ id: string | null }>();
+  const tabs = useRef<HTMLDivElement>(null);
+  const drag = useRef<GroupDrag | null>(null);
+  const suppressClick = useRef(false);
+  const [preview, setPreview] = useState<{ id: string; index?: number }>();
+  const stopDrag = useCallback(() => {
+    if (drag.current?.frame !== undefined) window.cancelAnimationFrame(drag.current.frame);
+    drag.current = null;
+    setPreview(undefined);
+  }, []);
+  useEffect(() => {
+    window.addEventListener('blur', stopDrag);
+    return () => {
+      window.removeEventListener('blur', stopDrag);
+      if (drag.current?.frame !== undefined) window.cancelAnimationFrame(drag.current.frame);
+    };
+  }, [stopDrag]);
+
+  const reorder = (id: string, index: number) => {
+    if (busy || index < 0 || index >= state.groups.length) return;
+    const ids = state.groups.map(group => group.id);
+    const from = ids.indexOf(id);
+    if (from < 0 || index === from) return;
+    ids.splice(from, 1);
+    ids.splice(index, 0, id);
+    void onChange({ action: 'reorder', ids });
+  };
+  const startDrag = (event: PointerEvent<HTMLButtonElement>, id: string | null) => {
+    if (id === null || busy || state.groups.length < 2 || !event.isPrimary || event.button !== 0 || drag.current) return;
+    const { clientX: x, clientY: y, pointerId: pointer } = event;
+    event.currentTarget.setPointerCapture(pointer);
+    drag.current = { id, pointer, startX: x, startY: y, x, y, moved: false };
+  };
+  const updatePreview = (current: GroupDrag) => {
+    current.frame = undefined;
+    const strip = tabs.current;
+    if (!strip || drag.current !== current) return;
+    const index = dropIndex(strip, current.id, current.x, current.y);
+    setPreview(previous => previous?.id === current.id && previous.index === index ? previous : { id: current.id, index });
+    if (index === undefined) return;
+    const { left, right, width } = strip.getBoundingClientRect();
+    const edge = Math.min(24, width / 3);
+    const step = current.x < left + edge ? -6 : current.x > right - edge ? 6 : 0;
+    if (!step) return;
+    const before = strip.scrollLeft;
+    strip.scrollLeft += step;
+    if (strip.scrollLeft !== before) current.frame = window.requestAnimationFrame(() => updatePreview(current));
+  };
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    current.x = event.clientX;
+    current.y = event.clientY;
+    if (!current.moved && Math.hypot(current.x - current.startX, current.y - current.startY) < 5) return;
+    current.moved = true;
+    suppressClick.current = true;
+    if (current.frame === undefined) updatePreview(current);
+  };
+  const finishDrag = (event: PointerEvent<HTMLDivElement>, canceled = false) => {
+    const current = drag.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    stopDrag();
+    if (canceled || !current.moved) return;
+    const index = dropIndex(event.currentTarget, current.id, event.clientX, event.clientY);
+    if (index !== undefined) reorder(current.id, index);
+  };
+
   const count = (id: string | null) => instances.filter(i => i.location === 'panel' && (state.membership[i.id] ?? null) === id).length;
   const choices = [{ id: null, name: '未分组', autoColor: palette.neutral, color: state.ungroupedColor }, ...state.groups.map((group, index) => ({ ...group, autoColor: validColor(group.autoColor) ? group.autoColor : palette.presets[index % palette.presets.length].color }))];
   const editColor = (id: string | null) => { setColoring({ id }); setEditing(undefined); setRemoving(undefined); };
@@ -79,23 +169,28 @@ export function PanelGroups({ state, instances, busy, message, onChange }: {
     const group = choices.find(group => group.id === id)!;
     return coloring?.id === id && <ColorEditor key={id ?? 'ungrouped'} name={group.name} automatic={group.autoColor} saved={group.color ?? null} busy={busy} onCancel={() => setColoring(undefined)} onSave={color => onChange({ action: 'color', group: id, color }).then(ok => { if (ok) setColoring(undefined); return ok; })} />;
   };
-  const reorder = (id: string, direction: number) => {
-    const ids = state.groups.map(g => g.id), at = ids.indexOf(id);
-    [ids[at], ids[at + direction]] = [ids[at + direction], ids[at]];
-    void onChange({ action: 'reorder', ids });
-  };
   const close = () => { setManaging(false); setEditing(undefined); setRemoving(undefined); setColoring(undefined); };
+  const fromIndex = state.groups.findIndex(group => group.id === preview?.id);
+  const toIndex = preview?.index ?? fromIndex;
+  const target = toIndex === fromIndex ? undefined : state.groups[toIndex]?.id;
+  const side = toIndex < fromIndex ? 'before' : 'after';
   return <>
     <div className="panel-group-bar">
-      <div className="panel-group-tabs" role="tablist" aria-label="组件分组">
-        {choices.map(group => <button key={group.id ?? 'ungrouped'} role="tab" style={colorStyle(group.color ?? group.autoColor)} aria-selected={state.active === group.id} aria-controls="panel-group-content" title={group.name} disabled={busy} onClick={() => { if (state.active !== group.id) void onChange({ action: 'select', group: group.id }); }}>
+      <div ref={tabs} className="panel-group-tabs" role="tablist" aria-label="组件分组" onPointerDownCapture={e => { if (e.button === 0 && !drag.current) suppressClick.current = false; }}
+        onPointerMove={moveDrag} onPointerUp={e => finishDrag(e)} onPointerCancel={e => finishDrag(e, true)} onLostPointerCapture={e => finishDrag(e, true)}
+        onKeyDown={e => { if (e.key === 'Escape' && drag.current) { e.preventDefault(); stopDrag(); } }}
+        onClickCapture={e => { if (suppressClick.current && e.detail > 0) { suppressClick.current = false; e.stopPropagation(); } }}>
+        {choices.map(group => <button key={group.id ?? 'ungrouped'} role="tab" style={colorStyle(group.color ?? group.autoColor)} aria-selected={state.active === group.id} aria-controls="panel-group-content" title={group.name} disabled={busy}
+          data-panel-group-id={group.id ?? undefined} data-sortable={(group.id !== null && state.groups.length > 1 && !busy) || undefined}
+          data-dragging={preview?.id === group.id || undefined} data-drop-side={target === group.id ? side : undefined}
+          onPointerDown={e => startDrag(e, group.id)} onClick={() => { if (state.active !== group.id) void onChange({ action: 'select', group: group.id }); }}>
           <span>{group.name}</span><small>{count(group.id)}</small>
         </button>)}
       </div>
       <button className="icon-button" title="管理分组" aria-label="管理分组" disabled={busy} onClick={() => setManaging(true)}><Icon name="groups" /></button>
     </div>
     {managing && <GroupDialog title="管理分组" busy={busy} message={message} onClose={close}>
-      <p>每个组件只属于一个组。“未分组”固定保留，分组顺序可调整。</p>
+      <p>每个组件只属于一个组。拖动顶部标签或使用前移、后移按钮排序。“未分组”固定在首位。</p>
       <ul className="panel-group-list">
         <li><div className="panel-group-row"><span className="panel-group-name">未分组<small>{count(null)} 个组件</small></span><button disabled={busy} onClick={() => editColor(null)}>配色</button></div>{colorEditor(null)}</li>
         {state.groups.map((group, index) => <li key={group.id}>
@@ -104,8 +199,8 @@ export function PanelGroups({ state, instances, busy, message, onChange }: {
             <button disabled={busy || !editing.name.trim()}>保存</button><button type="button" disabled={busy} onClick={() => setEditing(undefined)}>取消</button>
           </form> : <div className="panel-group-row">
             <span className="panel-group-name" title={group.name}>{group.name}<small>{count(group.id)} 个组件</small></span>
-            <button className="icon-button" aria-label={`前移分组 ${group.name}`} title="前移" disabled={busy || index === 0} onClick={() => reorder(group.id, -1)}><Icon name="up" /></button>
-            <button className="icon-button" aria-label={`后移分组 ${group.name}`} title="后移" disabled={busy || index === state.groups.length - 1} onClick={() => reorder(group.id, 1)}><Icon name="down" /></button>
+            <button className="icon-button" aria-label={`前移分组 ${group.name}`} title="前移" disabled={busy || index === 0} onClick={() => reorder(group.id, index - 1)}><Icon name="up" /></button>
+            <button className="icon-button" aria-label={`后移分组 ${group.name}`} title="后移" disabled={busy || index === state.groups.length - 1} onClick={() => reorder(group.id, index + 1)}><Icon name="down" /></button>
             <button disabled={busy} onClick={() => editColor(group.id)}>配色</button>
             <button disabled={busy} onClick={() => { setEditing({ id: group.id, name: group.name }); setRemoving(undefined); setColoring(undefined); }}>改名</button>
             <button className="danger" disabled={busy} onClick={() => { setRemoving(group.id); setEditing(undefined); setColoring(undefined); }}>删除</button>

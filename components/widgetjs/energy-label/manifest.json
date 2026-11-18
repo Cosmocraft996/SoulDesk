@@ -1,11 +1,59 @@
 {
-  "schemaVersion":1,"id":"local.souldesk.widgetjs.energy-label","name":"打工能耗标识","version":"0.1.0","hostApiMajor":1,"loadCheck":1,
-  "entry":"dist/energy-label/index.html","defaultSize":{"width":360,"height":540},"minSize":{"width":320,"height":480},
-  "capabilities":["storage.instance","system.metrics"],
-  "settingsSchema":{"type":"object","additionalProperties":false,"required":["productor","spec","fontSize","radius"],"properties":{
-    "productor":{"type":"string","title":"生产者名称","maxLength":10,"default":"牛马冬"},
-    "spec":{"type":"string","title":"规格型号","maxLength":10,"default":"996-007"},
-    "fontSize":{"type":"integer","title":"字体大小","minimum":8,"maximum":24,"default":14},
-    "radius":{"type":"integer","title":"圆角","minimum":0,"maximum":60,"default":24}
-  }}
+  "schemaVersion": 1,
+  "id": "local.souldesk.widgetjs.energy-label",
+  "name": "打工能耗标识",
+  "version": "0.1.1",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/energy-label/index.html",
+  "defaultSize": {
+    "width": 360,
+    "height": 540
+  },
+  "minSize": {
+    "width": 320,
+    "height": 480
+  },
+  "capabilities": [
+    "storage.instance",
+    "system.metrics"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "productor",
+      "spec",
+      "fontSize",
+      "radius"
+    ],
+    "properties": {
+      "productor": {
+        "type": "string",
+        "title": "生产者名称",
+        "maxLength": 10,
+        "default": "牛马冬"
+      },
+      "spec": {
+        "type": "string",
+        "title": "规格型号",
+        "maxLength": 10,
+        "default": "996-007"
+      },
+      "fontSize": {
+        "type": "integer",
+        "title": "字体大小",
+        "minimum": 8,
+        "maximum": 24,
+        "default": 14
+      },
+      "radius": {
+        "type": "integer",
+        "title": "圆角",
+        "minimum": 0,
+        "maximum": 60,
+        "default": 24
+      }
+    }
+  }
 }

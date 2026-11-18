@@ -23,7 +23,7 @@ pub(crate) fn lifetime(source: &str) -> Option<Duration> {
     Some(Duration::from_secs(match source {
         "bilibili" | "douyin" | "tou-tiao" | "weibo" | "zhihu" => 30,
         "cls-telegraph" => 10,
-        "bangumi" | "world-cup" => 60,
+        "bangumi" => 60,
         "itime-calendar" => 3600,
         "bilibili-rcmd" => 0, // 只合并在途请求，不缓存已完成推荐。
         _ => return None,
@@ -213,7 +213,6 @@ mod tests {
             ("zhihu", 30),
             ("cls-telegraph", 10),
             ("bangumi", 60),
-            ("world-cup", 60),
             ("itime-calendar", 3600),
             ("bilibili-rcmd", 0),
         ] {

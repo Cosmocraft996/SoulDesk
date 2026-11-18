@@ -31,7 +31,7 @@
     ],
     [
       "components/widgetjs/base-panel",
-      "763b198427e200b4a9f704e312f3d7a9460146b6a87ee531db935d068925f743"
+      "73ed4c39a5c6e2c35aa453a4c6cf7d87307a830c0303bd6e916b04daef682f00"
     ],
     [
       "components/widgetjs/birthday-list",
@@ -71,11 +71,11 @@
     ],
     [
       "components/widgetjs/clock",
-      "7aee5f9f2c04d7f2b11e5b2b8931f4d136c278913dcabc6a2452be658c3d2efa"
+      "7abb60c3bf062b9b6d7f198b567d8b064ef68ba0dde209599c6ccb9595244b22"
     ],
     [
       "components/widgetjs/clock-source",
-      "1929eb935720d1db83baa1ee137494ccff08f5072a0d2a8beaca8704330d3fe0"
+      "6de246d58a5544ad88075c437e081d8ce9c8fbeacd1170ad7f40dd0b41f4ec2a"
     ],
     [
       "components/widgetjs/coin-common",
@@ -118,10 +118,6 @@
       "f7b9fc1d9f8ee00d61a3d539f24c29aa9592893bd36a52e4e1039cc4c13b7acb"
     ],
     [
-      "components/widgetjs/dashboard",
-      "524f368faaea56e63cb427b398a5fe110558df2c679187b21f6d67c74b41401c"
-    ],
-    [
       "components/widgetjs/deadline",
       "35cf279308d006da49ac11319f3c0acf596bcd94b04557a57d7ca3daa8f67ee1"
     ],
@@ -135,7 +131,7 @@
     ],
     [
       "components/widgetjs/energy-label",
-      "2643d39daec52ab331785c72986e178ee8afc321de04d847e953f8751e4fd832"
+      "bba2636b18a1dac69a181552a707ac2942c8057afe98f2b4497222881ce5ee83"
     ],
     [
       "components/widgetjs/excalidraw",
@@ -147,7 +143,7 @@
     ],
     [
       "components/widgetjs/flip-clock",
-      "87f8e1a10cbddc0bb8255ea5cdb1cc2d4c18fe58de8c3ef7220621a0e0611c7b"
+      "c30a2ebd22d12e813e45cb9a3a55ee2ab46525e7eae1810482444858fe61d670"
     ],
     [
       "components/widgetjs/forex",
@@ -155,7 +151,7 @@
     ],
     [
       "components/widgetjs/glitch-clock",
-      "129a1007e2b40f21658e87703fdfa3b5f049f03e311c290bbf11a01643d184c3"
+      "c778c82d64deb47c767c72309bcdb38afa6a1f34ecf9c755cebb4aa2707d8b44"
     ],
     [
       "components/widgetjs/gold",
@@ -171,47 +167,43 @@
     ],
     [
       "components/widgetjs/hardware-common",
-      "f7492463fbebad5fe269b1fb3cbf89ecef78df860318d109eaaa24273bba40e3"
+      "f9b00364cf73fee696c20e986e0ad5b2997fce4083d1657e2ddfb6c4752dd8e9"
     ],
     [
       "components/widgetjs/hotspot-bangumi",
-      "56af97783308a8771fa97c91dfa73c9fc6aec4c6225d5de1c70580008b4d09c5"
+      "d04a343318b17f0b2237f22ceed8e3f4c525dde45e64c0ffcf943a51fa2e36c0"
     ],
     [
       "components/widgetjs/hotspot-bilibili",
-      "fcac91335747045fb7bc42e32e5831d70ee8a70c28d2514822332f74b0b918da"
+      "41c1103c6f97d004fdbbe189cd04c7f69f17755861ef90edafab81f385153b7d"
     ],
     [
       "components/widgetjs/hotspot-bilibili-rcmd",
-      "3cf8ad2c88190d15f8ab348ef0046541a3dcfe1b2306b1225a87f0700f8158a4"
+      "13f1c5efb4a8c543240108693766712134927da6e2d0b70ced615b7a72395308"
     ],
     [
       "components/widgetjs/hotspot-cls-telegraph",
-      "8409b120121b1aeb9a2804a46fd749f158169fe6997a5e2b32bfabad5dd90567"
+      "11973b11c50af396dd1e10fb5726d92dba5d3c2fe8134fcab43976c99ea3c58c"
     ],
     [
       "components/widgetjs/hotspot-douyin",
-      "57375195461e09d817927f2dcbec445ac8487b19f95b172d6de4db463a55ea61"
+      "cc19f76910d7f6c837773e903c3db79213f25007ed7bd3bafc12d3d25a1df69f"
     ],
     [
       "components/widgetjs/hotspot-source",
-      "de181875710e23718eb811c7508c5ce0b3682525454fccbfbb4834911d07e0da"
+      "6421842c624fbef3f6936ef441eff6bdac7b32b0645f214ae39ab0bb25779a03"
     ],
     [
       "components/widgetjs/hotspot-tou-tiao",
-      "8c47802fb28ff6c2d023d720b8288798696440ebe81066c570a8271f901cc545"
+      "260f99cfda95b009f441e048b91ddd522e24b87abfb5f3181bc33c67ef061e91"
     ],
     [
       "components/widgetjs/hotspot-weibo",
-      "adf5545ac8ffdf92508430637193de0f302ee84586adbe21e88cea4addf0512d"
-    ],
-    [
-      "components/widgetjs/hotspot-world-cup",
-      "72ece1c39f0d009623310a670e1b7b13d45bffe410d9e80df1c547b4ebb3565d"
+      "2125787a9525c723f6c06a0bfdc735b6e4b6888772784ee4222367d4d378ef65"
     ],
     [
       "components/widgetjs/hotspot-zhihu",
-      "4d771fcead5e3511f8a7953bf8d398dcf29ec5bd6cb0ce018eade4e9b060176b"
+      "b1b19d2b10610565c6b0658541c86e03dcfe276cf9084725c722fa56938106ef"
     ],
     [
       "components/widgetjs/job-source",
@@ -239,7 +231,7 @@
     ],
     [
       "components/widgetjs/mickey-clock",
-      "0497b7b98d3d323e195e22f06f278bb5a6d5a8a394ce9efcec920e0fecbfa2af"
+      "85530f68080acb5f69e403b0d12a21febe36e24ba6a1ac0758958e32b92ef17e"
     ],
     [
       "components/widgetjs/mindmap",
@@ -327,7 +319,7 @@
     ],
     [
       "components/widgetjs/text-clock",
-      "6dde8928fc36252ab40cdec9bc3960337a920019e776b479f5b2417e820ca8b4"
+      "7ebbbd0206b7765b0460bec8ed64c075b8ff987ae55acf3487b142c8dd37967f"
     ],
     [
       "components/widgetjs/time-progress",
@@ -340,10 +332,6 @@
     [
       "components/widgetjs/todo-source",
       "05fb0d9f9f1b2ccc4e841a7d8cc1fb67f4a2f88114b775ff2481160976781d2f"
-    ],
-    [
-      "components/widgetjs/trump-clock",
-      "6047f9bb9b269802b51ed61fb98acf19c9c34202cc196e8a1de0d6c72b8429eb"
     ],
     [
       "components/widgetjs/water-reminder",
@@ -370,12 +358,8 @@
       "068cffc1906eb358adef5231d02c8998b43073612062d459386fe4b2c75ef2f2"
     ],
     [
-      "components/widgetjs/wooden-fish",
-      "745c5aff3a53eabc9c9c6ef8116f537687d4a7524c6de7e55b41b26b32eb0971"
-    ],
-    [
       "package.json",
-      "45befcb252808ca05d305678942f3dc933daa34136ad3117466fc3766af34173"
+      "04c821581b6796c8b21011a0dc74da2dd3215abd80348c60a4865b02f8bec990"
     ],
     [
       "pnpm-lock.yaml",
@@ -415,7 +399,7 @@
     ],
     [
       "scripts/build-widgetjs.mjs",
-      "615af1e971fc3de81f2e4458a05c623d2d00bf275faac4025a6bef4f75ac2442"
+      "20f75dc2664816efda50b0294c467e8c03f5bf703e374c5182bd7363fb29c865"
     ],
     [
       "scripts/widgetjs-build-state.mjs",
@@ -427,7 +411,7 @@
     ],
     [
       "scripts/widgetjs-hotspots.mjs",
-      "191162062930c5b1a788dd25c50cc5bc8460b6c430b6b02a7b3e142732a2fd43"
+      "1397bc315665edfdde07bd9579d0d03de1c05eff871d2cc7baebe3bfee9aea90"
     ],
     [
       "sdk/host.d.ts",
@@ -471,8 +455,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.base-panel",
-      "version": "0.1.0",
-      "digest": "e978e482aa5021ce611efbca80343f68fc8df67942cf069c5db56c0ba68097ef",
+      "version": "0.1.1",
+      "digest": "8f9f62590b491a34f9a69c5527ddf4ef4f3b0118ce7519692cb98e9942eb1cf3",
       "files": 9
     },
     {
@@ -507,8 +491,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.clock",
-      "version": "0.1.1",
-      "digest": "4a6b89d8f58d1ebf6284aef5544e969a52ae1504472ca0ea958f82eb71f26112",
+      "version": "0.1.3",
+      "digest": "78a495df4b91e6f3086277cc1098f2f89b27dbe1d2118a66c6f237f55ef7cad8",
       "files": 6
     },
     {
@@ -542,12 +526,6 @@
       "files": 6
     },
     {
-      "id": "local.souldesk.widgetjs.dashboard",
-      "version": "0.1.0",
-      "digest": "cf009b71231cf2b2ff4e4517bf2f88632b3923d2a1156393084ed308043edf3e",
-      "files": 12
-    },
-    {
       "id": "local.souldesk.widgetjs.deadline",
       "version": "0.1.0",
       "digest": "b82db0253629067d2e27a459d06b95d300e90c933732ca41f681b64c18672051",
@@ -561,8 +539,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.energy-label",
-      "version": "0.1.0",
-      "digest": "dad040a673a7f5324889ef3485c4ed9e4ab2897a7478e3c775e5def75727f2f5",
+      "version": "0.1.1",
+      "digest": "7fa2b73647dbffaa0117823fa6bfa83bf06efb98d1db8c4dc8a97cb85f3d114a",
       "files": 9
     },
     {
@@ -573,8 +551,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.flip-clock",
-      "version": "0.1.1",
-      "digest": "ca3538b8a40059847081a0d5827a350562567eed9e63060521ff2fc99bed96f3",
+      "version": "0.1.3",
+      "digest": "9fce1b5d5b60869afadb378969175a0ceddb73789b6d294268c252b0ce55cd8e",
       "files": 6
     },
     {
@@ -585,8 +563,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.glitch-clock",
-      "version": "0.1.1",
-      "digest": "ea89fba4fafb194e2b228ea6d9fe7c1b744ed252b1e77d8bda7a79087c274875",
+      "version": "0.1.3",
+      "digest": "b1236ee2724e5adc9a4f7a044539e40ed1843468dd03c79a8ef07fb94762cd57",
       "files": 6
     },
     {
@@ -603,56 +581,50 @@
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-bangumi",
-      "version": "0.1.2",
-      "digest": "1a9b0f8eb02724bdc53c890aed97481ff4739b47088054067004add3bdbe3ae9",
+      "version": "0.1.4",
+      "digest": "41ff8d23bd9620180d915b1c7ff988d1aaf3ea8742a7d202407a94adea695b83",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-bilibili",
-      "version": "0.1.2",
-      "digest": "28f05d43032999125a8d83a6fde937d26908a77ccaa5eaf8c80d92b80f52d050",
+      "version": "0.1.4",
+      "digest": "45b9f8b3714b31ff5a670241196950ab523c6a3c1ee239b62a4e902191939ca2",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
-      "version": "0.1.2",
-      "digest": "1c854ef84e117f65e8b26668c0a80ebe76624fccee3e08ad596301f7193be68c",
+      "version": "0.1.4",
+      "digest": "b10b0f5cf0948494853ef17ed3e7ed3416270332382b2f40b0e94216a72b6a10",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-cls-telegraph",
-      "version": "0.1.2",
-      "digest": "d502a86b0caed7b60a98d0be756c949845cb597f64319c65d06a232fbf81678c",
+      "version": "0.1.4",
+      "digest": "325fb129f7508840bcad2b8adf91dbda18c496939759425f1deb87a89472984a",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-douyin",
-      "version": "0.1.2",
-      "digest": "82ae2ebebb2213746fd06b73151e536268072cb65855c488f288cc122437bd7e",
+      "version": "0.1.4",
+      "digest": "4b6cc73ad81784a6c8c715de941144a3724aa98a901e29b328db38c3781dd7e3",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-tou-tiao",
-      "version": "0.1.2",
-      "digest": "a5b799cfa7502339e8c4da51fd1cce81e1756fefde4b66546634968ce42fa977",
+      "version": "0.1.4",
+      "digest": "2e094b505c7542294ab8c0bd3a88f06229b6a5e3302c9f2104d9eb392ac2a093",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-weibo",
-      "version": "0.1.2",
-      "digest": "70532ee471eb5571bc1f8a99e168cd3a8199d202a0a8bb04980f3b6710b6fd5c",
-      "files": 7
-    },
-    {
-      "id": "local.souldesk.widgetjs.hotspot-world-cup",
-      "version": "0.1.2",
-      "digest": "1f1aa110d89f183b5cd891cd7df637b41dd66c1e5bc6bdeb0793d9d232eef455",
+      "version": "0.1.4",
+      "digest": "6f119ea7ff2c6453f148f0ce2542c3cffa92100de1a817cbc50fa666820e1b5a",
       "files": 7
     },
     {
       "id": "local.souldesk.widgetjs.hotspot-zhihu",
-      "version": "0.1.2",
-      "digest": "cb8d03f58ca41d2dc552c1fc03ea91d1720a033efe3a72a5856eae778b02daf6",
+      "version": "0.1.4",
+      "digest": "7b30c57fc78ce74e050f69a643208ca6134090f3b4cbd31bed03dfc2b50c10e1",
       "files": 7
     },
     {
@@ -675,8 +647,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.mickey-clock",
-      "version": "0.1.1",
-      "digest": "cc2c4ff41422e32249d6e7dab937ab1d6e42b44d2d4195044d4b5dd42462e1f3",
+      "version": "0.1.3",
+      "digest": "99d7f49c18b3f704c7083a080a206830c6522810a38cae0dbc16f5eb03244f36",
       "files": 6
     },
     {
@@ -747,8 +719,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.text-clock",
-      "version": "0.1.1",
-      "digest": "146cd579b0643ac76803cf399dd762d3b0f31f12d494355bd703969f9df3c615",
+      "version": "0.1.3",
+      "digest": "9934ead3c2157b4d27eeb7f118c3cc04e92643db61756591049dd1d1f5d9ce4a",
       "files": 6
     },
     {
@@ -762,12 +734,6 @@
       "version": "0.2.1",
       "digest": "52294ccca816278412b65bfb726b55d00d4754e87645dc035cf7a4dd24d6347a",
       "files": 7
-    },
-    {
-      "id": "local.souldesk.widgetjs.trump-clock",
-      "version": "0.1.1",
-      "digest": "438558b83d72be66c4e6c5edbe88486a7c179256e255d101534979afb9fb2aa5",
-      "files": 6
     },
     {
       "id": "local.souldesk.widgetjs.water-reminder",
@@ -798,12 +764,6 @@
       "version": "0.1.0",
       "digest": "944466ff35c30dd89e7ea557fa328af7e70c2a0fbcf1692415a8a7782998d9fe",
       "files": 6
-    },
-    {
-      "id": "local.souldesk.widgetjs.wooden-fish",
-      "version": "0.1.0",
-      "digest": "fa540513906a9f814342cf6faafd4272869580bd6b59a7fe93a48bdd37255c3a",
-      "files": 9
     }
   ]
 }

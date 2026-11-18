@@ -1955,7 +1955,7 @@ mod document_drop_tests {
             std::env::temp_dir().join(format!("souldesk-drop-{}", uuid::Uuid::new_v4())),
         )
         .unwrap();
-        for package in ["local.example.clock", "local.souldesk.widgetjs.convert"] {
+        for package in ["local.fixture.surface", "local.souldesk.widgetjs.convert"] {
             let staged = crate::widgets::stage_bytes(
                 &store,
                 crate::presets::find(package)
@@ -1967,7 +1967,7 @@ mod document_drop_tests {
             .unwrap();
             crate::widgets::activate(&store, &staged).unwrap();
         }
-        let clock = crate::widgets::create_instance(&store, "local.example.clock").unwrap();
+        let clock = crate::widgets::create_instance(&store, "local.fixture.surface").unwrap();
         let document =
             crate::widgets::create_instance(&store, "local.souldesk.widgetjs.convert").unwrap();
         assert!(!html_drop_for_window(&store, "main").unwrap());

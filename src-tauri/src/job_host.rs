@@ -2039,7 +2039,7 @@ mod tests {
     #[test]
     fn credential_mutation_preview_and_arbitrary_window_creation_are_denied() {
         let f = fixture(false);
-        let bytes = crate::presets::find("local.example.clock")
+        let bytes = crate::presets::find("local.fixture.surface")
             .unwrap()
             .unwrap()
             .archive()

@@ -1,7 +1,6 @@
 {
   "source": "https://widget-js.github.io/widgets/#/widget/search",
   "capturedAt": "2026-11-14",
-  "apiTotal": 61,
   "items": [
     {
       "upstreamId": "cn.stocks.widget.coin_medium",
@@ -39,7 +38,8 @@
           "隐藏一个面板主流虚拟币时，另一个保持画面",
           "收起重开面板、移入面板/放回桌面时价格和曲线不再清空"
         ]
-      }
+      },
+      "description": "实时查看主流虚拟币行情"
     },
     {
       "upstreamId": "cn.stocks.widget.coin_small",
@@ -77,7 +77,8 @@
           "隐藏一个面板主流虚拟币时，另一个保持画面",
           "收起重开面板、移入面板/放回桌面时价格和曲线不再清空"
         ]
-      }
+      },
+      "description": "查看虚拟货币行情，每分钟刷新一次"
     },
     {
       "upstreamId": "cn.stocks.widget.gold",
@@ -99,7 +100,8 @@
       "sourceRepository": "rtugeek/stock",
       "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
       "souldeskId": "local.souldesk.widgetjs.gold",
-      "notes": "固定Au99.99与东方财富原报价/分时、5秒刷新和主题；精确涨跌、单点/大价差图形、报价和分时独立失败及日期校验；检索被robots拒绝，真实宿主联网/桌面待验"
+      "notes": "固定Au99.99与东方财富原报价/分时、5秒刷新和主题；精确涨跌、单点/大价差图形、报价和分时独立失败及日期校验；检索被robots拒绝，真实宿主联网/桌面待验",
+      "description": "AU99.99价格，每分钟刷新一次"
     },
     {
       "upstreamId": "cn.stocks.widget.metal",
@@ -121,7 +123,8 @@
       "sourceRepository": "rtugeek/stock",
       "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
       "souldeskId": "local.souldesk.widgetjs.metal",
-      "notes": "保留原BiQuote四种中间价/涨跌/30秒刷新，严格十进制与来源/交易所/报价时间/过期状态；原接口检索被robots拒绝，真实宿主联网及桌面待验"
+      "notes": "保留原BiQuote四种中间价/涨跌/30秒刷新，严格十进制与来源/交易所/报价时间/过期状态；原接口检索被robots拒绝，真实宿主联网及桌面待验",
+      "description": "金/银/铜/铂金价格，每分钟刷新一次"
     },
     {
       "upstreamId": "cn.stocks.widget.stock",
@@ -153,7 +156,8 @@
         "complete": false,
         "status": "built-offline-checked-raw-public-api-available-awaiting-native-desktop",
         "report": "artifacts/widgetjs-stock-full-checks-20261116.json"
-      }
+      },
+      "description": "跟踪股票价格，每分钟刷新一次"
     },
     {
       "upstreamId": "cn.stocks.widget.stock_medium",
@@ -175,7 +179,8 @@
       "sourceRepository": "rtugeek/stock",
       "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
       "souldeskId": "local.souldesk.widgetjs.stock-medium",
-      "notes": "原百度三大指数/60秒/涨跌色，完整指数身份和逐行失败保留；源无时间时明确标注，接口403，真实宿主及桌面待验"
+      "notes": "原百度三大指数/60秒/涨跌色，完整指数身份和逐行失败保留；源无时间时明确标注，接口403，真实宿主及桌面待验",
+      "description": "珍爱生命，远离股市"
     },
     {
       "upstreamId": "cn.stocks.widget.stock_small",
@@ -197,7 +202,8 @@
       "sourceRepository": "rtugeek/stock",
       "sourceRevision": "0f5157961908bb3fdec71d443117783a3496571f",
       "souldeskId": "local.souldesk.widgetjs.stock-small",
-      "notes": "原百度搜索和东方财富分时/末点/涨跌/每分钟/主题；保留代码+市场身份、无随机图或虚构0价；百度检索403，真实联网/时区/桌面待验"
+      "notes": "原百度搜索和东方财富分时/末点/涨跌/每分钟/主题；保留代码+市场身份、无随机图或虚构0价；百度检索403，真实联网/时区/桌面待验",
+      "description": "跟踪股票价格，每分钟刷新一次"
     },
     {
       "upstreamId": "widgetjs.cn.utilities.convert",
@@ -246,7 +252,8 @@
         "hiddenPreviewAndRegistryRestartPassed": true,
         "functionalChecks": 14,
         "functionalReport": "artifacts/desktop-integration-assets-convert-20261118-v3.json"
-      }
+      },
+      "description": "支持 HEIC, JPG, PNG, WEBP, BMP, ICO 格式转换"
     },
     {
       "upstreamId": "widgetjs.cn.utilities.key_stroke",
@@ -277,7 +284,8 @@
         "group": "background_interaction",
         "status": "approved",
         "implementation": "implemented-awaiting-manual"
-      }
+      },
+      "description": "在屏幕显示每一次快捷键敲击"
     },
     {
       "upstreamId": "widgetjs.cn.utilities.forex",
@@ -307,7 +315,8 @@
         "sha256": "1a6c399117336b0f6eefcf513b2fac8c9af23a63b37e405a0b83a54c7c31c6f5",
         "realSourceAvailable": false,
         "scope": "程序化表单/金额输入、错误显示和持久恢复；实时跨币种换算未通过"
-      }
+      },
+      "description": "每分钟刷新一次"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.note",
@@ -336,7 +345,8 @@
         "nativeChecks": 12,
         "sha256": "fa30d347022e5d77224ce90c85acc639009eaa61a2e8f61958f89d0756a617b6",
         "scope": "真实宿主与WebView中的程序化输入/滚轮/自动保存；不等于实际鼠标和桌面视觉"
-      }
+      },
+      "description": "便捷的桌面便签，随时记录提醒。"
     },
     {
       "upstreamId": "widgetjs.cn.utilities.water_reminder",
@@ -368,7 +378,8 @@
         "notificationRequestAccepted": true,
         "actualNotificationDisplayVerified": false,
         "actualNotificationButtonVerified": false
-      }
+      },
+      "description": "每天N杯水，养成好习惯"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.bangumi",
@@ -402,7 +413,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "追番小助手"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili",
@@ -436,7 +448,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "看看年轻人在B站搜什么"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili_rcmd",
@@ -470,7 +483,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "实时获取B站推荐视频，发现更多精彩内容"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.cls_telegraph",
@@ -502,7 +516,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "每5分钟刷新一次"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.douyin",
@@ -536,7 +551,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "抖音热榜"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.tou_tiao",
@@ -568,41 +584,8 @@
         "sourceAvailable": true,
         "sourceErrors": [],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
-    },
-    {
-      "upstreamId": "cn.widgetjs.widgets.hotspot.world_cup",
-      "title": "2026世界杯",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/world_cup",
-      "configPagePath": "/widget/config/world_cup?width=600&height=500&frame=true&transparent=false",
-      "sourceLinks": [],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
       },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-world-cup",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-world-cup-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": false,
-        "sourceErrors": [
-          "DATA_UNAVAILABLE: 内容源HTTP 502 Bad Gateway"
-        ],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      "description": "今日头条热度榜单"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clock.default",
@@ -630,7 +613,8 @@
         "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
         "status": "passed",
         "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
+      },
+      "description": "带动画的时钟"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.flip_clock",
@@ -658,7 +642,8 @@
         "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
         "status": "passed",
         "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
+      },
+      "description": "带有翻页动画的数字时钟"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clock.glitch",
@@ -686,7 +671,8 @@
         "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
         "status": "passed",
         "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
+      },
+      "description": "Glitch"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clock.mickey_clock",
@@ -714,7 +700,8 @@
         "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
         "status": "passed",
         "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
+      },
+      "description": "复古米老鼠表盘"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clock.text_clock",
@@ -742,35 +729,8 @@
         "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
         "status": "passed",
         "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
-    },
-    {
-      "upstreamId": "cn.widgetjs.widgets.clock.trump_clock",
-      "title": "川普表盘",
-      "package": "cn.widgetjs.widgets.clock",
-      "path": "/widget/trump_clock",
-      "configPagePath": null,
-      "sourceLinks": [
-        "https://github.com/rtugeek/clock"
-      ],
-      "remote": {
-        "entry": "https://widgetjs.cn/clock",
-        "hash": true,
-        "base": "/clock",
-        "hostname": "widgetjs.cn"
       },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "rtugeek/clock",
-      "sourceRevision": "646bf72e584b946da424ced3d6253e0c71b8e6e1",
-      "souldeskId": "local.souldesk.widgetjs.trump-clock",
-      "notes": "实例配置、包内字体及图像",
-      "offlineRender": {
-        "report": "artifacts/widgetjs-clock-render-checks-20261116.json",
-        "status": "passed",
-        "scope": "原Vue模板/设置动作和确定性时区计算；不是浏览器/桌面视觉"
-      }
+      "description": "简单的文本时钟"
     },
     {
       "upstreamId": "widgetjs.cn.mindmap.default",
@@ -844,7 +804,8 @@
         "document": "docs/17-本地资源权限细分.md",
         "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
         "hiddenPreviewAndRegistryRestartPassed": true
-      }
+      },
+      "description": "帮助你整理知识碎片与思绪"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.ai.assistant.chatgpt",
@@ -897,8 +858,7 @@
         "desktopLaunched": false,
         "realLogin": false,
         "realProxy": false,
-        "realShortcut": false,
-        "manualLauncher": "artifacts/verify-widgetjs-assistant.cmd"
+        "realShortcut": false
       },
       "packageUpgrade": {
         "version": "0.1.1",
@@ -906,7 +866,8 @@
         "status": "core-fixture-upgrade-verified",
         "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
         "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
-      }
+      },
+      "description": "一键呼出DeepSeek、Kimi、豆包、Grok等AI服务"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.ai.assistant.mind_map",
@@ -965,7 +926,8 @@
         "status": "core-fixture-upgrade-verified",
         "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
         "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
-      }
+      },
+      "description": "根据关键词生成思维导图"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.ai.assistant.mermaid",
@@ -1024,7 +986,8 @@
         "status": "core-fixture-upgrade-verified",
         "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
         "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
-      }
+      },
+      "description": "生成流程图、类图、甘特图、时序图等图表"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.ai.assistant.translate",
@@ -1083,7 +1046,8 @@
         "status": "core-fixture-upgrade-verified",
         "report": "artifacts/widgetjs-version-correction-checks-20261117.json",
         "scope": "递增补丁版本避免旧同版本ZIP拒绝；应用资源及数据格式不变，真实导入升级待验"
-      }
+      },
+      "description": "使用AI翻译文本"
     },
     {
       "upstreamId": "widgetjs.cn.excalidraw.default",
@@ -1123,7 +1087,8 @@
         "document": "docs/17-本地资源权限细分.md",
         "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
         "hiddenPreviewAndRegistryRestartPassed": true
-      }
+      },
+      "description": "一款手绘风格的虚拟画板。"
     },
     {
       "upstreamId": "itime.fun.birthday_list",
@@ -1195,7 +1160,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "自动倒计时的生日列表"
     },
     {
       "upstreamId": "itime.fun.calendar",
@@ -1229,7 +1195,8 @@
         "originalPublicApi": "通过",
         "publicCalendarRows": 61,
         "visual": "未验证"
-      }
+      },
+      "description": "简单的日历，支持节假日显示"
     },
     {
       "upstreamId": "itime.fun.calendar_large",
@@ -1301,7 +1268,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "大尺寸日历，方便用户对整月日程进行安排"
     },
     {
       "upstreamId": "itime.fun.countdown",
@@ -1368,7 +1336,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "日历样式的倒计时组件"
     },
     {
       "upstreamId": "itime.fun.countdown_list",
@@ -1435,7 +1404,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "自动排序的倒计时列表"
     },
     {
       "upstreamId": "itime.fun.deadline",
@@ -1467,7 +1437,8 @@
           0
         ],
         "visual": "未验证"
-      }
+      },
+      "description": "最后期限进度条"
     },
     {
       "upstreamId": "itime.fun.pomodoro",
@@ -1545,7 +1516,7 @@
           "新统一版3cd4f3de的实际运行",
           "正常安装升级",
           "原云同步已实现",
-          "61项全目录功能完成"
+          "当前目录逐项手动验证"
         ]
       },
       "approvedLocalImplementation": {
@@ -1574,7 +1545,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "高效管理时间，提高专注力"
     },
     {
       "upstreamId": "itime.fun.todo_list",
@@ -1653,7 +1625,8 @@
         "report": "artifacts/widgetjs-original-cloud-scope-audit-20261117.json",
         "implemented": false,
         "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json"
-      }
+      },
+      "description": "带数据同步功能的待办事项"
     },
     {
       "upstreamId": "cn.example.widget.base_panel",
@@ -1681,7 +1654,8 @@
         "nativeChecks": 12,
         "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
         "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
-      }
+      },
+      "description": "显示CPU、内存、磁盘等硬件负载信息"
     },
     {
       "upstreamId": "widget.js.monitor.energy_label",
@@ -1709,7 +1683,8 @@
         "nativeChecks": 12,
         "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
         "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
-      }
+      },
+      "description": "牛马打工人必备"
     },
     {
       "upstreamId": "widget.js.monitor.server",
@@ -1755,7 +1730,8 @@
         "functionalChecks": 12,
         "functionalReport": "artifacts/desktop-integration-assets-server-20261118.json",
         "fixtureOnly": true
-      }
+      },
+      "description": "实时监控多个云服务器状态"
     },
     {
       "upstreamId": "widgetjs.cn.photo.photo",
@@ -1782,7 +1758,8 @@
         "sha256": "2c7a3cac9bd3d1b223036386e99bcb2ca9ae2c4037b85c07fc7f1e513d9672ae",
         "scope": "仅预置隔离目录授权，正式media.list/read与真实WebView；程序化切换、1秒轮播、鼠标移动后1.1秒保留当前图、配置和重启；不等于原生选目录或完整动画",
         "nativeFileDialogVerified": false
-      }
+      },
+      "description": "轮播文件夹内的图片"
     },
     {
       "upstreamId": "widgetjs.cn.photo.sticker",
@@ -1809,7 +1786,8 @@
         "sha256": "2c7a3cac9bd3d1b223036386e99bcb2ca9ae2c4037b85c07fc7f1e513d9672ae",
         "scope": "项目生成图片经真实存储保存与WebView解码；程序化表单/失败重试/尺寸/重启，不等于原生文件选择或远程图片验证",
         "nativeFileDialogVerified": false
-      }
+      },
+      "description": "将照片贴在桌面上"
     },
     {
       "upstreamId": "ccn.widgetjs.widgets.hotspot.weibo",
@@ -1845,7 +1823,8 @@
           "DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden"
         ],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "微博热搜"
     },
     {
       "upstreamId": "widgetjs.cn.grid.default",
@@ -1865,7 +1844,8 @@
       "sourceRepository": "rtugeek/grid",
       "sourceRevision": "4e752cc5020af15fc3a10b4add67ee2ba6298cac",
       "souldeskId": "local.souldesk.widgetjs.grid",
-      "notes": "原主目录/额外项目/网格/排序/格式组及排除恢复；宿主按实例授权，真实Shell缩略图读取检查通过，原生选择/关联打开/桌面待验；原拖放为空处理"
+      "notes": "原主目录/额外项目/网格/排序/格式组及排除恢复；宿主按实例授权，真实Shell缩略图读取检查通过，原生选择/关联打开/桌面待验；原拖放为空处理",
+      "description": "将文件整理到窗格中"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clipboard.search",
@@ -1916,7 +1896,8 @@
         "toolChecks": 4,
         "aiHostChecks": 18,
         "clientChecks": 13
-      }
+      },
+      "description": "使用剪切板内容对AI进行快速对话"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clipboard.list",
@@ -1965,7 +1946,8 @@
         "toolChecks": 4,
         "aiHostChecks": 18,
         "clientChecks": 13
-      }
+      },
+      "description": "带搜索、收藏功能的剪切板"
     },
     {
       "upstreamId": "widgetjs.cn.ai.job.boss",
@@ -1999,7 +1981,8 @@
         "report": "artifacts/widgetjs-ai-job-checks-final-20261117.json",
         "complete": false,
         "status": "source-and-offline-checked-awaiting-user-account-model-and-desktop"
-      }
+      },
+      "description": "用AI查找并分析职位信息、模拟面试、生成技能思维导图。"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.hotspot.zhihu",
@@ -2035,7 +2018,8 @@
           "DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized"
         ],
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      }
+      },
+      "description": "知乎热榜与日报"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.dynamic_island",
@@ -2074,7 +2058,8 @@
         "desktopLaunched": false,
         "desktopAcceptance": false,
         "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
-      }
+      },
+      "description": "设置间隔，定时提醒，适合长期久坐的人群"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.labor_progress",
@@ -2114,7 +2099,8 @@
         "document": "docs/17-本地资源权限细分.md",
         "verificationReport": "artifacts/assets-permissions-verification-20261118.json",
         "hiddenPreviewAndRegistryRestartPassed": true
-      }
+      },
+      "description": "打工人，打工魂"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.phone_reminder",
@@ -2152,7 +2138,8 @@
         "desktopLaunched": false,
         "desktopAcceptance": false,
         "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
-      }
+      },
+      "description": "用灵动通知加语音，提醒重要事项"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.sit_reminder",
@@ -2191,7 +2178,8 @@
         "desktopLaunched": false,
         "desktopAcceptance": false,
         "scope": "原Vue离线执行、假媒体播放故障和隔离SQLite权限/状态/计划槽故障检查；不替代真实声音/鼠标/焦点/全屏或正常安装升级"
-      }
+      },
+      "description": "设置间隔，定时提醒，适合长期久坐的人群"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.time_progress",
@@ -2209,7 +2197,8 @@
       "sourceRepository": "widget-js/widgets",
       "sourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
       "souldeskId": "local.souldesk.widgetjs.time-progress",
-      "notes": "实例配置及部分后台提醒"
+      "notes": "实例配置及部分后台提醒",
+      "description": "年、月、周、日进度剩余百分比"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.wave_progress",
@@ -2227,59 +2216,8 @@
       "sourceRepository": "widget-js/widgets",
       "sourceRevision": "ab244797d510c49a6fa2a9297fb930b1773133ec",
       "souldeskId": "local.souldesk.widgetjs.wave-progress",
-      "notes": "实例配置及部分后台提醒"
-    },
-    {
-      "upstreamId": "widget.js.fun.hitler",
-      "title": "仪表盘",
-      "package": "widget.js.fun",
-      "path": "/widget/hitler",
-      "configPagePath": "/widget/config/hitler?width=600&height=500&frame=true&transparent=false",
-      "sourceLinks": [],
-      "remote": {
-        "hostname": "widgetjs.cn",
-        "entry": "https://widgetjs.cn/fun",
-        "base": "/fun"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "rtugeek/fun",
-      "sourceRevision": "07051c2c84a403593e89c182ab02aec66ceb6207",
-      "souldeskId": "local.souldesk.widgetjs.dashboard",
-      "notes": "保留原图片仪表/指针和三种监控；新增system.metrics，Windows CPU/内存/GPU原生采样通过；GPU明确为最繁忙引擎，桌面与设置待验。2026-11-15新增12项真实宿主设置/显示/重启检查通过，两阶段退出0；原生数值和缺值理由分别记录，真实鼠标/完整桌面视觉仍未验。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-dashboard-ui-checks.json",
-        "nativeChecks": 12,
-        "sha256": "24bc8307e29336fd2f9dd8519c5df9d3d8c0493b6918eded96b6878e880e2a55",
-        "scope": "原生硬件采样经正式消息桥进入真实WebView，程序化设置与恢复；不等于真实鼠标/完整桌面视觉"
-      }
-    },
-    {
-      "upstreamId": "widget.js.fun.wooden_fish",
-      "title": "电子木鱼",
-      "package": "widget.js.fun",
-      "path": "/widget/wooden_fish",
-      "configPagePath": "/widget/config/wooden_fish?width=600&height=400&frame=true&transparent=false",
-      "sourceLinks": [],
-      "remote": {
-        "hostname": "widgetjs.cn",
-        "entry": "https://widgetjs.cn/fun",
-        "base": "/fun"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "rtugeek/fun",
-      "sourceRevision": "07051c2c84a403593e89c182ab02aec66ceb6207",
-      "souldeskId": "local.souldesk.widgetjs.wooden-fish",
-      "notes": "保留原图片、两段音频、功德和飘字；12项宿主检查与两阶段自然退出0通过，主题与音乐偏好重启保留，功德按原行为重建归零。测试音频静音，实际听感/鼠标仍未验。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-wooden-fish-checks.json",
-        "nativeChecks": 12,
-        "sha256": "88b088c0e6e0eea7289de24890dc8c37f5ce80b9ddc2b8502880f4b78d3d27c0",
-        "scope": "真实宿主与WebView程序化交互，音频明确静音；不代表实际听感/鼠标验收"
-      }
+      "notes": "实例配置及部分后台提醒",
+      "description": "用波浪显示事件进度"
     },
     {
       "upstreamId": "cn.widgetjs.widget.weather.medium",
@@ -2310,7 +2248,8 @@
         "report": "artifacts/widgetjs-weather-checks-20261116.json",
         "complete": false,
         "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
-      }
+      },
+      "description": "显示最近1小时天气情况"
     },
     {
       "upstreamId": "cn.widgetjs.widget.weather.small",
@@ -2341,7 +2280,8 @@
         "report": "artifacts/widgetjs-weather-checks-20261116.json",
         "complete": false,
         "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
-      }
+      },
+      "description": "显示最近1小时天气情况"
     },
     {
       "upstreamId": "cn.widgetjs.widget.weather.large",
@@ -2372,7 +2312,8 @@
         "report": "artifacts/widgetjs-weather-checks-20261116.json",
         "complete": false,
         "status": "source-and-offline-checked-awaiting-user-service-and-desktop"
-      }
+      },
+      "description": "显示最近3天气情况"
     }
   ],
   "personalUseAuthorized": true,
@@ -2381,17 +2322,14 @@
     "本地实现待验": "已批准的本地能力和共享已交付，手动验收后置；原云账户/同步继续后置且未实现"
   },
   "delivery": {
-    "date": "2026-11-17",
-    "status": "approved-local-scope-delivered",
-    "implementedCatalogItems": 61,
-    "archives": 61,
-    "presets": 64,
-    "report": "artifacts/widgetjs-local-delivery-final-20261117.json",
-    "decision": "artifacts/widgetjs-local-delivery-decision-20261117.json",
+    "date": "2026-11-19",
+    "status": "current-local-scope",
+    "implementedCatalogItems": 57,
+    "archives": 57,
+    "presets": 58,
     "manualAcceptance": {
-      "status": "deferred-by-user",
-      "countedAsPassed": false,
-      "blocksCurrentLocalDelivery": false
+      "status": "pending",
+      "countedAsPassed": false
     },
     "originalCloud": {
       "status": "deferred-by-user",
@@ -2399,5 +2337,19 @@
       "implemented": false,
       "blocksCurrentLocalDelivery": false
     }
-  }
+  },
+  "selection": {
+    "appliedAt": "2026-11-19",
+    "activePresetCount": 58,
+    "activeWidgetjsCount": 57,
+    "keep": [
+      "local.souldesk.widgetjs.clock",
+      "local.souldesk.widgetjs.flip-clock",
+      "local.souldesk.widgetjs.glitch-clock",
+      "local.souldesk.widgetjs.mickey-clock",
+      "local.souldesk.widgetjs.text-clock"
+    ],
+    "unselectedCount": 53
+  },
+  "currentTotal": 57
 }

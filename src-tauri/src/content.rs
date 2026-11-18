@@ -38,7 +38,6 @@ fn source_url(source: &str, args: &Value) -> AppResult<String> {
         "gold" => "https://push2.eastmoney.com/api/qt/stock/get?secid=118.AU9999&fields=f43,f44,f45,f46,f57,f58,f60,f86",
         "gold-trends" => "https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=118.AU9999&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0",
         "tou-tiao" => "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
-        "world-cup" => "https://facai365.vip/hub/api?id=world_cup_2026",
         "cls-telegraph" => return Ok(format!("https://www.cls.cn/api/cache?app=CailianpressWeb&lastTime={}&name=refreshTenTelegraph&os=web&sv=8.7.9", now_ms() / 1000)),
         "bilibili-rcmd" => {
             let shown = args.get("lastShown").map(|v| v.as_str().ok_or("INVALID_ARGUMENT: 推荐列表参数无效")).transpose()?.unwrap_or("");
@@ -575,17 +574,6 @@ fn validate_cached_body(source: &str, body: &Value) -> AppResult<()> {
                 item["target"]["title"].is_string() && item["target"]["url"].is_string()
             })
         }),
-        "world-cup" => {
-            let payload = body.get("response").unwrap_or(body);
-            let decoded;
-            let payload = if let Some(text) = payload.as_str() {
-                decoded = serde_json::from_str::<Value>(text).map_err(|_| invalid())?;
-                &decoded
-            } else {
-                payload
-            };
-            payload["matches"].is_array()
-        }
         "itime-calendar" => {
             let mut dates = std::collections::HashSet::new();
             body["code"] == 0
@@ -718,7 +706,6 @@ mod tests {
             ("tou-tiao", json!({"data":[]})),
             ("weibo", json!({"data":{"realtime":[]}})),
             ("zhihu", json!({"data":[]})),
-            ("world-cup", json!({"response":"{\"matches\":[]}"})),
             (
                 "itime-calendar",
                 json!({"code":0,"data":[{"year":"2026","month":11,"dayOfMonth":18,"status":0}]}),
@@ -734,7 +721,6 @@ mod tests {
         for (source, body) in [
             ("bilibili", json!({"list":[{"keyword":1}]})),
             ("cls-telegraph", json!({"errno":1,"data":{"l":{}}})),
-            ("world-cup", json!({"response":"bad"})),
             (
                 "itime-calendar",
                 json!({"code":0,"data":[{"year":2026,"month":2,"dayOfMonth":30}]}),
@@ -1021,7 +1007,6 @@ mod tests {
             ("hotspot-douyin", &["douyin"], false),
             ("hotspot-tou-tiao", &["tou-tiao"], true),
             ("hotspot-weibo", &["weibo"], false),
-            ("hotspot-world-cup", &["world-cup"], true),
             ("hotspot-zhihu", &["zhihu"], false),
             ("calendar", &["itime-calendar"], false),
             ("calendar-large", &["itime-calendar"], false),
@@ -1113,7 +1098,6 @@ mod tests {
             "douyin",
             "tou-tiao",
             "weibo",
-            "world-cup",
             "zhihu",
             "metal",
             "gold",

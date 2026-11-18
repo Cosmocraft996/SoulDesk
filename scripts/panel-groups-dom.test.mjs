@@ -211,7 +211,7 @@ test('删除确认和移动分组对话框可取消，实例内容保留', async
     await click(document.querySelector('[data-action="cancel-remove"]'));
     assert.equal(document.querySelector('.remove-instance-dialog'), null);
     assert.equal(f.calls.some(([command, args]) => command === 'window_action' && args.action === 'remove'), false);
-    await click(button('更多功能')); await click(button('移动到分组'));
+    await click(button('移动到分组'));
     assert.ok(document.querySelector('dialog[open]'));
     await click(textButton(document.querySelector('dialog[open]'), '取消'));
     assert.equal(document.querySelector('dialog[open]'), null);
@@ -517,19 +517,23 @@ test('桌面外壳接收边线事件，清空及切换实例时移除高亮和�
   assert.equal(f.listeners.get('host:snap-edges').size, 0);
 });
 
-test('组件浮动菜单提供窄卡片的通用操作，按 Esc 返回入口', async () => {
+test('组件工具栏直接提供分组和删除，窄卡片的更多菜单按 Esc 返回入口', async () => {
   const f = await fixture();
   try {
     const surface = document.querySelector('.widget-surface');
     const more = surface.querySelector('[aria-label="更多功能"]');
+    const actions = [...surface.querySelectorAll('.surface-toolbar button')];
+    assert.deepEqual(actions.map(node => node.ariaLabel), ['放回桌面', '隐藏组件', '移动到分组', '删除实例', '更多功能']);
+    assert.ok(actions.slice(-3, -1).every(node => !node.hasAttribute('data-overflow')));
+    assert.ok(more.hasAttribute('data-compact-only'));
     await click(more);
     const menu = surface.querySelector('.surface-menu');
     assert.equal(more.getAttribute('aria-expanded'), 'true');
-    assert.ok(menu.querySelector('.surface-compact-actions [aria-label="隐藏组件"]'));
-    const move = menu.querySelector('[aria-label="移动到分组"]');
+    assert.deepEqual([...menu.querySelectorAll('button')].map(node => node.ariaLabel), ['放回桌面', '隐藏组件']);
+    const hide = menu.querySelector('[aria-label="隐藏组件"]');
     await act(async () => {
-      move.focus();
-      move.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      hide.focus();
+      hide.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     assert.equal(more.getAttribute('aria-expanded'), 'false');
     assert.equal(surface.querySelector('.surface-menu'), null);
@@ -591,6 +595,29 @@ async function canvasFixture() {
   f.close = () => act(async () => root.unmount());
   return f;
 }
+
+test('面板在最靠下的组件之后额外留出滚动区可视高度的30%', async t => {
+  let viewportHeight = 400;
+  let resize;
+  const originalObserver = globalThis.ResizeObserver;
+  t.after(() => { globalThis.ResizeObserver = originalObserver; });
+  globalThis.ResizeObserver = class {
+    constructor(callback) { resize = callback; }
+    observe(node) { Object.defineProperty(node, 'clientHeight', { get: () => viewportHeight }); }
+    disconnect() {}
+  };
+  const f = await canvasFixture();
+  try {
+    const canvas = document.querySelector('.panel-canvas');
+    const last = canvas.querySelectorAll('.panel-widget')[1];
+    const bottom = parseFloat(last.style.top) + parseFloat(last.style.height);
+    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 120);
+    viewportHeight = 600;
+    await act(async () => resize());
+    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 180);
+    assert.equal(parseFloat(last.style.top) + parseFloat(last.style.height), bottom);
+  } finally { await f.close(); }
+});
 
 test('面板指针拖动实时吸附、脱离并保存最终吸附位置', async () => {
   const f = await canvasFixture();
@@ -678,6 +705,123 @@ test('新建分组先等待保存，失败保留草稿与当前组，成功后�
   } finally { await f.close(); }
 });
 
+function groupStrip(width = 280) {
+  const strip = document.querySelector('.panel-group-tabs');
+  const rect = (left, width) => ({ left, right: left + width, width, top: 0, bottom: 36 });
+  strip.getBoundingClientRect = () => rect(0, width);
+  let scroll = 0;
+  Object.defineProperty(strip, 'scrollLeft', {
+    get: () => scroll,
+    set: value => { scroll = Math.max(0, Math.min(value, strip.children.length * 80 - width)); },
+  });
+  for (const node of strip.children) {
+    node.setPointerCapture = () => {};
+    node.getBoundingClientRect = () => rect([...strip.children].indexOf(node) * 80 - scroll, 76);
+  }
+  return strip;
+}
+
+const groupPointer = (node, type, x, y = 15) => act(async () => node.dispatchEvent(new dom.window.PointerEvent(type, {
+  bubbles: true, isPrimary: true, pointerId: 1, button: 0, clientX: x, clientY: y,
+})));
+const pointerClick = node => act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
+const tabOrder = () => [...document.querySelector('.panel-group-tabs').children].map(node => node.title);
+
+test('拖动顶部标签先预览插入位置，保存失败保留顺序，成功后保留当前组与组件', async () => {
+  const f = await fixture({ active: 'work' });
+  try {
+    groupStrip();
+    const original = ['未分组', '工作', '生活'];
+    const life = tab('生活');
+    const drag = async () => { await groupPointer(life, 'pointerdown', 180); await groupPointer(life, 'pointermove', 95); };
+    await drag();
+    assert.equal(tab('工作').dataset.dropSide, 'before');
+    assert.deepEqual(tabOrder(), original);
+    assert.equal(f.calls.some(([name]) => name === 'manage_panel_group'), false);
+    let release;
+    f.gate = new Promise(resolve => { release = resolve; });
+    f.fail = true;
+    await groupPointer(life, 'pointerup', 95);
+    assert.equal(life.disabled, true);
+    assert.deepEqual(tabOrder(), original);
+    await act(async () => release());
+    assert.match(document.querySelector('.panel-notice').textContent, /测试保存失败/);
+    assert.deepEqual(tabOrder(), original);
+    assert.equal(life.dataset.dragging, undefined);
+    assert.equal(tab('工作').dataset.dropSide, undefined);
+
+    f.fail = false;
+    await drag();
+    await groupPointer(life, 'pointerup', 95);
+    await pointerClick(life);
+    assert.deepEqual(tabOrder(), ['未分组', '生活', '工作']);
+    assert.deepEqual(f.calls.filter(([name]) => name === 'manage_panel_group').map(([, args]) => args.change), [
+      { action: 'reorder', ids: ['life', 'work'] }, { action: 'reorder', ids: ['life', 'work'] },
+    ]);
+    assert.equal(tab('工作').getAttribute('aria-selected'), 'true');
+    assert.deepEqual(f.mounts, ['a']);
+    assert.equal(document.querySelector('.panel-widget').style.top, '75px');
+  } finally { await f.close(); }
+});
+
+test('分组栏支持轻点切换，固定标签、原位松手和取消拖动不提交排序', async () => {
+  const f = await fixture();
+  try {
+    groupStrip();
+    const fixed = tab('未分组'), work = tab('工作'), life = tab('生活');
+    await groupPointer(fixed, 'pointerdown', 35);
+    await groupPointer(fixed, 'pointermove', 200);
+    await groupPointer(fixed, 'pointerup', 200);
+    assert.equal(fixed.dataset.sortable, undefined);
+    await groupPointer(work, 'pointerdown', 98);
+    await groupPointer(work, 'pointermove', 110);
+    await groupPointer(work, 'pointerup', 110);
+    await pointerClick(work);
+    assert.equal(tab('未分组').getAttribute('aria-selected'), 'true');
+
+    for (const cancel of ['outside', 'pointercancel', 'Escape']) {
+      await groupPointer(life, 'pointerdown', 180);
+      await groupPointer(life, 'pointermove', 95);
+      if (cancel === 'Escape') await act(async () => life.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: cancel, bubbles: true })));
+      await groupPointer(life, cancel === 'pointercancel' ? cancel : 'pointerup', 95, cancel === 'outside' ? 50 : 15);
+      await pointerClick(life);
+      assert.equal(life.dataset.dragging, undefined);
+      assert.equal(tab('未分组').getAttribute('aria-selected'), 'true');
+    }
+    await groupPointer(life, 'pointerdown', 180);
+    await groupPointer(life, 'pointermove', 182);
+    await groupPointer(life, 'pointerup', 182);
+    await pointerClick(life);
+    assert.deepEqual(f.calls.filter(([name]) => name === 'manage_panel_group').map(([, args]) => args.change), [{ action: 'select', group: 'life' }]);
+  } finally { await f.close(); }
+});
+
+test('拖动到分组栏边缘时可以把标签排到滚动区外的分组之后', async t => {
+  const request = window.requestAnimationFrame, cancel = window.cancelAnimationFrame;
+  const frames = new Map();
+  let nextFrame = 0;
+  window.requestAnimationFrame = callback => { frames.set(++nextFrame, callback); return nextFrame; };
+  window.cancelAnimationFrame = id => { frames.delete(id); };
+  t.after(() => Object.assign(window, { requestAnimationFrame: request, cancelAnimationFrame: cancel }));
+  const f = await fixture();
+  try {
+    const strip = groupStrip(160);
+    const work = tab('工作');
+    await groupPointer(work, 'pointerdown', 112);
+    await groupPointer(work, 'pointermove', 154);
+    for (let i = 0; i < 20 && frames.size; i++) {
+      const [id, draw] = frames.entries().next().value;
+      frames.delete(id);
+      await act(async () => draw());
+    }
+    assert.equal(strip.scrollLeft, 80);
+    assert.equal(tab('生活').dataset.dropSide, 'after');
+    await groupPointer(work, 'pointerup', 154);
+    assert.deepEqual(tabOrder(), ['未分组', '生活', '工作']);
+    assert.equal(frames.size, 0);
+  } finally { await f.close(); }
+});
+
 test('管理支持排序改名；取消删除保持原组，确认只删除分组并保留组件', async () => {
   const f = await fixture({ active: 'work' });
   try {
@@ -697,10 +841,10 @@ test('管理支持排序改名；取消删除保持原组，确认只删除分�
   } finally { await f.close(); }
 });
 
-test('组件更多菜单移动分组，失败保留选择，成功后可在目标组找到同一实例', async () => {
+test('从组件工具栏移动分组，失败保留选择，成功后可在目标组找到同一实例', async () => {
   const f = await fixture();
   try {
-    await click(button('更多功能')); await click(button('移动到分组'));
+    await click(button('移动到分组'));
     const select = document.getElementById('panel-group-destination');
     await act(async () => { select.value = 'work'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
     f.fail = true; await submit(document.querySelector('.panel-group-move'));

@@ -62,7 +62,7 @@ test('独立标准包带全部相对资源、宿主SDK和许可来源，打包�
     assert.deepEqual(Object.keys(unzipSync(archive)).sort(), Object.keys(files).sort());
   }
 });
-test('六种时钟各有标准包和原始组件标识，运行包不依赖WidgetJS服务器或模块', () => {
+test('五种时钟各有标准包和原始组件标识，运行包不依赖WidgetJS服务器或模块', () => {
   const identities = new Set();
   for (const name of clockWidgets) {
     const files = widgetFiles(name), text = path => new TextDecoder().decode(files[path]);
@@ -75,5 +75,5 @@ test('六种时钟各有标准包和原始组件标识，运行包不依赖Widge
     assert.doesNotMatch(text('dist/style.css'), /url\(["']?https?:/);
     for (const [, path] of text(manifest.entry).matchAll(/(?:src|href)="\.\/([^"]+)"/g)) assert.ok(files['dist/' + path], path);
   }
-  assert.equal(identities.size, 6);
+  assert.equal(identities.size, 5);
 });

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 
 // 此脚本独立于 Vite/宿主构建；产物不被打入安装器。
 mkdirSync('artifacts', { recursive: true });
-for (const source of process.argv.length > 2 ? process.argv.slice(2) : ['examples/clock', 'examples/template']) {
+for (const source of process.argv.length > 2 ? process.argv.slice(2) : ['tests/fixtures/surface', 'tests/fixtures/document']) {
   const manifest = JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8'));
   const files = { 'manifest.json': new Uint8Array(readFileSync(join(source, 'manifest.json'))), 'dist/host.js': new Uint8Array(readFileSync('sdk/host.js')) };
   for (const file of readdirSync(source, { withFileTypes: true })) {

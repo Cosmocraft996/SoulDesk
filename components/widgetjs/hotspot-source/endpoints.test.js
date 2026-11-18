@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 const imported = await import('./endpoints.js').catch(() => null);
 
-test('前端地址只能映射到固定的九个内容源，查询字符串不能换域或换接口', () => {
+test('前端地址只能映射到固定的八个内容源，查询字符串不能换域或换接口', () => {
   assert.ok(imported, '热点接口映射尚未实现');
   const { providerForURL } = imported;
   assert.equal(providerForURL('https://s.search.bilibili.com/main/hotword').source, 'bilibili');
@@ -20,5 +20,4 @@ test('预览返回明确的空数据，不读网络；真实响应校验失败�
   assert.throws(() => validateBody('bilibili', { list: [{ keyword: 1 }] }), /格式/);
   const valid = { list: [{ keyword: '测试', show_name: '测试' }] };
   assert.equal(validateBody('bilibili', valid), valid);
-  assert.throws(() => validateBody('world-cup', { response: 'bad json' }));
 });

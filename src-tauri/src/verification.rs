@@ -1164,10 +1164,10 @@ async fn check_g1(app: &AppHandle, report: &mut Report) -> AppResult<()> {
         .path
         .parent()
         .unwrap()
-        .join("local.example.card-0.1.0.zip");
+        .join("local.fixture.document-0.1.0.zip");
     crate::packages::install(app, &card).await?;
-    let a = widgets::create_instance(&app.state::<Core>().store, "local.example.card")?;
-    let b = widgets::create_instance(&app.state::<Core>().store, "local.example.card")?;
+    let a = widgets::create_instance(&app.state::<Core>().store, "local.fixture.document")?;
+    let b = widgets::create_instance(&app.state::<Core>().store, "local.fixture.document")?;
     windows::show(app, true)?;
     app.emit("host:changed", ()).map_err(err)?;
     wait_for(
@@ -1206,12 +1206,12 @@ async fn check_g1(app: &AppHandle, report: &mut Report) -> AppResult<()> {
     if !resources.iter().any(|r| {
         r["uri"]
             .as_str()
-            .is_some_and(|u| u.contains("local.example.card") && u.ends_with("card.js"))
+            .is_some_and(|u| u.contains("local.fixture.document") && u.ends_with("app.js"))
             && r["status"] == 200
     }) {
         return Err("第二种组件未取得真实模块加载证据".into());
     }
-    report.record("G1同一主程序导入第二种包双实例及布局保存",json!({"instances":snapshot["instances"],"resources":resources.iter().filter(|r|r["uri"].as_str().is_some_and(|u|u.contains("local.example.card"))).collect::<Vec<_>>()}))?;
+    report.record("G1同一主程序导入第二种包双实例及布局保存",json!({"instances":snapshot["instances"],"resources":resources.iter().filter(|r|r["uri"].as_str().is_some_and(|u|u.contains("local.fixture.document"))).collect::<Vec<_>>()}))?;
 
     let main = windows::main_window(app)?;
     main.set_size(tauri::LogicalSize::new(820., 540.))

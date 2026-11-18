@@ -10,7 +10,7 @@ const documentPath = join(root, 'docs/20-组件筛选与手动验证清单.md');
 const staticRoot = join(root, 'docs/component-review');
 const decisionNames = { '': '未筛选', keep: '保留', trim: '裁剪', undecided: '待定' };
 const resultNames = { untested: '待验证', passed: '通过', partial: '部分通过', failed: '失败' };
-const sourceCategories = { S1: '行情与汇率', S2: '实用工具', S3: '热点资讯', S4: '时钟与进度', S5: '笔记与图形', S6: 'AI与剪切板', S7: '笔记与图形', S8: '日历与专注', S9: '系统与服务器', S10: '图片与文件', S11: '图片与文件', S12: 'AI与剪切板', S13: 'AI与剪切板', S14: '提醒与进度', S15: '系统与趣味', S16: '天气', native: '项目原有' };
+const sourceCategories = { S1: '行情与汇率', S2: '实用工具', S3: '热点资讯', S4: '时钟与进度', S5: '笔记与图形', S6: 'AI与剪切板', S7: '笔记与图形', S8: '日历与专注', S9: '系统与服务器', S10: '图片与文件', S11: '图片与文件', S12: 'AI与剪切板', S13: 'AI与剪切板', S14: '提醒与进度', S16: '天气', native: '项目原有' };
 
 export function loadReviewCatalog() {
   const text = readFileSync(documentPath, 'utf8');
@@ -21,8 +21,6 @@ export function loadReviewCatalog() {
     return [cells[0], { label: link[1], pinnedUrl: link[2] }];
   }));
   const upstream = JSON.parse(readFileSync(join(root, 'docs/widgetjs-catalog.json'), 'utf8'));
-  const snapshotPath = join(root, 'artifacts/widgetjs-catalog-refresh-combined-20261115.json');
-  const snapshot = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, 'utf8')).items : [];
   const programLink = text.match(/\]\(\.\.\/(artifacts\/[^)]+-program\.json)\)/)?.[1];
   const program = programLink && existsSync(join(root, programLink)) ? JSON.parse(readFileSync(join(root, programLink), 'utf8')) : null;
   const items = rows.map(line => {
@@ -30,41 +28,43 @@ export function loadReviewCatalog() {
     const number = Number(cells[0]), slug = cells[1].match(/`([^`]+)`/)[1];
     const name = cells[1].match(/\[([^\]]+)\]/)?.[1] || cells[1].split('`')[0].trim();
     const id = number <= 61 ? `local.souldesk.widgetjs.${slug}` : slug;
-    const manifestPath = number <= 61 ? `components/widgetjs/${slug}/manifest.json` : ({ 'local.souldesk.market': 'examples/market/manifest.json', 'local.example.clock': 'examples/clock/manifest.json', 'local.example.card': 'examples/template/manifest.json' })[id];
+    const manifestPath = number <= 61 ? `components/widgetjs/${slug}/manifest.json` : 'examples/market/manifest.json';
     const manifest = JSON.parse(readFileSync(join(root, manifestPath), 'utf8'));
     const upstreamItem = upstream.items.find(item => item.souldeskId === id);
-    const original = snapshot.find(item => item.name === upstreamItem?.upstreamId);
     const source = sources.get(cells[3]) || { label: 'SoulDesk 项目', pinnedUrl: 'https://github.com/Cosmocraft996/SoulDesk' };
     const projectUrl = source.pinnedUrl.replace(/\/tree\/[^/]+.*$/, '');
-    return { number, id, slug, name, version: program?.presets.find(item => item.id === id)?.version || manifest.version,
+    return { number, id, slug, name, version: manifest.version,
       summary: cells[2].replace(/†/g, '').trim(), cloudDeferred: cells[2].includes('†'),
+      initialDecision: cells[4] === '☑' ? 'keep' : cells[5] === '☑' ? 'trim' : cells[6] === '☑' ? 'undecided' : '',
+      initialResult: ({ '待验证': 'untested', '通过': 'passed', '部分通过': 'partial', '失败': 'failed' })[cells[7]] || 'untested',
       category: sourceCategories[cells[3]] || sourceCategories.native, sourceLabel: source.label, projectUrl,
       pinnedUrl: source.pinnedUrl, originalTitle: upstreamItem?.title || name,
-      originalDescription: original?.description?.['zh-CN'] || '',
+      originalDescription: upstreamItem?.description || '',
       sourcePath: number <= 61 ? `components/widgetjs/${slug}/SOURCE.txt` : manifestPath };
   });
-  if (items.length !== 64 || new Set(items.map(item => item.id)).size !== 64) throw Error('清单必须包含 64 项独立组件');
+  if (new Set(items.map(item => item.id)).size !== items.length || items.length === 0) throw Error('清单存在重复标识或没有组件');
   const build = {
     version: program?.version || JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
     sha256: program?.sha256 || '',
     label: program?.sha256.slice(0, 8) || '当前源码',
   };
-  return { schemaVersion: 1, id: createHash('sha256').update(JSON.stringify({ items, build })).digest('hex'), build, items };
+  return { schemaVersion: 1, id: createHash('sha256').update(JSON.stringify({ items, build })).digest('hex'), build,
+    sourceVersion: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
+    items };
 }
 
 export function createReviewServer({ stateDir = join(root, 'artifacts/component-review'), catalog = loadReviewCatalog() } = {}) {
   const draftPath = join(stateDir, 'draft.json');
-  const initialEntries = () => Object.fromEntries(catalog.items.map(item => [item.id, { decision: '', result: 'untested', notes: '', testedVersion: item.version }]));
+  const initialEntries = (items = catalog.items) => Object.fromEntries(items.map(item => [item.id, { decision: item.initialDecision || '', result: item.initialResult || 'untested', notes: '', testedVersion: item.version }]));
   function current() {
-    if (!existsSync(draftPath)) return { catalogId: catalog.id, revision: 0, updatedAt: null, entries: initialEntries() };
-    const stored = JSON.parse(readFileSync(draftPath, 'utf8'));
+    const stored = existsSync(draftPath) ? JSON.parse(readFileSync(draftPath, 'utf8')) : { revision: 0, updatedAt: null };
     const entries = initialEntries();
-    for (const id of Object.keys(entries)) if (stored.entries?.[id]) entries[id] = stored.entries[id];
-    return { ...stored, catalogId: catalog.id, entries, catalogChanged: stored.catalogId !== catalog.id };
+    for (const id of Object.keys(entries)) if (stored.entries?.[id]) entries[id] = { ...entries[id], ...stored.entries[id] };
+    return { schemaVersion: 1, revision: stored.revision || 0, updatedAt: stored.updatedAt || null, catalogId: catalog.id, entries, catalogChanged: !!stored.catalogId && stored.catalogId !== catalog.id };
   }
   function validate(body) {
     if (body.catalogId !== catalog.id) throw Object.assign(Error('组件目录已更新，请刷新页面后继续'), { status: 409 });
-    if (!body.entries || Object.keys(body.entries).length !== catalog.items.length) throw Error('结果必须包含完整的 64 项组件');
+    if (!body.entries || Object.keys(body.entries).length !== catalog.items.length) throw Error(`结果必须包含当前 ${catalog.items.length} 项组件`);
     const entries = {};
     for (const item of catalog.items) {
       const value = body.entries[item.id];
@@ -116,7 +116,8 @@ export function createReviewServer({ stateDir = join(root, 'artifacts/component-
         const clean = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
         const markdown = ['# 组件筛选与验证结果', '', `提交时间：${submittedAt}。验收构建：${catalog.build.version}（${catalog.build.label}）。`, '',
           '| 编号 | 组件 | 筛选 | 验证结果 | 实测版本 | 备注 | 原项目 |', '| --- | --- | --- | --- | --- | --- | --- |',
-          ...report.items.map(item => `| ${String(item.number).padStart(2, '0')} | ${clean(item.name)} | ${decisionNames[item.decision]} | ${resultNames[item.result]} | ${clean(item.testedVersion)} | ${clean(item.notes)} | [原项目](${item.projectUrl}) |`), ''].join('\n');
+          ...report.items.map(item => `| ${String(item.number).padStart(2, '0')} | ${clean(item.name)} | ${decisionNames[item.decision]} | ${resultNames[item.result]} | ${clean(item.testedVersion)} | ${clean(item.notes)} | [原项目](${item.projectUrl}) |`), '',
+          ''].join('\n');
         writeFileSync(join(directory, name + '.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
         writeFileSync(join(directory, name + '.md'), markdown, { flag: 'wx' });
         const receipt = { submittedAt, files: [join(directory, name + '.json'), join(directory, name + '.md')], revision: state.revision };

@@ -18,7 +18,6 @@ function create(defaults: Record<string, any> = {}) {
         if (verify) {
           const nested = data as any;
           const values: Record<string, any> = { bilibili: nested.list, bangumi: nested.result, 'bilibili-rcmd': nested.data?.item, 'cls-telegraph': nested.data?.l, douyin: nested.data?.word_list, 'tou-tiao': nested.data, weibo: nested.data?.realtime, zhihu: nested.data };
-          if (args.source === 'world-cup') values[args.source] = (typeof nested.response === 'string' ? JSON.parse(nested.response) : nested.response || nested)?.matches;
           const items = values[args.source];
           Object.assign(hotspotEvidence, { outcome: 'success', endpoint: result.source, fetchedAt: result.fetchedAt, itemCount: Array.isArray(items) ? items.length : items && typeof items === 'object' ? Object.keys(items).length : null });
           if (args.source === 'bangumi') hotspotEvidence.seasonCount = nested.result.reduce((count: number, day: any) => count + day.seasons.length, 0);

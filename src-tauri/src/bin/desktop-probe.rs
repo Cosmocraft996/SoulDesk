@@ -26,8 +26,8 @@ fn main() {
             Ok(root) => souldesk_lib::run_desktop_widget_probe(
                 report,
                 [
-                    root.join("artifacts/local.example.clock-0.1.1.zip"),
-                    root.join("artifacts/local.example.card-0.1.0.zip"),
+                    root.join("artifacts/local.fixture.surface-0.1.1.zip"),
+                    root.join("artifacts/local.fixture.document-0.1.0.zip"),
                 ],
             ),
             Err(error) => Err(error.to_string()),

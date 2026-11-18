@@ -6,7 +6,6 @@ const providers = new Map([
   ['https://aweme.snssdk.com/aweme/v1/hot/search/list/', 'douyin'],
   ['https://www.toutiao.com/hot-event/hot-board/', 'tou-tiao'],
   ['https://weibo.com/ajax/side/hotSearch', 'weibo'],
-  ['https://facai365.vip/hub/api', 'world-cup'],
   ['https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total', 'zhihu'],
 ]);
 export function providerForURL(address, params = {}) {
@@ -21,7 +20,7 @@ export function previewBody(source) {
     'bilibili-rcmd': { code: 0, data: { item: [] } },
     'cls-telegraph': { data: { l: {} } }, douyin: { data: { word_list: [] } },
     'tou-tiao': { data: [] }, weibo: { data: { realtime: [] } },
-    zhihu: { data: [] }, 'world-cup': { name: 'World Cup 2026', matches: [] },
+    zhihu: { data: [] },
   };
   if (!bodies[source]) throw new Error('未知热点类型');
   return structuredClone(bodies[source]);
@@ -35,7 +34,6 @@ export function validateBody(source, body) {
     'cls-telegraph': () => body.data?.l && typeof body.data.l === 'object',
     douyin: () => Array.isArray(body.data?.word_list), 'tou-tiao': () => Array.isArray(body.data),
     weibo: () => Array.isArray(body.data?.realtime), zhihu: () => Array.isArray(body.data),
-    'world-cup': () => Array.isArray((typeof body.response === 'string' ? JSON.parse(body.response) : body.response || body)?.matches),
   };
   if (!checks[source]?.()) throw new Error('内容源响应格式变化，未替代为空榜');
   const arrays = {

@@ -24,8 +24,8 @@ const files = {
   'desktop-probe.exe': readFileSync('src-tauri/target/release/desktop-probe.exe'),
   '启动桌面验证.cmd': bytes('@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\n"%~dp0desktop-probe.exe" --widgets\r\nif errorlevel 1 (\r\n  echo 验证程序未正常完成，请查看 artifacts 中的报告。\r\n  pause\r\n)\r\n'),
   'README.md': readFileSync('docs/10-桌面验证预览版发布说明.md'),
-  'artifacts/local.example.clock-0.1.1.zip': readFileSync('artifacts/local.example.clock-0.1.1.zip'),
-  'artifacts/local.example.card-0.1.0.zip': readFileSync('artifacts/local.example.card-0.1.0.zip'),
+  'artifacts/local.fixture.surface-0.1.1.zip': readFileSync('artifacts/local.fixture.surface-0.1.1.zip'),
+  'artifacts/local.fixture.document-0.1.0.zip': readFileSync('artifacts/local.fixture.document-0.1.0.zip'),
   'third-party/window-vibrancy-0.8.1-MIT.txt': readFileSync('docs/licenses/window-vibrancy-0.8.1-MIT.txt'),
 };
 const sha256 = data => createHash('sha256').update(data).digest('hex');

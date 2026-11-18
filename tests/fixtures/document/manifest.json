@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "local.fixture.document",
+  "name": "验收夹具",
+  "version": "0.1.0",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": {
+    "width": 360,
+    "height": 240
+  },
+  "minSize": {
+    "width": 240,
+    "height": 120
+  },
+  "capabilities": [
+    "storage.instance"
+  ],
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string",
+        "maxLength": 100,
+        "default": "测试消息"
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -6,7 +6,6 @@ export const hotspotVariants = [
   ['douyin', 'douyin/DouyinWidgetView.vue'],
   ['tou-tiao', 'tou-tiao/TouTiaoWidgetView.vue'],
   ['weibo', 'weibo/WeiBoWidgetView.vue'],
-  ['world-cup', 'world-cup/WorldCupWidgetView.vue'],
   ['zhihu', 'zhihu/ZhihuWidgetView.vue'],
 ];
 export const hotspotWidgets = hotspotVariants.map(([name]) => 'hotspot-' + name);

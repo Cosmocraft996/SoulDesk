@@ -98,7 +98,7 @@ export function DesktopProbe({ kind }: { kind: string }) {
   }, [kind, tint]);
 
   if (kind !== 'panel' && widgets) return <main className="probe-real-desktop">
-    <header><span>原 ZIP · {kind === 'clock' ? '此刻时钟' : '示例卡片'}</span><button disabled={locked} onClick={() => void action('open-panel')}>打开侧栏 ↗</button></header>
+    <header><span>原 ZIP · {kind === 'clock' ? '基础验收夹具' : '文档验收夹具'}</span><button disabled={locked} onClick={() => void action('open-panel')}>打开侧栏 ↗</button></header>
     {mounted.map(view => <WidgetFrame key={view.instanceId} instance={view.instanceId} probe />)}
     {error && <p role="alert" className="probe-error">{error}</p>}
   </main>;

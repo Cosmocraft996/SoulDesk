@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { request } from 'node:http';
 import { JSDOM } from 'jsdom';
@@ -17,13 +17,15 @@ async function fixture(t) {
   return { base, api, put, stateDir };
 }
 
-test('64 项清单与来源完整，历史源码和本次验收版本保持身份', () => {
+test('58项当前清单与来源完整', () => {
   const catalog = loadReviewCatalog();
-  assert.equal(catalog.items.length, 64); assert.equal(new Set(catalog.items.map(item => item.id)).size, 64);
+  assert.equal(catalog.items.length, 58);
+  assert.equal(new Set(catalog.items.map(item => item.id)).size, 58);
+  assert.equal(catalog.items.filter(item => item.initialDecision === 'keep').length, 5);
   assert.equal(catalog.items.filter(item => item.cloudDeferred).length, 7);
   assert.ok(catalog.items.every(item => /^https:\/\//.test(item.projectUrl) && existsSync(item.sourcePath)));
   assert.match(catalog.items.find(item => item.slug === 'time-progress').pinnedUrl, /714802e6/);
-  assert.equal(catalog.build.label, '01aeb817');
+  assert.equal(catalog.build.label, '当前源码');
 });
 
 test('草稿保存、过期写入和非法请求不会混淆；提交保存完整本机快照', async t => {
@@ -41,9 +43,9 @@ test('草稿保存、过期写入和非法请求不会混淆；提交保存完�
   const submitted = await api('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(saved.value) });
   assert.equal(submitted.status, 201); assert.equal(submitted.value.revision, 1);
   const report = JSON.parse(readFileSync(submitted.value.files[0], 'utf8'));
-  assert.equal(report.items.length, 64); assert.equal(report.items.find(item => item.id === id).notes, initial.entries[id].notes);
+  assert.equal(report.items.length, 58); assert.equal(report.items.find(item => item.id === id).notes, initial.entries[id].notes);
   assert.ok(report.items.every(item => item.projectUrl));
-  const markdown = readFileSync(submitted.value.files[1], 'utf8'); assert.equal(markdown.split('\n').filter(line => /^\| \d{2} \|/.test(line)).length, 64);
+  const markdown = readFileSync(submitted.value.files[1], 'utf8'); assert.equal(markdown.split('\n').filter(line => /^\| \d{2} \|/.test(line)).length, 58);
   assert.ok(existsSync(join(stateDir, 'latest-submission.json')));
   const second = createReviewServer({ stateDir });
   await new Promise(resolve => second.listen(0, '127.0.0.1', resolve));
@@ -71,14 +73,14 @@ test('网页可选择、记录、搜索、恢复并提交；异常保存不冒�
     dom.window.fetch = (path, options) => fetch(base + path, options);
     dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
     dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
-    dom.window.eval(script); await until(() => dom.window.document.querySelectorAll('.record').length === 64); return dom;
+    dom.window.eval(script); await until(() => dom.window.document.querySelectorAll('.record').length === 58); return dom;
   };
   let dom = await open(); t.after(() => dom.window.close());
   const d = dom.window.document, row = d.querySelector('.record'), id = row.dataset.id;
   const input = (element, value) => { if (element.type === 'radio') element.checked = true; else element.value = value; element.dispatchEvent(new dom.window.Event('input', { bubbles: true })); };
   input(row.querySelector('[value="keep"]')); input(row.querySelector('[data-field="result"]'), 'failed');
   input(row.querySelector('textarea'), '<script>不应执行</script>\n重启后需要检查');
-  assert.equal(d.querySelector('#keep-count').textContent, '1'); assert.ok(row.querySelector('details').open);
+  assert.equal(d.querySelector('#keep-count').textContent, '6'); assert.ok(row.querySelector('details').open);
   await until(() => d.querySelector('#save-status').textContent.includes('草稿已保存到本机'));
   input(d.querySelector('#search'), 'AU99.99'); assert.equal(d.querySelectorAll('.record').length, 1);
   assert.ok(d.querySelector('.record').textContent.includes('黄金价格'));

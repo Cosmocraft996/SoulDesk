@@ -51,12 +51,13 @@
   }
   function render() {
     const query = $('#search').value.trim().toLowerCase(), decision = $('#decision-filter').value, result = $('#result-filter').value;
-    const visible = catalog.items.filter(item => {
+    const pool = catalog.items;
+    const visible = pool.filter(item => {
       const entry = state.entries[item.id];
       return (category === '全部组件' || item.category === category) && (decision === 'all' || (decision === 'unselected' ? !entry.decision : entry.decision === decision)) &&
         (result === 'all' || entry.result === result) && (!query || [item.name, item.slug, item.summary, item.originalTitle, item.originalDescription].join(' ').toLowerCase().includes(query));
     });
-    $('#visible-count').textContent = `${category} · 显示 ${visible.length} / ${catalog.items.length} 项`;
+    $('#visible-count').textContent = `${category} · 显示 ${visible.length} / ${pool.length} 项`;
     $('#empty').hidden = visible.length > 0;
     $('#records').innerHTML = visible.map(item => {
       const entry = state.entries[item.id];
@@ -88,7 +89,15 @@
     try {
       [catalog, state] = await Promise.all([api('/api/catalog'), api('/api/state')]);
       let cached;
-      try { cached = JSON.parse(localStorage.getItem(cacheKey)); } catch { /* 损坏的浏览器备份不替换本机草稿。 */ }
+      try {
+        const stored = JSON.parse(localStorage.getItem(cacheKey));
+        if (stored?.entries) {
+          cached = { schemaVersion: stored.schemaVersion, catalogId: stored.catalogId, revision: stored.revision,
+            updatedAt: stored.updatedAt, pending: stored.pending,
+            entries: Object.fromEntries(catalog.items.filter(item => stored.entries[item.id]).map(item => [item.id, stored.entries[item.id]])) };
+          localStorage.setItem(cacheKey, JSON.stringify(cached));
+        }
+      } catch { /* 损坏的浏览器备份不替换本机草稿。 */ }
       if (cached?.pending && cached.catalogId === catalog.id && cached.revision === state.revision) {
         state.entries = Object.fromEntries(catalog.items.map(item => [item.id, cached.entries[item.id] || state.entries[item.id]]));
         dirty = true; toast('已恢复浏览器中尚未保存的输入。');
@@ -100,6 +109,8 @@
         $('#fatal').append(document.createElement('br'), button); $('#records').inert = true; conflict = true;
       }
       $('#build').textContent = `${catalog.build.version} / ${catalog.build.label}`;
+      $('#catalog-summary').textContent = `源码 ${catalog.sourceVersion} · 当前 ${catalog.items.length} 项`;
+      $('#total-count').textContent = '/ ' + catalog.items.length;
       renderCategories(); render(); updateStats();
       $('#export').disabled = false; $('#submit').disabled = conflict;
       if (dirty) { cache(); save().catch(() => {}); }
@@ -119,7 +130,7 @@
       $('#submit').addEventListener('click', () => {
         const entries = Object.values(state.entries), unselected = entries.filter(entry => !entry.decision).length, untested = entries.filter(entry => entry.result === 'untested').length;
         $('#submission-summary').innerHTML = Object.entries(decisions).map(([value, label]) => `<div>${label}<strong>${entries.filter(entry => entry.decision === value).length}</strong></div>`).join('');
-        $('#submission-note').textContent = unselected || untested ? `还有 ${unselected} 项未筛选、${untested} 项待验证。可以提交当前进度，之后继续填写。` : '64 项已完成筛选与验证记录。可以提交本次结果。';
+        $('#submission-note').textContent = unselected || untested ? `还有 ${unselected} 项未筛选、${untested} 项待验证。可以提交当前进度，之后继续填写。` : `${catalog.items.length} 项已完成筛选与验证记录。可以提交本次结果。`;
         $('#submit-dialog').showModal();
       });
       for (const id of ['cancel-submit', 'back-submit']) $('#' + id).addEventListener('click', () => $('#submit-dialog').close());

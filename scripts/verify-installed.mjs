@@ -12,9 +12,9 @@ const auto = args.includes('--auto');
 const g1 = args.includes('--g1');
 const g3 = args.includes('--g3');
 const g2 = args.includes('--g2') || g3;
-const exampleVersion = JSON.parse(readFileSync(new URL('../examples/clock/manifest.json', import.meta.url), 'utf8')).version;
+const exampleVersion = JSON.parse(readFileSync(new URL('../tests/fixtures/surface/manifest.json', import.meta.url), 'utf8')).version;
 const marketVersion = JSON.parse(readFileSync(new URL('../examples/market/manifest.json', import.meta.url), 'utf8')).version;
-const [executable, packagePath = g2 ? `artifacts/local.souldesk.market-${marketVersion}.zip` : `artifacts/local.example.clock-${exampleVersion}.zip`] = args.filter(arg => !['--auto', '--g1', '--g2', '--g3'].includes(arg));
+const [executable, packagePath = g2 ? `artifacts/local.souldesk.market-${marketVersion}.zip` : `artifacts/local.fixture.surface-${exampleVersion}.zip`] = args.filter(arg => !['--auto', '--g1', '--g2', '--g3'].includes(arg));
 if (!executable || !existsSync(executable) || !existsSync(packagePath)) {
   console.error('用法：pnpm g0:verify <已安装的 SoulDesk.exe> [外部组件包.zip]');
   process.exit(1);

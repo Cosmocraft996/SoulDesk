@@ -1418,7 +1418,7 @@ async fn schedule_test(
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::{
         menu::{Menu, MenuItem},
-        tray::TrayIconBuilder,
+        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     };
     let args = std::env::args().collect::<Vec<_>>();
     let integration = integration::parse(&args)?;
@@ -1527,7 +1527,17 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .icon(tauri::image::Image::new_owned(pixels, 32, 32))
         .tooltip("SoulDesk")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                windows::dispatch(tray.app_handle(), windows::toggle);
+            }
+        })
         .on_menu_event(|app, event| {
             let action = event.id.as_ref().to_owned();
             if app

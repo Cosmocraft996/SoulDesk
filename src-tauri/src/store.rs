@@ -561,7 +561,7 @@ mod tests {
         let store = Store::open(root.clone()).unwrap();
         let package = crate::widgets::stage_bytes(
             &store,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -569,7 +569,7 @@ mod tests {
         )
         .unwrap();
         crate::widgets::activate(&store, &package).unwrap();
-        let id = crate::widgets::create_instance(&store, "local.example.clock").unwrap();
+        let id = crate::widgets::create_instance(&store, "local.fixture.surface").unwrap();
         assert_eq!(
             store.panel_groups().unwrap(),
             crate::panel::Groups::default()
@@ -603,7 +603,7 @@ mod tests {
             )
             .unwrap();
         let peer =
-            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
+            crate::widgets::create_instance_at(&store, "local.fixture.surface", "panel").unwrap();
         let move_to_group = || GroupChange::Move {
             instance: id.clone(),
             group: Some(group.clone()),
@@ -748,7 +748,7 @@ mod tests {
         let store = Store::open(root).unwrap();
         let package = crate::widgets::stage_bytes(
             &store,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -757,7 +757,7 @@ mod tests {
         .unwrap();
         crate::widgets::activate(&store, &package).unwrap();
         let id =
-            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
+            crate::widgets::create_instance_at(&store, "local.fixture.surface", "panel").unwrap();
         let old_layout = Layout {
             x: 30.0,
             y: 640.0,
@@ -767,7 +767,7 @@ mod tests {
         store.save_panel_layout(&id, old_layout).unwrap();
         store.presentation(&id, "desktop", false, true).unwrap();
         let peer =
-            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
+            crate::widgets::create_instance_at(&store, "local.fixture.surface", "panel").unwrap();
         let before = store.snapshot().unwrap()["instances"].clone();
         let placement = store.embed_in_panel(&id, true, panel_test_area()).unwrap();
         let layouts = store.panel_layouts().unwrap();
@@ -794,14 +794,14 @@ mod tests {
     fn panel_layout_survives_restart_without_changing_desktop_geometry() {
         let root = std::env::temp_dir().join(format!("souldesk-panel-{}", uuid::Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
-        let bytes = crate::presets::find("local.example.clock")
+        let bytes = crate::presets::find("local.fixture.surface")
             .unwrap()
             .unwrap()
             .archive()
             .unwrap();
         let package = crate::widgets::stage_bytes(&store, bytes).unwrap();
         crate::widgets::activate(&store, &package).unwrap();
-        let id = crate::widgets::create_instance(&store, "local.example.clock").unwrap();
+        let id = crate::widgets::create_instance(&store, "local.fixture.surface").unwrap();
         crate::widgets::set_instance_size(&store, &id, 600, 400).unwrap();
         let desktop = json!({"x":10,"y":20,"width":600,"height":400,"scale":1.5,"pinned":false});
         store

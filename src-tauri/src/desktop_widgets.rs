@@ -57,7 +57,7 @@ impl WidgetProbe {
             let bytes = std::fs::read(&path).map_err(err)?;
             let archive_hash = format!("{:x}", Sha256::digest(&bytes));
             let package = widgets::stage_bytes(&store, bytes)?;
-            let expected = ["local.example.clock", "local.example.card"][index];
+            let expected = ["local.fixture.surface", "local.fixture.document"][index];
             if package.manifest.id != expected
                 || package.manifest.capabilities != ["storage.instance"]
             {
@@ -521,7 +521,7 @@ mod tests {
     fn fixture() -> (WidgetProbe, String, String, PathBuf) {
         let root = std::env::temp_dir().join(format!("souldesk-widget-{}", uuid::Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
-        for id in ["local.example.clock", "local.example.card"] {
+        for id in ["local.fixture.surface", "local.fixture.document"] {
             let manifest = crate::presets::find(id)
                 .unwrap()
                 .unwrap()
@@ -532,7 +532,7 @@ mod tests {
         }
         let mut state = State::default();
         let mut ids = Vec::new();
-        for (i, id) in ["local.example.clock", "local.example.card"]
+        for (i, id) in ["local.fixture.surface", "local.fixture.document"]
             .iter()
             .enumerate()
         {

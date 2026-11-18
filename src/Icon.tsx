@@ -4,6 +4,8 @@ import type { SVGProps } from 'react';
 const paths = {
   plus: 'M12 5v14M5 12h14',
   groups: 'M3 6h6l2 2h10v12H3V6ZM4 3h7l2 2h7',
+  moveToGroup: 'M3 6h6l2 2h10v12H3V6ZM7 14h10m-3-3 3 3-3 3',
+  trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
   up: 'm6 15 6-6 6 6',
   down: 'm6 9 6 6 6-6',
   settings: 'M9 3h6l1 4 4 2v6l-4 2-1 4H9l-1-4-4-2V9l4-2 1-4ZM9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0',

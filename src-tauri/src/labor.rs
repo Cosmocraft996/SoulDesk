@@ -1039,7 +1039,7 @@ mod tests {
         }
         let other = widgets::stage_bytes(
             &reopened,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -1047,7 +1047,7 @@ mod tests {
         )
         .unwrap();
         widgets::activate(&reopened, &other).unwrap();
-        let id = widgets::create_instance(&reopened, "local.example.clock").unwrap();
+        let id = widgets::create_instance(&reopened, "local.fixture.surface").unwrap();
         let label = format!("float-{id}");
         let session =
             widgets::open_display_session(&reopened, &sessions, &label, &id, None).unwrap();

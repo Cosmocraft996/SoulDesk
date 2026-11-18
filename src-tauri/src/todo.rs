@@ -1352,7 +1352,7 @@ mod tests {
         );
         let staged = crate::widgets::stage_bytes(
             &s,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()

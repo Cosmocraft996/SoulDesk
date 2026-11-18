@@ -11,10 +11,7 @@ export async function verifyHardware({host,kind,model,getSettings,expectedView})
     if(!prior.uiVerified){
       $('settings').click();const before=await host.request('settings.get'),form=$('form');form.noValidate=true;$('radius').value='999';form.requestSubmit();await until(()=>$('save-error').textContent.length>0);
       invalidSaveRejected=$('config').open&&JSON.stringify(before)===JSON.stringify(await host.request('settings.get'));$('close').click();form.noValidate=false;
-      if(kind==='dashboard'){
-        const modes={};for(const type of ['cpu','memory','gpu']){await submit({monitorType:type,background,color:'#ffffff',radius:12});raw=await sample();const expected=expectedView(raw,type);modes[type]={display:$('value').textContent,expected:expected.label,reason:expected.status,percent:raw[type].percent};if($('value').textContent!==expected.label)throw Error('仪表盘显示与原生快照不一致：'+type);}
-        actionsVerified=true;storage.verificationModes=modes;
-      }else if(kind==='energy-label'){
+      if(kind==='energy-label'){
         await submit({productor:'验'+host.instanceId.slice(0,8),spec:'本机'+host.instanceId.slice(-6),fontSize:16,radius:12});raw=await sample();const expected=expectedView(raw);actionsVerified=$('cpu').textContent===expected.cpuText&&$('memory').textContent===expected.memoryText&&$('level').textContent===(expected.level===null?'—':String(expected.level));
       }else{
         await submit({fontSize:16,background,color:'#ffffff',divider:'#ffffff',radius:12});raw=await sample();const expected=expectedView(raw);actionsVerified=['cpu','memory','gpu'].every(key=>$(key+'-value').textContent===expected[key].label&&$(key+'-subtitle').textContent===expected[key].subtitle)&&$('download').textContent==='↓ '+expected.network.download&&$('upload').textContent==='↑ '+expected.network.upload&&$('received').textContent===expected.network.received&&$('sent').textContent===expected.network.sent;
@@ -22,7 +19,7 @@ export async function verifyHardware({host,kind,model,getSettings,expectedView})
       }
     }
     raw=await sample();const settings=getSettings(),images=[...document.querySelectorAll('main img')];await Promise.all(images.map(image=>image.decode()));const imagesLoaded=images.every(image=>image.naturalWidth>0),stylesLoaded=getComputedStyle(document.querySelector('main')).borderRadius==='12px';
-    const configurationSaved=kind==='energy-label'?settings.productor==='验'+host.instanceId.slice(0,8)&&settings.spec==='本机'+host.instanceId.slice(-6)&&settings.fontSize===16&&settings.radius===12:settings.background===background&&settings.color==='#ffffff'&&settings.radius===12&&(kind!=='dashboard'||settings.monitorType==='gpu');
+    const configurationSaved=kind==='energy-label'?settings.productor==='验'+host.instanceId.slice(0,8)&&settings.spec==='本机'+host.instanceId.slice(-6)&&settings.fontSize===16&&settings.radius===12:settings.background===background&&settings.color==='#ffffff'&&settings.radius===12;
     const metricsHonest=['cpu','memory','gpu'].every(key=>raw[key].percent===null?typeof raw[key].error==='string'&&raw[key].error.length>0:Number.isFinite(raw[key].percent)&&raw[key].percent>=0&&raw[key].percent<=100);
     await host.request('storage.set',{...storage,verification:{...prior,runtimeLoads:(prior.runtimeLoads||0)+1,invalidSaveRejected,actionsVerified,imagesLoaded,stylesLoaded,configurationSaved,metricsHonest,rawSnapshot:raw,statusText:$('status').textContent,savedLabel:kind==='energy-label'?settings.productor:undefined,uiVerified:invalidSaveRejected&&actionsVerified&&imagesLoaded&&stylesLoaded&&configurationSaved&&metricsHonest}});
   }catch(error){await host.request('storage.set',{...storage,verification:{...prior,failure:String(error?.message||error)}});}

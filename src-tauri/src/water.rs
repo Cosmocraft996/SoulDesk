@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(access(&store, &b, &at, None).unwrap()["count"], 0);
         let denied = widgets::stage_bytes(
             &store,
-            crate::presets::find("local.example.clock")
+            crate::presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -588,7 +588,7 @@ mod tests {
         )
         .unwrap();
         widgets::activate(&store, &denied).unwrap();
-        let other = widgets::create_instance(&store, "local.example.clock").unwrap();
+        let other = widgets::create_instance(&store, "local.fixture.surface").unwrap();
         let other_label = format!("float-{other}");
         let other_session =
             widgets::open_display_session(&store, &sessions, &other_label, &other, None).unwrap();

@@ -11,9 +11,8 @@ const files = [
   'widgets/clock/ClockWidgetView.vue', 'widgets/flip-clock/FlipClockWidgetView.vue',
   'widgets/glitch/GlitchWidget.vue', 'widgets/glitch/GlitchWidgetView.vue',
   'widgets/mickey-clock/MickeyClockWidget.vue', 'widgets/mickey-clock/MickeyClockWidgetView.vue',
-  'widgets/text-clock/TextClockWidgetView.vue', 'widgets/trump-clock/TrumpClockWidgetView.vue',
+  'widgets/text-clock/TextClockWidgetView.vue',
   'i18n/timezone.json', 'assets/font/FiraCode-Bold.woff2',
-  'assets/clock_trump_bg.png', 'assets/clock_trump_hand_hour.png', 'assets/clock_trump_hand_minute.png',
   ...['clock_bg.png', 'clock_hand_hour.png', 'clock_hand_minute.png', 'clock_hand_second.png'].map(name => 'widgets/clock/images/' + name),
 ];
 for (const file of files) {

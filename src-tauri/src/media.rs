@@ -261,7 +261,7 @@ mod tests {
         let store = Store::open(root.join("db")).unwrap();
         let package = widgets::stage_bytes(
             &store,
-            presets::find("local.example.clock")
+            presets::find("local.fixture.surface")
                 .unwrap()
                 .unwrap()
                 .archive()
@@ -269,8 +269,8 @@ mod tests {
         )
         .unwrap();
         widgets::activate(&store, &package).unwrap();
-        let first = widgets::create_instance(&store, "local.example.clock").unwrap();
-        let second = widgets::create_instance(&store, "local.example.clock").unwrap();
+        let first = widgets::create_instance(&store, "local.fixture.surface").unwrap();
+        let second = widgets::create_instance(&store, "local.fixture.surface").unwrap();
         let images = root.join("照片");
         std::fs::create_dir(&images).unwrap();
         (store, first, second, images)

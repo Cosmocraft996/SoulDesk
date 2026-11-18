@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.hotspot-douyin",
   "name": "抖音热榜",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",

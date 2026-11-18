@@ -4,7 +4,8 @@
 原文件：src/widgets/energy-label/{EnergyLabelWidgetView,EnergyLabelConfigView,MonitorBlock,ArrowLabel,CurrentLabel}.vue。
 保留原蓝白标签、原五种颜色/宽度箭头、36px等级步进和0.8秒过渡、生产者/规格型号（各10字符）、字体8～24及圆角设置；保留原趣味标准文案并标注其为趣味文案。
 分级沿用ceil((CPU百分比*0.8+内存百分比*0.2)/20)，最低1级，最高5级。数字显示沿用四舍五入，不以舍入后的数字分级。
-WidgetJS硬件树替换为受限system.metrics；与仪表盘共用每三秒的轮询/有效值/时效模型和原生一秒缓存。
+WidgetJS硬件树替换为受限system.metrics；与监控面板共用每三秒的轮询/有效值/时效模型和原生一秒缓存。
 修正原默认0造成的虚假绿色一级：预热、缺值、过期或未来采样不分级，单项真实读数仍可显示，读取失败明确标旧数据。
 配置按SoulDesk实例独立保存；预览不读取硬件。独立标准包不依赖WidgetJS/Electron或外部页面。
 个人自用；来源树未附许可证，保留来源事实。运行源码随包提供，共用源码在components/widgetjs/hardware-common/metrics.js；原生接口见src-tauri/src/hardware.rs。
+2026-11-19：共享验收逻辑维护，标准包版本0.1.1；组件功能和实例数据格式保持。

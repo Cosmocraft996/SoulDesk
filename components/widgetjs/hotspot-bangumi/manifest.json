@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.hotspot-bangumi",
   "name": "B站新番时间表",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",

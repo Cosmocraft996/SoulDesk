@@ -11,7 +11,6 @@ const CONTENT_SOURCE_CAPABILITIES: &[(&str, &str)] = &[
     ("douyin", "content.source.douyin"),
     ("tou-tiao", "content.source.tou-tiao"),
     ("weibo", "content.source.weibo"),
-    ("world-cup", "content.source.world-cup"),
     ("zhihu", "content.source.zhihu"),
     ("itime-calendar", "content.source.itime-calendar"),
     ("forex", "content.source.forex"),
