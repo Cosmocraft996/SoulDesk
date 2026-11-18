@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SoulDesk",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "identifier": "local.souldesk.desktop",
   "build": {
     "beforeDevCommand": "node scripts/prepare-widgetjs.mjs && node node_modules/vite/bin/vite.js --host 127.0.0.1",

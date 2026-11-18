@@ -44,7 +44,11 @@ export function loadReviewCatalog() {
       sourcePath: number <= 61 ? `components/widgetjs/${slug}/SOURCE.txt` : manifestPath };
   });
   if (items.length !== 64 || new Set(items.map(item => item.id)).size !== 64) throw Error('清单必须包含 64 项独立组件');
-  const build = { version: program?.version || '0.5.0', sha256: program?.sha256 || '', label: program?.sha256.slice(0, 8) || '当前源码' };
+  const build = {
+    version: program?.version || JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
+    sha256: program?.sha256 || '',
+    label: program?.sha256.slice(0, 8) || '当前源码',
+  };
   return { schemaVersion: 1, id: createHash('sha256').update(JSON.stringify({ items, build })).digest('hex'), build, items };
 }
 
