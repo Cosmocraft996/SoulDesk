@@ -1210,8 +1210,8 @@ pub fn show_panel_from_edge(app: &AppHandle, hover: bool) -> AppResult<bool> {
 }
 
 fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> AppResult<()> {
-    if let Err(error) = native::set_desktop_layer(window, foreground) {
-        return match native::set_desktop_layer(window, !foreground) {
+    if let Err(error) = native::set_panel_layer(window, foreground) {
+        return match native::set_panel_layer(window, !foreground) {
             Ok(()) => Err(error),
             Err(restore) => Err(format!("{error}；恢复面板层级失败：{restore}")),
         };
@@ -2017,6 +2017,13 @@ pub fn monitor_changes(app: &AppHandle) -> AppResult<()> {
     if changed {
         app.state::<Core>().assistant.monitor_changed(app)?;
         repair(app)?;
+    }
+    if !scene_is_foreground(panel_scene()) {
+        if let Some(panel) = app.get_webview_window("panel") {
+            if let Err(error) = native::maintain_panel_desktop_slot(&panel) {
+                app.state::<Core>().report(error);
+            }
+        }
     }
     for w in app
         .webview_windows()

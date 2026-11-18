@@ -1116,7 +1116,30 @@ async fn execute_panel(
     })
     .await?;
     #[cfg(windows)]
-    crate::desktop_native::check_attachment(&browser, false)?;
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        crate::desktop_native::check_panel_desktop_slot(&browser)?;
+        let moved = unsafe {
+            SetWindowPos(
+                original_handle as _,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+        };
+        if moved == 0 {
+            return Err(format!(
+                "测试面板层级保护失败：{}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        crate::desktop_native::check_panel_desktop_slot(&browser)?;
+    }
     check(
         report,
         "locked-outside-click-lowers-without-unmounting",
@@ -1125,7 +1148,7 @@ async fn execute_panel(
             && app
                 .get_webview_window("edge")
                 .is_some_and(|edge| edge.is_visible().unwrap_or(false)),
-        json!({"realMouseVerified":false}),
+        json!({"desktopSlotChecked": cfg!(windows),"realMouseVerified":false}),
     )?;
     let ignored_hover = window(app, |app| {
         if windows::show_panel_from_edge(app, true)? {

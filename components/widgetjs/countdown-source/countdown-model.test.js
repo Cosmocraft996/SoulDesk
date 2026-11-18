@@ -14,7 +14,11 @@ test('公历重复调用固定原RRule算法，月末跳过不存在日且不跳
 });
 test('农历日期沿原模块转换，目标公历与原农历年日期同时保持',async()=>{
   const m=await model(),draft={name:'春节',note:'团圆',dateType:1,year:2027,month:1,dayOfMonth:1,recurrence:''};
-  const created=m.eventFromDraft(draft,null,1,()=> 'spring');const result=m.viewEvent(created,date(2027,2,5,12).getTime());assert.equal(result.cardDateText,'二〇二七年正月初一');assert.equal(result.dateTime,'2027-02-05T16:00:00.000Z');assert.equal(result.days,1);
+  const created=m.eventFromDraft(draft,null,1,()=> 'spring');
+  const result=m.viewEvent(created,date(2027,2,5,12).getTime());
+  assert.equal(result.cardDateText,'二〇二七年正月初一');
+  assert.equal(result.dateTime,date(2027,2,6).toISOString());
+  assert.equal(result.days,1);
   assert.throws(()=>m.eventFromDraft({...draft,year:2026,month:-2},null,1,()=> 'x'),/农历/);
 });
 test('名称15字、日期/重复/唯一性/排序及存储字节限制失败不改原值',async()=>{

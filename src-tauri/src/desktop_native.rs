@@ -17,10 +17,11 @@ fn attachment_valid(
 }
 
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, POINT, RECT},
+    Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::Gdi::ScreenToClient,
     UI::{
         HiDpi::{GetDpiForWindow, GetWindowDpiAwarenessContext},
+        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
     },
 };
@@ -282,7 +283,7 @@ pub fn place(
         }
         let insert = if child {
             HWND_TOP
-        } else if ["panel", "desktop-probe-panel"].contains(&w.label())
+        } else if w.label() == "desktop-probe-panel"
             || GetWindowLongPtrW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
         {
             HWND_TOPMOST
@@ -512,6 +513,135 @@ pub fn set_desktop_layer(w: &WebviewWindow, foreground: bool) -> Result<(), Stri
         }
     }
     check_attachment(w, true)
+}
+
+// 查找最高的可见桌面宿主及其上方最后一个普通窗口，跳过面板自己的旧位置。
+fn panel_desktop_slot(panel: HWND) -> Result<(HWND, bool), String> {
+    let explorer = pid(unsafe { GetShellWindow() });
+    if explorer == 0 {
+        return Err("未找到 Explorer 桌面".into());
+    }
+    let mut after = HWND_TOP;
+    let mut panel_in_slot = false;
+    let mut window = unsafe { GetTopWindow(std::ptr::null_mut()) };
+    for _ in 0..4096 {
+        if window.is_null() {
+            break;
+        }
+        if unsafe {
+            IsWindowVisible(window) != 0
+                && GetWindowLongPtrW(window, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST == 0
+        } {
+            if pid(window) == explorer && matches!(class(window).as_str(), "Progman" | "WorkerW") {
+                return Ok((after, panel_in_slot));
+            }
+            panel_in_slot = window == panel;
+            if !panel_in_slot {
+                after = window;
+            }
+        }
+        window = unsafe { GetWindow(window, GW_HWNDNEXT) };
+    }
+    Err("无法定位桌面窗口层级".into())
+}
+
+const PANEL_ORDER_SUBCLASS: usize = 1;
+
+unsafe extern "system" fn keep_panel_order(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    if message == WM_WINDOWPOSCHANGING && lparam != 0 {
+        // 置底时仍允许输入和移动。只禁止普通窗口操作把面板抬离桌面层。
+        (*(lparam as *mut WINDOWPOS)).flags |= SWP_NOZORDER;
+    } else if message == WM_NCDESTROY {
+        RemoveWindowSubclass(hwnd, Some(keep_panel_order), id);
+    }
+    DefSubclassProc(hwnd, message, wparam, lparam)
+}
+
+fn move_panel_to_slot(panel: HWND, after: HWND) -> Result<(), String> {
+    if unsafe {
+        SetWindowPos(
+            panel,
+            after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING,
+        )
+    } == 0
+    {
+        return Err(winerr("调整面板层级失败"));
+    }
+    Ok(())
+}
+
+fn place_panel_above_desktop(panel: HWND) -> Result<(), String> {
+    let (after, in_slot) = panel_desktop_slot(panel)?;
+    if !in_slot {
+        let topmost = unsafe { GetWindowLongPtrW(panel, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 };
+        let after = if after == HWND_TOP && topmost {
+            HWND_NOTOPMOST
+        } else {
+            after
+        };
+        move_panel_to_slot(panel, after)?;
+    }
+    Ok(())
+}
+
+pub fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), String> {
+    let raw = handle(window)?;
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let panel = raw as HWND;
+            let result = unsafe {
+                if foreground {
+                    RemoveWindowSubclass(panel, Some(keep_panel_order), PANEL_ORDER_SUBCLASS);
+                    move_panel_to_slot(panel, HWND_TOPMOST)
+                } else if SetWindowSubclass(panel, Some(keep_panel_order), PANEL_ORDER_SUBCLASS, 0)
+                    == 0
+                {
+                    Err("无法在窗口所属线程保护面板层级".into())
+                } else {
+                    place_panel_above_desktop(panel)
+                }
+            };
+            let _ = send.send(result);
+        })
+        .map_err(err)?;
+    receive
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(err)??;
+    if foreground {
+        return check_attachment(window, true);
+    }
+    check_panel_desktop_slot(window)
+}
+
+pub fn check_panel_desktop_slot(window: &WebviewWindow) -> Result<(), String> {
+    let panel = handle(window)? as HWND;
+    if unsafe { GetWindowLongPtrW(panel, GWL_STYLE) as u32 & WS_CHILD != 0 }
+        || !panel_desktop_slot(panel)?.1
+    {
+        return Err("面板未进入桌面上方的层级".into());
+    }
+    Ok(())
+}
+
+pub fn maintain_panel_desktop_slot(window: &WebviewWindow) -> Result<(), String> {
+    let panel = handle(window)? as HWND;
+    if unsafe { IsWindowVisible(panel) } != 0 {
+        place_panel_above_desktop(panel)?;
+    }
+    Ok(())
 }
 pub fn describe(w: &WebviewWindow) -> Value {
     let Ok(raw) = handle(w) else {
