@@ -124,7 +124,7 @@
 .remove-instance-dialog button{padding:6px 10px}
 .panel-topbar{display:flex;align-items:center;gap:4px;flex-shrink:0;min-width:0;height:44px;padding:4px 8px 4px 12px;border-bottom:1px solid #ffffff14}
 .panel-tools{height:30px;display:flex;gap:2px;flex-shrink:0;margin-left:auto;border-radius:8px;background:#20202070}
-.panel-tools .icon-button[aria-pressed=true]{background:#81b7a335;color:#d6e9df}
+.panel-tools .icon-button[aria-pressed=true]{background:#31574b;color:#e0fff1}
 .panel-scroll{padding:12px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .panel-canvas{position:relative;min-height:180px}
 .panel-widget{position:absolute;margin:0;border:0;border-radius:12px;background:transparent;overflow:visible}

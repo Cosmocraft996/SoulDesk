@@ -173,10 +173,14 @@ test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时�
     assert.equal(lock.closest('.panel-tools').lastElementChild, lock);
     assert.equal(lock.title, '锁定面板');
     assert.equal(lock.getAttribute('aria-pressed'), 'false');
+    const unlockedPath = lock.querySelector('path').getAttribute('d');
+    assert.equal(lock.querySelector('svg').getAttribute('fill'), 'none');
     await click(lock);
     assert.equal(first.state.panelLocked, true);
     assert.equal(lock.title, '解锁面板');
     assert.equal(lock.getAttribute('aria-pressed'), 'true');
+    assert.notEqual(lock.querySelector('path').getAttribute('d'), unlockedPath);
+    assert.equal(lock.querySelector('svg').getAttribute('fill'), 'currentColor');
     const collapse = button('收起组件面板');
     assert.equal(collapse.disabled, false);
     await click(collapse);
@@ -195,6 +199,7 @@ test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时�
     await click(lock);
     assert.equal(reopened.state.panelLocked, false);
     assert.equal(lock.getAttribute('aria-pressed'), 'false');
+    assert.equal(lock.querySelector('svg').getAttribute('fill'), 'none');
   } finally { await reopened.close(); }
 });
 
