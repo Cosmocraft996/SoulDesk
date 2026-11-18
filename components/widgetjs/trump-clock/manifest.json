@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.souldesk.widgetjs.trump-clock",
   "name": "川普表盘",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "hostApiMajor": 1,
   "loadCheck": 1,
   "entry": "dist/index.html",
@@ -32,6 +32,10 @@
         "title": "背景颜色",
         "maxLength": 7,
         "default": "#202026"
+      },
+      "transparentBackground": {
+        "type": "boolean",
+        "title": "透明背景"
       },
       "foreground": {
         "type": "string",

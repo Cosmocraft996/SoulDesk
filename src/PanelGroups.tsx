@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { invoke } from './host';
 import palette from './panel-colors.json';
 
 export interface PanelGroupsState {
@@ -56,11 +55,7 @@ function GroupDialog({ title, busy, message, onClose, children }: {
   useEffect(() => {
     const node = dialog.current!;
     node.showModal();
-    void invoke('window_action', { action: 'menu-open', instance: 'panel-groups' }).catch(() => {});
-    return () => {
-      node.close();
-      void invoke('window_action', { action: 'menu-close', instance: 'panel-groups' }).catch(() => {});
-    };
+    return () => node.close();
   }, []);
   return <dialog ref={dialog} className="panel-group-dialog" aria-label={title} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}>
     <header><h2>{title}</h2><button className="icon-button" aria-label="关闭分组窗口" title="关闭" disabled={busy} onClick={onClose}><Icon name="close" /></button></header>

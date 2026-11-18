@@ -4,7 +4,10 @@ use crate::{
     store::{err, AppResult},
     Core,
 };
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
@@ -13,16 +16,11 @@ use tauri::{
 pub struct Visibility {
     pub hidden: bool,
     pub panel_locked: bool,
-    pub(crate) panel_passive: bool,
     pub(crate) edge_hover_block: Option<std::time::Instant>,
     pub docked: bool,
-    pub epoch: u64,
     pub dialog: bool,
     pub monitors: String,
     pub ready: std::collections::HashMap<String, std::time::Instant>,
-    pub editing: bool,
-    pub interacting: bool,
-    pub menus: std::collections::HashSet<String>,
     pub failed: std::collections::HashMap<String, String>,
     pub(crate) panel_view: Option<PanelView>,
     pub panel_target: Option<String>,
@@ -69,18 +67,22 @@ impl Visibility {
         }
         Ok(())
     }
+}
 
-    fn can_auto_collapse(&self, epoch: u64, focused: bool, inside: bool, detail: bool) -> bool {
-        self.epoch == epoch
-            && !self.hidden
-            && !self.panel_locked
-            && !self.editing
-            && !self.interacting
-            && self.menus.is_empty()
-            && !self.dialog
-            && !detail
-            && (!focused || !inside)
-    }
+// 最低位表示面板在前台。代次防止排队的旧点击收起重新打开的面板。
+static PANEL_SCENE: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn panel_scene() -> u64 {
+    PANEL_SCENE.load(Ordering::Acquire)
+}
+
+pub(crate) fn scene_is_foreground(scene: u64) -> bool {
+    scene & 1 != 0
+}
+
+fn set_panel_foreground(foreground: bool) {
+    let next = (panel_scene().wrapping_add(2) & !1) | u64::from(foreground);
+    PANEL_SCENE.store(next, Ordering::Release);
 }
 
 pub fn serialized<T>(
@@ -144,7 +146,7 @@ pub(crate) fn build(
         .title(if label=="main" {"SoulDesk · 组件管理"} else if label=="panel" {"SoulDesk · 组件面板"} else {"SoulDesk · 组件"})
         .inner_size(width,height).min_inner_size(120.,80.).visible(false).focused(false)
         .theme(Some(tauri::Theme::Dark)).initialization_script(host_script(app))
-        .initialization_script_for_all_frames("if(window!==window.top)document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:user-pointer',protocol:1},origin);}},true);document.addEventListener('focusin',event=>{if(window!==window.top&&event.isTrusted){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:editing',protocol:1,editing:!!event.target.closest?.('input,textarea,select,[contenteditable=true]')},origin);}},true);document.addEventListener('focusout',()=>{if(window!==window.top){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:editing',protocol:1,editing:false},origin);}},true);");
+        .initialization_script_for_all_frames("if(window!==window.top)document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:user-pointer',protocol:1},origin);}},true);");
     // 隔离运行连 WebView 缓存也写入本次目录，不接触正常用户数据。
     let directory = app.state::<Core>().store.root.join("webview").join(label);
     std::fs::create_dir_all(&directory).map_err(err)?;
@@ -495,9 +497,7 @@ fn release_surface(app: &AppHandle, label: &str, instance: Option<&str>) -> AppR
     };
     state.ready.retain(|key, _| keep(key));
     state.failed.retain(|key, _| keep(key));
-    if let Some(id) = instance {
-        state.menus.remove(id);
-    } else if label == "panel" {
+    if instance.is_none() && label == "panel" {
         state.panel_view = None;
     }
     Ok(())
@@ -940,14 +940,24 @@ pub fn save_panel_settings(app: &AppHandle, settings: Preferences) -> AppResult<
         return Err(e);
     }
     #[cfg(windows)]
-    crate::desktop_input::set_enabled(settings.desktop_double_click);
+    if app.state::<Core>().integration.is_none() && app.state::<Core>().verification.is_none() {
+        crate::desktop_input::set_enabled(settings.desktop_double_click);
+    }
     changed(app)
 }
 
 pub fn change_panel_groups(app: &AppHandle, change: crate::panel::GroupChange) -> AppResult<()> {
     let core = app.state::<Core>();
     let before = core.store.panel_groups()?;
-    let after = core.store.change_panel_groups(change)?;
+    let area = match &change {
+        crate::panel::GroupChange::Move { instance, group }
+            if before.membership.get(instance) != group.as_ref() =>
+        {
+            Some(panel_placement_area(app)?)
+        }
+        _ => None,
+    };
+    let after = core.store.change_panel_groups(change, area)?;
     core.visibility
         .lock()
         .map_err(err)?
@@ -968,16 +978,25 @@ pub fn change_panel_groups(app: &AppHandle, change: crate::panel::GroupChange) -
     layout_panel(app)
 }
 
+fn panel_placement_area(app: &AppHandle) -> AppResult<crate::panel::PlacementArea> {
+    let settings = read_panel_settings(app)?;
+    Ok(crate::panel::PlacementArea {
+        work_area: work_area(&dock_monitor(app, &settings)?),
+        ratio: settings.ratio,
+        edge_width: settings.edge_style.size().0,
+    })
+}
+
 fn panel_min_width(app: &AppHandle) -> AppResult<f64> {
     let edge_width = read_panel_settings(app)?.edge_style.size().0;
-    Ok(active_panel_instances(app)?
+    let minimum = active_panel_instances(app)?
         .iter()
         .filter_map(|i| i["id"].as_str())
         .map(|id| dimensions(app, id).map(|(_, _, min, _)| min))
         .collect::<AppResult<Vec<_>>>()?
         .into_iter()
-        .fold(280f64, f64::max)
-        + (20. + edge_width).max(32.))
+        .fold(0f64, f64::max);
+    Ok(crate::panel::minimum_panel_width(edge_width, minimum))
 }
 
 pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
@@ -987,12 +1006,6 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
     let window = app.get_webview_window("panel").ok_or("面板已关闭")?;
     let area = panel_area(app)?;
     let minimum = panel_min_width(app)?;
-    {
-        let core = app.state::<Core>();
-        let mut state = core.visibility.lock().map_err(err)?;
-        state.interacting = true;
-        state.epoch += 1;
-    }
     let result = (|| {
         let mut settings = read_panel_settings(app)?;
         if let Some(geometry) =
@@ -1004,12 +1017,6 @@ pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
             layout_panel(app)
         }
     })();
-    {
-        let core = app.state::<Core>();
-        let mut state = core.visibility.lock().map_err(err)?;
-        state.interacting = false;
-        state.epoch += 1;
-    }
     if let Err(error) = result {
         if let Err(restore) = layout_panel(app) {
             return Err(format!("{error}；恢复原面板宽度失败：{restore}"));
@@ -1159,19 +1166,14 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     }
     let i = instance(app, id)?;
     if i["location"] == "panel" {
-        let groups = app.state::<Core>().store.panel_groups()?;
-        if !groups.contains(id) {
-            change_panel_groups(
-                app,
-                crate::panel::GroupChange::Select {
-                    group: groups.membership.get(id).cloned(),
-                },
-            )?;
-        }
-        // 添加、恢复和移位仍要确认目标可加载，即使保存的视口暂时看不到它。
         let core = app.state::<Core>();
+        if app.get_webview_window("panel").is_none() || !core.store.panel_groups()?.contains(id) {
+            // 面板收起或目标不在当前组时，首次显示由面板视口负责。
+            return changed(app);
+        }
+        // 当前组已经打开时原位加载目标，保留面板的分组及窗口层级。
         core.visibility.lock().map_err(err)?.panel_target = Some(id.into());
-        let result = show_panel(app, false).and_then(|_| wait_ready(app, "panel", id));
+        let result = changed(app).and_then(|_| wait_ready(app, "panel", id));
         core.visibility.lock().map_err(err)?.panel_target = None;
         result?;
     } else {
@@ -1184,17 +1186,11 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     }
     Ok(())
 }
-pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
-    show_panel_at(app, focus, false)
-}
 pub fn show_panel_from_edge(app: &AppHandle, hover: bool) -> AppResult<bool> {
     let Some(edge) = app.get_webview_window("edge") else {
         return Ok(false);
     };
-    if hidden(app)?
-        || app.get_webview_window("panel").is_some()
-        || !edge.is_visible().map_err(err)?
-    {
+    if hidden(app)? || scene_is_foreground(panel_scene()) || !edge.is_visible().map_err(err)? {
         return Ok(false);
     }
     if hover {
@@ -1205,18 +1201,26 @@ pub fn show_panel_from_edge(app: &AppHandle, hover: bool) -> AppResult<bool> {
             .map_err(err)?
             .edge_hover_block
             .is_some();
-        if blocked || !native::hover_hits(&edge)? {
+        if blocked || app.get_webview_window("panel").is_some() || !native::hover_hits(&edge)? {
             return Ok(false);
         }
     }
-    show_panel_at(app, !hover, hover)?;
-    if hover {
-        // WebView 建窗和滑入期间鼠标可能已离开，结束后补做一次位置检查。
-        auto_collapse(app);
-    }
+    show_panel(app, !hover)?;
     Ok(true)
 }
-fn show_panel_at(app: &AppHandle, focus: bool, passive: bool) -> AppResult<()> {
+
+fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> AppResult<()> {
+    if let Err(error) = native::set_desktop_layer(window, foreground) {
+        return match native::set_desktop_layer(window, !foreground) {
+            Ok(()) => Err(error),
+            Err(restore) => Err(format!("{error}；恢复面板层级失败：{restore}")),
+        };
+    }
+    set_panel_foreground(foreground);
+    Ok(())
+}
+
+pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
     if hidden(app)? {
         return Ok(());
     }
@@ -1226,16 +1230,11 @@ fn show_panel_at(app: &AppHandle, focus: bool, passive: bool) -> AppResult<()> {
     {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
-        v.epoch += 1;
-        v.panel_passive = passive;
         if let Some(id) = &view_id {
             v.panel_view = Some(PanelView {
                 id: id.clone(),
                 ready: false,
             });
-            v.editing = false;
-            v.interacting = false;
-            v.menus.clear();
         }
     }
     let geometry = panel_geometry(app, area)?;
@@ -1257,6 +1256,9 @@ fn show_panel_at(app: &AppHandle, focus: bool, passive: bool) -> AppResult<()> {
         if let Err(e) = native::slide_panel(&w, true, settings.slide_in_ms, settings.edge.side) {
             app.state::<Core>().report(e);
         }
+        set_panel_foreground(true);
+    } else if !scene_is_foreground(panel_scene()) {
+        set_panel_layer(&w, true)?;
     } else {
         native::show(&w)?;
     }
@@ -1269,13 +1271,28 @@ fn show_panel_at(app: &AppHandle, focus: bool, passive: bool) -> AppResult<()> {
     changed(app)
 }
 pub fn collapse(app: &AppHandle) -> AppResult<()> {
+    let Some(w) = app.get_webview_window("panel") else {
+        return Ok(());
+    };
     let settings = read_panel_settings(app)?;
-    if let Some(w) = app.get_webview_window("panel") {
+    let locked = app
+        .state::<Core>()
+        .visibility
+        .lock()
+        .map_err(err)?
+        .panel_locked;
+    if locked {
+        if !scene_is_foreground(panel_scene()) {
+            return Ok(());
+        }
+        set_panel_layer(&w, false)?;
+    } else {
         if let Err(e) = native::slide_panel(&w, false, settings.slide_out_ms, settings.edge.side) {
             app.state::<Core>().report(e);
         }
+        dispose(app, "panel")?;
+        set_panel_foreground(false);
     }
-    dispose(app, "panel")?;
     if !hidden(app)? {
         let edge = edge_window(app)?;
         place_edge(
@@ -1325,14 +1342,7 @@ pub fn set_panel_locked(app: &AppHandle, locked: bool) -> AppResult<()> {
     let core = app.state::<Core>();
     core.store
         .save_preference("panel_locked", if locked { "true" } else { "false" })?;
-    {
-        let mut state = core.visibility.lock().map_err(err)?;
-        state.panel_locked = locked;
-        state.epoch += 1;
-    }
-    if !locked {
-        auto_collapse(app);
-    }
+    core.visibility.lock().map_err(err)?.panel_locked = locked;
     changed(app)
 }
 pub fn edge_window(app: &AppHandle) -> AppResult<WebviewWindow> {
@@ -1436,7 +1446,18 @@ fn sync_edge(app: &AppHandle, settings: &Preferences) -> AppResult<()> {
     Ok(())
 }
 
-pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<bool> {
+pub fn drag_panel_edge(
+    app: &AppHandle,
+    source: &WebviewWindow,
+    press: native::EdgePress,
+) -> AppResult<bool> {
+    let panel = app.get_webview_window("panel");
+    // 置底时独立挂件仍可拖动，已开始滑入时则由面板上的挂件接手。
+    let window = if source.label() == "edge" && !source.is_visible().map_err(err)? {
+        panel.as_ref().unwrap_or(source)
+    } else {
+        source
+    };
     if hidden(app)? || !window.is_visible().map_err(err)? {
         return Ok(false);
     }
@@ -1446,57 +1467,53 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
     let origin_area = work_area(&origin);
     let (_, origin_height) = edge_size(origin_area, settings.edge_style);
     let monitors = app.available_monitors().map_err(err)?;
-    let expanded = window.label() == "panel";
-    let geometry = if expanded {
+    let geometry = if panel.is_some() {
         Some((settings.ratio, panel_min_width(app)?))
     } else {
         None
     };
-    let core = app.state::<Core>();
-    {
-        let mut state = core.visibility.lock().map_err(err)?;
-        state.interacting = true;
-        state.epoch += 1;
-    }
     let mut current = original;
     let mut target = &origin;
-    let attempt = native::drag_panel_edge(window, origin_area.scale_factor, |start, pointer| {
-        let next_monitor = monitors
-            .iter()
-            .find(|monitor| {
-                let p = monitor.position();
-                let size = monitor.size();
-                (0..i64::from(size.width)).contains(&(i64::from(pointer.0) - i64::from(p.x)))
-                    && (0..i64::from(size.height))
-                        .contains(&(i64::from(pointer.1) - i64::from(p.y)))
-            })
-            .unwrap_or(target);
-        let monitor_changed = target.position() != next_monitor.position();
-        let area = work_area(next_monitor);
-        let (_, height) = edge_size(area, settings.edge_style);
-        let grab_ratio = ((f64::from(start.1)
-            - f64::from(original.top(origin_area, origin_height)))
-            / f64::from(origin_height))
-        .clamp(0., 1.);
-        let next = original.dragged(area, height, pointer, grab_ratio);
-        if monitor_changed || next != current {
-            let move_panel = monitor_changed || current.side != next.side;
-            target = next_monitor;
-            current = next;
-            if let Some((ratio, minimum)) = geometry {
-                if move_panel {
-                    let mut geometry =
-                        crate::desktop_geometry::panel_geometry(area, ratio, minimum)?;
-                    geometry.left = next.side.window_left(area, geometry.width);
-                    place_panel(app, window, geometry)?;
+    let attempt =
+        native::drag_panel_edge(window, press, origin_area.scale_factor, |start, pointer| {
+            let next_monitor = monitors
+                .iter()
+                .find(|monitor| {
+                    let p = monitor.position();
+                    let size = monitor.size();
+                    (0..i64::from(size.width)).contains(&(i64::from(pointer.0) - i64::from(p.x)))
+                        && (0..i64::from(size.height))
+                            .contains(&(i64::from(pointer.1) - i64::from(p.y)))
+                })
+                .unwrap_or(target);
+            let monitor_changed = target.position() != next_monitor.position();
+            let area = work_area(next_monitor);
+            let (_, height) = edge_size(area, settings.edge_style);
+            let grab_ratio = ((f64::from(start.1)
+                - f64::from(original.top(origin_area, origin_height)))
+                / f64::from(origin_height))
+            .clamp(0., 1.);
+            let next = original.dragged(area, height, pointer, grab_ratio);
+            if monitor_changed || next != current {
+                let move_panel = monitor_changed || current.side != next.side;
+                target = next_monitor;
+                current = next;
+                if let (Some(panel), Some((ratio, minimum))) = (&panel, geometry) {
+                    if move_panel {
+                        let mut geometry =
+                            crate::desktop_geometry::panel_geometry(area, ratio, minimum)?;
+                        geometry.left = next.side.window_left(area, geometry.width);
+                        place_panel(app, panel, geometry)?;
+                    }
+                    emit_edge(app, "panel", settings.edge_style, next)?;
                 }
-            } else {
-                place_edge(window, area, settings.edge_style, next)?;
+                if window.label() == "edge" {
+                    place_edge(window, area, settings.edge_style, next)?;
+                    emit_edge(app, "edge", settings.edge_style, next)?;
+                }
             }
-            emit_edge(app, window.label(), settings.edge_style, next)?;
-        }
-        Ok(())
-    });
+            Ok(())
+        });
     let committed = matches!(&attempt, Ok(native::EdgeDrag::Dropped));
     let result = match attempt {
         Ok(native::EdgeDrag::Dropped)
@@ -1508,11 +1525,6 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
         }
         other => other.map(|outcome| !matches!(outcome, native::EdgeDrag::Click)),
     };
-    {
-        let mut state = core.visibility.lock().map_err(err)?;
-        state.interacting = false;
-        state.epoch += 1;
-    }
     if (!committed || result.is_err())
         && (current != original || target.position() != origin.position())
     {
@@ -1520,10 +1532,8 @@ pub fn drag_panel_edge(app: &AppHandle, window: &WebviewWindow) -> AppResult<boo
         layout_panel(app)?;
         sync_edge(app, &read_panel_settings(app)?)?;
     }
-    if !expanded && !matches!(&result, Ok(false)) {
+    if window.label() == "edge" && !matches!(&result, Ok(false)) {
         block_hover_until_exit(app, window)?;
-    } else if expanded && matches!(&result, Ok(true)) {
-        auto_collapse(app);
     }
     result
 }
@@ -1571,18 +1581,29 @@ pub fn move_to(app: &AppHandle, id: &str, location: &str) -> AppResult<()> {
     if old == location && before["visible"] == true {
         return show_instance(app, id);
     }
+    let area = (old == "desktop" && location == "panel")
+        .then(|| panel_placement_area(app))
+        .transpose()?;
+    let core = app.state::<Core>();
+    let pinned = before["pinned"] == true;
     let panel_open = app.get_webview_window("panel").is_some();
-    let original_group = app.state::<Core>().store.panel_groups()?.active;
+    let resize_for_embed = area.is_some() && panel_open && core.store.panel_groups()?.contains(id);
     save_instance_geometry(app, id)?;
     dispose(app, &format!("float-{id}"))?;
     dispose(app, &format!("detail-{id}"))?;
     if old == "panel" || location == "panel" {
         release_surface(app, "panel", Some(id))?;
     }
+    let mut placement = None;
     let result: AppResult<()> = (|| {
-        app.state::<Core>()
-            .store
-            .presentation(id, location, true, before["pinned"] == true)?;
+        if let Some(area) = area {
+            placement = Some(core.store.embed_in_panel(id, pinned, area)?);
+            if resize_for_embed {
+                layout_panel(app)?;
+            }
+        } else {
+            core.store.presentation(id, location, true, pinned)?;
+        }
         changed(app)?;
         show_instance(app, id)?;
         if app.state::<Core>().integration.is_some() {
@@ -1593,31 +1614,20 @@ pub fn move_to(app: &AppHandle, id: &str, location: &str) -> AppResult<()> {
                 return Err("受控失败：目标已完成实际 SDK 挂载".into());
             }
         }
-        if panel_open && location == "desktop" {
-            show_panel(app, false)?;
-        }
         Ok(())
     })();
     if let Err(error) = result {
         dispose(app, &format!("float-{id}"))?;
         if panel_open {
             release_surface(app, "panel", Some(id))?;
-        } else {
-            dispose(app, "panel")?;
         }
-        app.state::<Core>().store.presentation(
-            id,
-            old,
-            before["visible"] == true,
-            before["pinned"] == true,
-        )?;
-        if app.state::<Core>().store.panel_groups()?.active != original_group {
-            change_panel_groups(
-                app,
-                crate::panel::GroupChange::Select {
-                    group: original_group,
-                },
-            )?;
+        let restore_panel_geometry = resize_for_embed && placement.is_some();
+        if let Some(placement) = placement {
+            core.store
+                .rollback_panel_embed(id, before["visible"] == true, pinned, placement)?;
+        } else {
+            core.store
+                .presentation(id, old, before["visible"] == true, pinned)?;
         }
         changed(app)?;
         // 状态快速回滚时前端快照可能合并；仅重建目标iframe，其他面板实例保留。
@@ -1631,8 +1641,8 @@ pub fn move_to(app: &AppHandle, id: &str, location: &str) -> AppResult<()> {
             {
                 show_instance(app, id)?;
             }
-            if panel_open {
-                show_panel(app, false)?;
+            if restore_panel_geometry {
+                layout_panel(app)?;
             }
             Ok(())
         })();
@@ -1719,8 +1729,8 @@ pub fn hide_all(app: &AppHandle) -> AppResult<()> {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
         v.hidden = true;
-        v.epoch += 1;
     }
+    set_panel_foreground(false);
     for label in app
         .webview_windows()
         .keys()
@@ -1740,7 +1750,6 @@ pub fn restore(app: &AppHandle) -> AppResult<()> {
         let core = app.state::<Core>();
         let mut v = core.visibility.lock().map_err(err)?;
         v.hidden = false;
-        v.epoch += 1;
     }
     let mut errors = Vec::new();
     for i in instances(app)?
@@ -1751,7 +1760,9 @@ pub fn restore(app: &AppHandle) -> AppResult<()> {
             errors.push(e);
         }
     }
-    native::show(&edge_window(app)?)?;
+    if !scene_is_foreground(panel_scene()) {
+        native::show(&edge_window(app)?)?;
+    }
     changed(app)?;
     if errors.is_empty() {
         Ok(())
@@ -1764,50 +1775,17 @@ pub fn toggle(app: &AppHandle) -> AppResult<()> {
         restore(app)?;
         return show_panel(app, true);
     }
-    if app.get_webview_window("panel").is_some() {
+    if scene_is_foreground(panel_scene()) {
         collapse(app)
     } else {
         show_panel(app, true)
     }
 }
-pub fn auto_collapse(app: &AppHandle) {
-    let epoch = {
-        let core = app.state::<Core>();
-        let Ok(mut v) = core.visibility.lock() else {
-            return;
-        };
-        if v.panel_locked {
-            return;
-        }
-        v.epoch += 1;
-        v.epoch
-    };
-    dispatch(app, move |app| {
-        let Some(panel) = app.get_webview_window("panel") else {
-            return Ok(());
-        };
-        // 失焦也允许收起；系统查询不持显隐锁，避免阻塞主线程焦点回调。
-        let focused = panel.is_focused().unwrap_or(true);
-        let inside = native::pointer_inside(&panel).unwrap_or(true);
-        let detail = app
-            .webview_windows()
-            .keys()
-            .any(|l| l.starts_with("detail-"));
-        {
-            let core = app.state::<Core>();
-            let v = core.visibility.lock().map_err(err)?;
-            if !v.can_auto_collapse(epoch, focused || v.panel_passive, inside, detail) {
-                return Ok(());
-            }
-        }
-        collapse(app)
-    });
-}
-pub fn panel_focus_lost(app: &AppHandle) {
-    if let Ok(mut state) = app.state::<Core>().visibility.lock() {
-        state.panel_passive = false;
+pub(crate) fn dismiss_from_outside(app: &AppHandle, scene: u64) -> AppResult<()> {
+    if scene_is_foreground(scene) && panel_scene() == scene && !hidden(app)? {
+        collapse(app)?;
     }
-    auto_collapse(app);
+    Ok(())
 }
 pub fn clamp(w: &WebviewWindow) -> AppResult<()> {
     if w.label().starts_with("float-") {
@@ -1880,49 +1858,6 @@ pub fn destroy_views(app: &AppHandle) -> AppResult<()> {
 #[cfg(test)]
 mod document_drop_tests {
     use super::*;
-
-    #[test]
-    fn panel_auto_collapse_on_mouse_leave_or_focus_loss_respects_lock_and_other_guards() {
-        let state = Visibility::default();
-        assert!(!state.can_auto_collapse(0, true, true, false));
-        let guarded = [
-            Visibility {
-                panel_locked: true,
-                ..Default::default()
-            },
-            Visibility {
-                epoch: 1,
-                ..Default::default()
-            },
-            Visibility {
-                hidden: true,
-                ..Default::default()
-            },
-            Visibility {
-                editing: true,
-                ..Default::default()
-            },
-            Visibility {
-                interacting: true,
-                ..Default::default()
-            },
-            Visibility {
-                menus: ["settings".into()].into(),
-                ..Default::default()
-            },
-            Visibility {
-                dialog: true,
-                ..Default::default()
-            },
-        ];
-        for (focused, inside) in [(true, false), (false, true), (false, false)] {
-            assert!(state.can_auto_collapse(0, focused, inside, false));
-            assert!(!state.can_auto_collapse(0, focused, inside, true));
-            for protected in &guarded {
-                assert!(!protected.can_auto_collapse(0, focused, inside, false));
-            }
-        }
-    }
 
     #[test]
     fn panel_scroll_survives_window_recreation_and_stale_view_cannot_overwrite_it() {

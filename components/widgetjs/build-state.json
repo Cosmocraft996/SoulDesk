@@ -71,11 +71,11 @@
     ],
     [
       "components/widgetjs/clock",
-      "262077f3a696ee2e172c528ba3e3d61dff96aea110e0fc1ad5d0a94e50bc3e04"
+      "7aee5f9f2c04d7f2b11e5b2b8931f4d136c278913dcabc6a2452be658c3d2efa"
     ],
     [
       "components/widgetjs/clock-source",
-      "5e5fd2c271770472fde218d10ede151ebbb5c9c89be13b2ef95b003c01c8dfd7"
+      "1929eb935720d1db83baa1ee137494ccff08f5072a0d2a8beaca8704330d3fe0"
     ],
     [
       "components/widgetjs/coin-common",
@@ -147,7 +147,7 @@
     ],
     [
       "components/widgetjs/flip-clock",
-      "460856dab5503065e068703fa8f8c02191019231493d29515e1f9aa85a74fd9d"
+      "87f8e1a10cbddc0bb8255ea5cdb1cc2d4c18fe58de8c3ef7220621a0e0611c7b"
     ],
     [
       "components/widgetjs/forex",
@@ -155,7 +155,7 @@
     ],
     [
       "components/widgetjs/glitch-clock",
-      "b13609553b2cbafbda9eede7db2acbf287871e5f07405378bc42cdc6c31008b0"
+      "129a1007e2b40f21658e87703fdfa3b5f049f03e311c290bbf11a01643d184c3"
     ],
     [
       "components/widgetjs/gold",
@@ -239,7 +239,7 @@
     ],
     [
       "components/widgetjs/mickey-clock",
-      "96ee9b3502685ffa345ec6a3dba07816a657e4f7514f5f83572b11bc80ccbfc9"
+      "0497b7b98d3d323e195e22f06f278bb5a6d5a8a394ce9efcec920e0fecbfa2af"
     ],
     [
       "components/widgetjs/mindmap",
@@ -327,7 +327,7 @@
     ],
     [
       "components/widgetjs/text-clock",
-      "5035dd025f4f76b28a59010cf1e541066833cde0f7805f39ff8daef8094d7fe7"
+      "6dde8928fc36252ab40cdec9bc3960337a920019e776b479f5b2417e820ca8b4"
     ],
     [
       "components/widgetjs/time-progress",
@@ -343,7 +343,7 @@
     ],
     [
       "components/widgetjs/trump-clock",
-      "cc7d7e7382ccb9fbcef9b897b40265635a771e2aad141f7bad7325d7bd65499a"
+      "6047f9bb9b269802b51ed61fb98acf19c9c34202cc196e8a1de0d6c72b8429eb"
     ],
     [
       "components/widgetjs/water-reminder",
@@ -383,7 +383,7 @@
     ],
     [
       "pnpm-workspace.yaml",
-      "f7e73ae97bc27a128f1f772f63a8f5c6410fe519cc2f552c79b2507ff69a99d4"
+      "deb10131551a65cb6b499047530cb07f0ded82c07cc750472dea4d02f01119f9"
     ],
     [
       "scripts/adapt-widgetjs-ai.mjs",
@@ -507,8 +507,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.clock",
-      "version": "0.1.0",
-      "digest": "5ac7ae901bd8420fb64a50b59ba28ace00ceda35988075eb692ea620ab007d86",
+      "version": "0.1.1",
+      "digest": "4a6b89d8f58d1ebf6284aef5544e969a52ae1504472ca0ea958f82eb71f26112",
       "files": 6
     },
     {
@@ -573,8 +573,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.flip-clock",
-      "version": "0.1.0",
-      "digest": "a3fd7ac7f2f31d078425487e2236c1088087cef28174da2e4e3e5eae36e16707",
+      "version": "0.1.1",
+      "digest": "ca3538b8a40059847081a0d5827a350562567eed9e63060521ff2fc99bed96f3",
       "files": 6
     },
     {
@@ -585,8 +585,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.glitch-clock",
-      "version": "0.1.0",
-      "digest": "27e0aa1b28337aaf44a2750aa35707aa380fa4cee3faf44f19a0e64334d4cb7a",
+      "version": "0.1.1",
+      "digest": "ea89fba4fafb194e2b228ea6d9fe7c1b744ed252b1e77d8bda7a79087c274875",
       "files": 6
     },
     {
@@ -675,8 +675,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.mickey-clock",
-      "version": "0.1.0",
-      "digest": "fa893601d9daf361e0ed7dcefa3c8e28b00aa43377a740763ad7cf57b3141f2f",
+      "version": "0.1.1",
+      "digest": "cc2c4ff41422e32249d6e7dab937ab1d6e42b44d2d4195044d4b5dd42462e1f3",
       "files": 6
     },
     {
@@ -747,8 +747,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.text-clock",
-      "version": "0.1.0",
-      "digest": "967a7066b6ab7e4395477f8b350bdc024b3257c2bc749aedd990ef275990c324",
+      "version": "0.1.1",
+      "digest": "146cd579b0643ac76803cf399dd762d3b0f31f12d494355bd703969f9df3c615",
       "files": 6
     },
     {
@@ -765,8 +765,8 @@
     },
     {
       "id": "local.souldesk.widgetjs.trump-clock",
-      "version": "0.1.0",
-      "digest": "d95816a5f8672be87fea4e9b48645195a5522575270314bef67e905516991075",
+      "version": "0.1.1",
+      "digest": "438558b83d72be66c4e6c5edbe88486a7c179256e255d101534979afb9fb2aa5",
       "files": 6
     },
     {

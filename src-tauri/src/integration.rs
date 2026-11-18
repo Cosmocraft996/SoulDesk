@@ -444,12 +444,20 @@ async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<(
         crate::packages::install(app, &package).await?;
         let card = crate::create_instance(app.clone(), "local.example.card".into()).await?;
         let second = crate::create_instance(app.clone(), "local.example.card".into()).await?;
+        let absent = app.get_webview_window("panel").is_none();
+        window(app, |app| windows::show_panel(app, false)).await?;
+        let (first, next) = (card.clone(), second.clone());
+        window(app, move |app| {
+            windows::show_instance(app, &first)?;
+            windows::show_instance(app, &next)
+        })
+        .await?;
         report["card"] = json!(card);
         report["secondCard"] = json!(second);
         check(
             report,
-            "normal-zip-trial-and-direct-desktop-add",
-            session_count(app, &card) == 1 && session_count(app, &second) == 1,
+            "normal-zip-trial-and-add-without-opening-panel",
+            absent && session_count(app, &card) == 1 && session_count(app, &second) == 1,
             json!({"card":card,"secondCard":second,"trials":app.state::<Core>().trials.lock().map_err(err)?.len()}),
         )?;
         let token = app
@@ -465,7 +473,7 @@ async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<(
         widgets::gateway(
             &app.state::<Core>().store,
             &app.state::<Core>().sessions,
-            &format!("float-{card}"),
+            "panel",
             &token,
             "settings.update",
             json!({"message":"正式集成保存，重启后保留"}),
@@ -773,7 +781,6 @@ async fn execute_panel_performance(
     report: &mut Value,
 ) -> AppResult<()> {
     let core = app.state::<Core>();
-    core.visibility.lock().map_err(err)?.dialog = true;
     let mut known = std::collections::BTreeMap::new();
     let mut memory = || -> AppResult<u64> {
         Ok(crate::view_probe::processes(&mut known)?
@@ -897,8 +904,6 @@ async fn execute_panel(
     clock: String,
 ) -> AppResult<()> {
     until(|| Ok(session_count(app, &clock) == 1), 20).await?;
-    // 页面事件专项不移动真实鼠标；用对话框保护隔离用户指针和外部焦点变化。
-    app.state::<Core>().visibility.lock().map_err(err)?.dialog = true;
     let id = clock.clone();
     window(app, move |app| {
         if let Some(w) = app.get_webview_window(&format!("float-{id}")) {
@@ -917,6 +922,34 @@ async fn execute_panel(
         .window_layout(&format!("float-{clock}"))?;
     let id = clock.clone();
     window(app, move |app| windows::move_to(app, &id, "panel")).await?;
+    check(
+        report,
+        "move-to-panel-keeps-it-closed",
+        app.get_webview_window("panel").is_none() && session_count(app, &clock) == 0,
+        Value::Null,
+    )?;
+    let id = clock.clone();
+    window(app, move |app| {
+        windows::hide_instance(app, &id)?;
+        windows::restore_instance(app, &id)
+    })
+    .await?;
+    let added = crate::create_instance(app.clone(), "local.example.clock".into()).await?;
+    check(
+        report,
+        "add-and-restore-keep-panel-closed",
+        app.get_webview_window("panel").is_none()
+            && windows::instance(app, &clock)?["visible"] == true
+            && windows::instance(app, &added)?["location"] == "panel",
+        Value::Null,
+    )?;
+    let id = clock.clone();
+    window(app, move |app| {
+        windows::remove_instance(app, &added)?;
+        windows::show_panel(app, false)?;
+        windows::show_instance(app, &id)
+    })
+    .await?;
     check(
         report,
         "panel-zero-animation-loads-real-widget",
@@ -1029,6 +1062,7 @@ async fn execute_panel(
         json!({"configuredMs":150,"operationMs":out_ms,"toggleAtRightCenter":true}),
     )?;
     let edge_hits = app.state::<Core>().edge_hits.load(Ordering::Relaxed);
+    let start = Instant::now();
     panel_ui_event(
         app,
         "edge",
@@ -1036,16 +1070,6 @@ async fn execute_panel(
         "const r=node.getBoundingClientRect();if(Math.abs(r.right-innerWidth)>1||Math.abs(r.top+r.height/2-innerHeight/2)>1)return false;node.click()",
     )
     .await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    check(
-        report,
-        "edge-click-does-not-open-panel",
-        app.get_webview_window("panel").is_none()
-            && app.state::<Core>().edge_hits.load(Ordering::Relaxed) == edge_hits,
-        Value::Null,
-    )?;
-    let start = Instant::now();
-    panel_ui_event(app, "edge", ".edge", "node.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))").await?;
     until(
         || {
             Ok(session_count(app, &clock) == 1
@@ -1082,16 +1106,60 @@ async fn execute_panel(
             && app.get_webview_window("panel").is_some(),
         json!({"configuredMs":150,"operationMs":in_ms,"layout":layout}),
     )?;
-    windows::auto_collapse(app);
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    let scene = windows::panel_scene();
+    let browser = app.get_webview_window("panel").ok_or("缺少面板窗口")?;
+    #[cfg(windows)]
+    let original_handle = crate::desktop_native::handle(&browser)?;
+    window(app, move |app| {
+        windows::set_panel_locked(app, true)?;
+        windows::dismiss_from_outside(app, scene)
+    })
+    .await?;
+    #[cfg(windows)]
+    crate::desktop_native::check_attachment(&browser, false)?;
     check(
         report,
-        "panel-dialog-protection-defers-auto-collapse",
-        app.get_webview_window("panel").is_some(),
-        json!({"dialogGuard":true,"realMouseOrFocusVerified":false}),
+        "locked-outside-click-lowers-without-unmounting",
+        !windows::scene_is_foreground(windows::panel_scene())
+            && session_count(app, &clock) == 1
+            && app
+                .get_webview_window("edge")
+                .is_some_and(|edge| edge.is_visible().unwrap_or(false)),
+        json!({"realMouseVerified":false}),
+    )?;
+    let ignored_hover = window(app, |app| {
+        if windows::show_panel_from_edge(app, true)? {
+            return Err("悬停不应提起置底面板".into());
+        }
+        Ok(())
+    })
+    .await;
+    ignored_hover?;
+    panel_ui_event(app, "edge", ".edge", "node.click()").await?;
+    until(
+        || Ok(windows::scene_is_foreground(windows::panel_scene())),
+        10,
+    )
+    .await?;
+    #[cfg(windows)]
+    crate::desktop_native::check_attachment(&browser, true)?;
+    window(app, move |app| {
+        windows::dismiss_from_outside(app, scene)?;
+        windows::set_panel_locked(app, false)
+    })
+    .await?;
+    #[cfg(windows)]
+    check(
+        report,
+        "click-raises-same-panel-and-rejects-stale-click",
+        crate::desktop_native::handle(&app.get_webview_window("panel").ok_or("面板被旧点击收起")?)?
+            == original_handle
+            && windows::scene_is_foreground(windows::panel_scene())
+            && session_count(app, &clock) == 1,
+        Value::Null,
     )?;
     let settings = windows::instance(app, &clock)?["settings"].clone();
-    panel_ui_event(app, "panel", ".surface-chrome", "if(node.querySelectorAll('.surface-toolbar>button').length!==4||node.querySelector('[aria-label=置顶]')||node.querySelector('[aria-label=管理组件]'))return false").await?;
+    panel_ui_event(app, "panel", ".surface-chrome", "if(node.querySelectorAll('.surface-toolbar button').length!==4||node.querySelector('[aria-label=置顶]')||node.querySelector('[aria-label=管理组件]'))return false").await?;
     check(
         report,
         "panel-titlebar-exposes-transfer-hide-delete-and-more",
@@ -1134,10 +1202,10 @@ async fn execute_panel(
         json!({"desktopGeometry":original,"panelLayout":layout}),
     )?;
     let label = format!("float-{clock}");
-    panel_ui_event(app, &label, ".widget-surface", "const previous=node.style.width;node.style.width='120px';const bounds=node.getBoundingClientRect(),buttons=[...node.querySelectorAll('.surface-toolbar>button')],fits=buttons.length===5&&buttons.every(button=>{const r=button.getBoundingClientRect();return r.width>=16&&r.right<=bounds.right+1;});node.style.width=previous;if(!fits||node.querySelector('.surface-chrome [aria-label=管理组件]'))return false").await?;
+    panel_ui_event(app, &label, ".widget-surface", "const previous=node.style.width;node.style.width='120px';const bounds=node.getBoundingClientRect(),buttons=[...node.querySelectorAll('.surface-toolbar button')],visible=buttons.filter(button=>button.getBoundingClientRect().width>0),fits=visible.length===1&&visible[0].getAttribute('aria-label')==='更多功能'&&visible[0].getBoundingClientRect().right<=bounds.right+1;node.style.width=previous;if(buttons.length!==5||!fits||node.querySelector('.surface-chrome [aria-label=管理组件]'))return false").await?;
     check(
         report,
-        "desktop-titlebar-keeps-four-actions-and-more-at-minimum-width",
+        "desktop-titlebar-moves-actions-into-menu-at-minimum-width",
         true,
         Value::Null,
     )?;
@@ -1399,6 +1467,7 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
         json!({})
     };
     if c.mode == "widgetjs" {
+        window(app, |app| windows::show_panel(app, false)).await?;
         let selected_package = std::env::args().find_map(|arg| {
             arg.strip_prefix("--widgetjs-check-package=")
                 .map(str::to_owned)
@@ -2277,6 +2346,12 @@ async fn execute_widgetjs_convert_files(
     report["instance"] = json!(id);
     report["selectedPackages"] = json!(["local.souldesk.widgetjs.convert"]);
     save(c, report)?;
+    let shown = id.clone();
+    window(app, move |app| {
+        windows::show_panel(app, false)?;
+        windows::show_instance(app, &shown)
+    })
+    .await?;
     until(
         || {
             let value = widgetjs_storage(app, &id)?;

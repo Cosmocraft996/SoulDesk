@@ -114,7 +114,6 @@ impl Drop for DialogGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut visibility) = self.0.visibility.lock() {
             visibility.dialog = false;
-            visibility.epoch += 1;
         }
     }
 }
@@ -125,7 +124,6 @@ pub(crate) fn start_dialog(core: &Core) -> AppResult<DialogGuard<'_>> {
         return Err("BUSY: 请先完成当前文件选择或对话框".into());
     }
     visibility.dialog = true;
-    visibility.epoch += 1;
     Ok(DialogGuard(core))
 }
 

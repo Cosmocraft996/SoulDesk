@@ -9,13 +9,21 @@ import TextClock from './widgets/text-clock/TextClockWidgetView.vue';
 import Trump from './widgets/trump-clock/TrumpClockWidgetView.vue';
 import timezoneData from './i18n/timezone.json';
 const props = defineProps<{ host: any; variant: string }>();
+const supportsTransparentBackground = props.variant === 'trump-clock';
+const transparentBackground = computed(() => supportsTransparentBackground &&
+  (settings.transparentBackground ?? settings.background === '#202026'));
 const views: Record<string, any> = { clock: Clock, 'flip-clock': Flip, 'glitch-clock': Glitch, 'mickey-clock': Mickey, 'text-clock': TextClock, 'trump-clock': Trump };
 const view = computed(() => views[props.variant]);
 const dialog = ref<HTMLDialogElement>();
 const draft = ref<Record<string, any>>({});
 const saving = ref(false), saveError = ref('');
 const timezones = timezoneData.flatMap(region => region.timezones).map(item => ({ value: item.value, label: item.label.zh }));
-function openSettings() { draft.value = { ...settings }; saveError.value = ''; dialog.value?.showModal(); }
+function openSettings() {
+  draft.value = { ...settings };
+  if (supportsTransparentBackground) draft.value.transparentBackground = transparentBackground.value;
+  saveError.value = '';
+  dialog.value?.showModal();
+}
 async function save(event: Event) {
   event.preventDefault();
   saving.value = true; saveError.value = '';
@@ -28,7 +36,8 @@ async function save(event: Event) {
   finally { saving.value = false; }
 }
 const theme = computed(() => ({
-  '--widget-background-color': settings.background, '--widget-color': settings.foreground,
+  '--widget-background-color': transparentBackground.value ? 'transparent' : settings.background,
+  '--widget-color': settings.foreground,
   '--widget-border-radius': settings.radius + 'px', '--widget-font-size': settings.fontSize + 'px',
   '--widget-font-family': settings.font || 'FiraCode',
 }));
@@ -47,6 +56,7 @@ onMounted(async () => {
     if (!invalidSaveRejected) throw new Error('时钟无效配置未被拒绝');
     draft.value.foreground = settings.foreground;
     draft.value.background = '#' + props.host.instanceId.replaceAll('-', '').slice(0, 6);
+    if (supportsTransparentBackground) draft.value.transparentBackground = false;
     draft.value.radius = 12;
     await nextTick();
     const form = document.getElementById('clock-form') as HTMLFormElement;
@@ -78,7 +88,8 @@ onMounted(async () => {
       <label v-if="'timezone' in draft">时区<select v-model="draft.timezone"><option v-for="item in timezones" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
       <label v-if="'showTimezone' in draft">显示时区<input v-model="draft.showTimezone" type="checkbox"></label>
       <label v-if="'font' in draft">字体<input v-model="draft.font" maxlength="80"></label>
-      <label>背景<input v-model="draft.background" type="color"></label><label>文字<input v-model="draft.foreground" type="color"></label>
+      <label v-if="supportsTransparentBackground">透明背景<input v-model="draft.transparentBackground" type="checkbox"></label>
+      <label v-if="!supportsTransparentBackground || !draft.transparentBackground">背景<input v-model="draft.background" type="color"></label><label>文字<input v-model="draft.foreground" type="color"></label>
       <label>字号<input v-model="draft.fontSize" type="number" min="12" max="40" required></label>
       <label>圆角<input v-model="draft.radius" type="number" min="0" max="40" required></label>
       <p role="status">{{ saveError }}</p><footer><button type="button" @click="dialog?.close()">取消</button><button :disabled="saving" type="submit">{{ saving ? '保存中' : '保存' }}</button></footer>

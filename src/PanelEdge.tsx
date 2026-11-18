@@ -45,7 +45,7 @@ export function EdgeStylePicker({ value, onChange }: { value: EdgeStyle; onChang
         <span>{edgeStyles[style].label}</span>
       </label>)}
     </div>
-    <small>悬停展开。按住挂件可跨屏拖动，松开自动保存停靠位置。</small>
+    <small>轻点切换面板，悬停可展开收起的面板。按住可跨屏拖动。</small>
   </fieldset>;
 }
 
@@ -54,8 +54,8 @@ export function PanelEdge({ visual, expanded, onHover, onActivate, onError }: {
 }) {
   const gesture = useRef<{ pointer: number; x: number; y: number; moved: boolean; result: Promise<boolean> } | undefined>(undefined);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const cancelHover = () => { clearTimeout(hover.current); hover.current = undefined; };
-  useEffect(() => cancelHover, []);
+  const cancelHover = () => clearTimeout(hover.current);
+  useEffect(() => () => clearTimeout(hover.current), []);
   const label = expanded ? '收起组件面板' : '展开组件面板';
   const start = (event: PointerEvent<HTMLButtonElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
@@ -78,28 +78,23 @@ export function PanelEdge({ visual, expanded, onHover, onActivate, onError }: {
     type="button"
     className={`edge${expanded ? ' panel-edge-toggle' : ''}`}
     data-edge-side={visual.position.side}
-    title={`${expanded ? label : '悬停展开组件面板'} · 按住可拖动`}
+    title={`${label} · 按住可拖动`}
     aria-label={label}
     aria-expanded={expanded}
     onPointerEnter={event => {
-      if (expanded || event.pointerType !== 'mouse' || event.buttons) return;
-      cancelHover();
-      hover.current = setTimeout(onHover, 180);
+      if (!expanded && event.pointerType === 'mouse' && !event.buttons) {
+        cancelHover();
+        hover.current = setTimeout(onHover, 200);
+      }
     }}
     onPointerLeave={cancelHover}
     onPointerDown={start}
     onPointerMove={track}
     onPointerCancel={() => { cancelHover(); if (gesture.current) gesture.current.moved = true; }}
-    onKeyDown={event => {
-      if (expanded || event.repeat || !['Enter', ' '].includes(event.key)) return;
-      event.preventDefault();
-      cancelHover();
-      onActivate();
-    }}
     onClick={event => {
+      cancelHover();
       const press = gesture.current;
       gesture.current = undefined;
-      if (!expanded) return;
       if (event.detail === 0 || !press) { onActivate(); return; }
       void press.result.then(dragged => { if (!dragged && !press.moved) onActivate(); });
     }}

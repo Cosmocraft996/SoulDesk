@@ -75,22 +75,16 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
       return Object.keys(pending).length === Object.keys(current).length ? current : pending;
     });
   }, [saved, instances, saving]);
-  useEffect(() => () => { void invoke('window_action', { action: 'interaction-end' }).catch(() => {}); }, []);
-  const begin = async (event: PointerEvent<HTMLButtonElement>, id: string, resize: boolean) => {
+  const begin = (event: PointerEvent<HTMLButtonElement>, id: string, resize: boolean) => {
     if (event.button !== 0 || drag.current || saving) return;
     event.preventDefault();
     const target = event.currentTarget, pointer = event.pointerId;
     const start = layouts[id];
     if (!start) return;
     target.setPointerCapture(pointer);
-    const state = { id, pointer, x: event.clientX, y: event.clientY, scroll: viewport.current?.scrollTop ?? 0, resize, start, current: start };
-    drag.current = state; setFront(id);
-    try {
-      await invoke('window_action', { action: 'interaction-start' });
-      // 快速点击已抬起时不进入拖动，仍释放后台保护。
-      if (drag.current === state && target.hasPointerCapture(pointer)) setActive(id);
-      else await invoke('window_action', { action: 'interaction-end' });
-    } catch (error) { drag.current = null; setActive(undefined); setSnapEdges({}); onError(String(error)); void invoke('window_action', { action: 'interaction-end' }).catch(() => {}); }
+    drag.current = { id, pointer, x: event.clientX, y: event.clientY, scroll: viewport.current?.scrollTop ?? 0, resize, start, current: start };
+    setFront(id);
+    setActive(id);
   };
   const move = (event: PointerEvent) => {
     const state = drag.current;
@@ -125,7 +119,6 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
     finally {
       if (canceled) setDraft(current => Object.fromEntries(Object.entries(current).filter(([id]) => id !== state.id)));
       setSaving(undefined);
-      await invoke('window_action', { action: 'interaction-end' }).catch(error => onError(String(error)));
     }
   };
   const values = Object.values(layouts);

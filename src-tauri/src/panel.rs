@@ -334,6 +334,35 @@ pub struct Layout {
     pub width: f64,
     pub height: f64,
 }
+
+pub(crate) const WIDGET_GAP: f64 = 12.0;
+
+pub(crate) fn minimum_panel_width(edge_width: f64, widget_min_width: f64) -> f64 {
+    widget_min_width.max(280.0) + (20.0 + edge_width).max(32.0)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PlacementArea {
+    pub work_area: crate::desktop_geometry::WorkArea,
+    pub ratio: f64,
+    pub edge_width: f64,
+}
+
+impl PlacementArea {
+    pub fn canvas_width(self, widget_min_width: f64) -> Result<f64, String> {
+        let minimum = minimum_panel_width(self.edge_width, widget_min_width);
+        let geometry =
+            crate::desktop_geometry::panel_geometry(self.work_area, self.ratio, minimum)?;
+        // 与前端画布一致：两侧内边距共 24，预留滚动条 7，边框 1。
+        Ok(
+            ((f64::from(geometry.width) / self.work_area.scale_factor).floor()
+                - self.edge_width
+                - 32.0)
+                .max(0.0),
+        )
+    }
+}
+
 impl Layout {
     pub fn validate(&self, min_width: f64, min_height: f64) -> Result<(), String> {
         if ![self.x, self.y, self.width, self.height]
@@ -348,6 +377,45 @@ impl Layout {
         }
         Ok(())
     }
+
+    pub(crate) fn fitted(mut self, available: f64, min: &crate::widgets::Size) -> Self {
+        // 与前端 fitLayout 一致，极窄画布保留最小尺寸。
+        self.width = self.width.min(available).max(f64::from(min.width));
+        self.height = self.height.max(f64::from(min.height));
+        self.x = self.x.min((available - self.width).max(0.0));
+        self
+    }
+}
+
+pub(crate) fn first_panel_slot(
+    width: f64,
+    height: f64,
+    available: f64,
+    peers: &mut [Layout],
+) -> Result<(f64, f64), String> {
+    // 空位最早出现在顶部，或某个阻挡组件的下沿之后。
+    let mut rows = vec![0.0];
+    rows.extend(peers.iter().map(|g| g.y + g.height + WIDGET_GAP));
+    rows.sort_by(f64::total_cmp);
+    rows.dedup();
+    peers.sort_by(|a, b| a.x.total_cmp(&b.x));
+    let max_x = (available - width).max(0.0);
+    for y in rows.into_iter().take_while(|y| *y <= 100_000.0) {
+        let mut x: f64 = 0.0;
+        for peer in peers
+            .iter()
+            .filter(|g| g.y < y + height + WIDGET_GAP && y < g.y + g.height + WIDGET_GAP)
+        {
+            if x + width + WIDGET_GAP <= peer.x {
+                break;
+            }
+            x = x.max(peer.x + peer.width + WIDGET_GAP);
+        }
+        if x <= max_x {
+            return Ok((x, y));
+        }
+    }
+    Err("目标分组的面板布局已达到纵向上限".into())
 }
 
 #[cfg(test)]
@@ -653,6 +721,43 @@ mod tests {
         .validate()
         .is_err());
     }
+    #[test]
+    fn panel_slots_try_horizontal_gaps_before_dropping_to_the_next_edge() {
+        let left = Layout {
+            x: 0.0,
+            y: 0.0,
+            width: 220.0,
+            height: 300.0,
+        };
+        let right = Layout {
+            x: 232.0,
+            y: 0.0,
+            width: 210.0,
+            height: 100.0,
+        };
+        let lower = Layout {
+            x: 0.0,
+            y: 500.0,
+            ..left
+        };
+        assert_eq!(
+            first_panel_slot(190.0, 120.0, 480.0, &mut [lower, left]).unwrap(),
+            (232.0, 0.0)
+        );
+        assert_eq!(
+            first_panel_slot(190.0, 120.0, 480.0, &mut [right, lower, left]).unwrap(),
+            (232.0, 112.0)
+        );
+        assert_eq!(
+            first_panel_slot(241.0, 120.0, 472.0, &mut [right, lower, left]).unwrap(),
+            (0.0, 312.0)
+        );
+        assert_eq!(
+            first_panel_slot(240.0, 120.0, 200.0, &mut [left]).unwrap(),
+            (0.0, 312.0)
+        );
+    }
+
     #[test]
     fn panel_layout_rejects_invalid_coordinates_and_undersized_widgets() {
         let mut g = Layout {

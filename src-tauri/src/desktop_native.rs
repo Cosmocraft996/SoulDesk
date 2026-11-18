@@ -469,14 +469,23 @@ pub fn check_attachment(w: &WebviewWindow, pinned: bool) -> Result<(), String> {
 }
 pub fn toggle_pin(w: &WebviewWindow) -> Result<bool, String> {
     let h = handle(w)? as HWND;
+    let pinned = unsafe { GetWindowLongPtrW(h, GWL_STYLE) as u32 & WS_CHILD != 0 };
+    set_desktop_layer(w, pinned)?;
+    Ok(pinned)
+}
+
+pub fn set_desktop_layer(w: &WebviewWindow, foreground: bool) -> Result<(), String> {
+    if check_attachment(w, foreground).is_ok() {
+        return Ok(());
+    }
+    let h = handle(w)? as HWND;
     let mut rect = RECT::default();
     unsafe {
         if GetWindowRect(h, &mut rect) == 0 {
             return Err(winerr("读取卡片位置失败"));
         }
-        if GetWindowLongPtrW(h, GWL_STYLE) as u32 & WS_CHILD == 0 {
-            attach(w, rect.left, rect.top)?;
-            return Ok(false);
+        if !foreground {
+            return attach(w, rect.left, rect.top);
         }
         windows_sys::Win32::Foundation::SetLastError(0);
         SetParent(h, std::ptr::null_mut());
@@ -502,8 +511,7 @@ pub fn toggle_pin(w: &WebviewWindow) -> Result<bool, String> {
             return Err(winerr("卡片置顶失败"));
         }
     }
-    check_attachment(w, true)?;
-    Ok(true)
+    check_attachment(w, true)
 }
 pub fn describe(w: &WebviewWindow) -> Value {
     let Ok(raw) = handle(w) else {
@@ -892,30 +900,45 @@ pub enum EdgeDrag {
     Cancelled,
 }
 
+pub struct EdgePress {
+    point: POINT,
+    key: i32,
+}
+
+pub fn panel_edge_press() -> Result<Option<EdgePress>, String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
+    };
+    let key = unsafe {
+        if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            i32::from(VK_RBUTTON)
+        } else {
+            i32::from(VK_LBUTTON)
+        }
+    };
+    let mut point = POINT::default();
+    unsafe {
+        if GetAsyncKeyState(key) >= 0 {
+            return Ok(None);
+        }
+        if GetCursorPos(&mut point) == 0 {
+            return Err(winerr("读取挂件拖动起点失败"));
+        }
+    }
+    Ok(Some(EdgePress { point, key }))
+}
+
 pub fn drag_panel_edge(
     w: &WebviewWindow,
+    press: EdgePress,
     scale_factor: f64,
     mut preview: impl FnMut((i32, i32), (i32, i32)) -> Result<(), String>,
 ) -> Result<EdgeDrag, String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
-    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
     let h = handle(w)? as HWND;
-    let key = unsafe {
-        if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
-            VK_RBUTTON
-        } else {
-            VK_LBUTTON
-        }
-    };
-    let mut start = POINT::default();
-    unsafe {
-        if IsWindowVisible(h) == 0 || GetAsyncKeyState(key as i32) >= 0 {
-            return Ok(EdgeDrag::Click);
-        }
-        if GetCursorPos(&mut start) == 0 {
-            return Err(winerr("读取挂件拖动起点失败"));
-        }
+    let EdgePress { point: start, key } = press;
+    if unsafe { IsWindowVisible(h) == 0 || GetAsyncKeyState(key) >= 0 } {
+        return Ok(EdgeDrag::Click);
     }
     let threshold = (5. * scale_factor).ceil() as i64;
     let mut moved = false;
@@ -940,7 +963,7 @@ pub fn drag_panel_edge(
             preview((start.x, start.y), (point.x, point.y))?;
             previous = point;
         }
-        if unsafe { GetAsyncKeyState(key as i32) >= 0 } {
+        if unsafe { GetAsyncKeyState(key) >= 0 } {
             return Ok(if moved {
                 EdgeDrag::Dropped
             } else {

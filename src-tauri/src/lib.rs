@@ -103,6 +103,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
+const MAIN_TRAY: &str = "souldesk-main";
+
 /// 仅供显式命令行恢复验收使用；不是组件网关能力。
 pub async fn run_recovery_probe(report: std::path::PathBuf) -> Result<(), String> {
     recovery::run(report, false).await
@@ -188,6 +190,9 @@ async fn snapshot(
         }
     }
     value["panelOpen"] = json!(app.get_webview_window("panel").is_some());
+    value["panelLowered"] =
+        json!(value["panelOpen"] == true && !windows::scene_is_foreground(windows::panel_scene()));
+    value["panelShortcutEnabled"] = json!(panel_shortcut_enabled(&core.store));
     value["panel"] = windows::panel_preferences(&app)?;
     value["panelGeometry"] = windows::panel_metrics(&app)?;
     value["panelLayouts"] = core.store.panel_layouts()?;
@@ -215,7 +220,6 @@ async fn import_package(app: AppHandle) -> AppResult<Value> {
             return Err("BUSY: 请先完成当前文件对话框".into());
         }
         v.dialog = true;
-        v.epoch += 1;
     }
     let picker = app
         .dialog()
@@ -242,20 +246,19 @@ async fn create_instance(app: AppHandle, package_id: String) -> AppResult<String
         return Err("请先恢复组件显示".into());
     }
     packages::ensure_preset(&app, &package_id).await?;
-    let id = widgets::create_instance_at(&app.state::<Core>().store, &package_id, "panel")?;
-    let target = id.clone();
-    let shown = tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&app, |app| {
-            windows::show_panel(app, true)?;
-            windows::show_instance(app, &target)
+            if windows::hidden(app)? {
+                return Err("请先恢复组件显示".into());
+            }
+            let id = widgets::create_instance_at(&app.state::<Core>().store, &package_id, "panel")?;
+            windows::show_instance(app, &id)
+                .map_err(|e| format!("实例已保留，可在管理中重试显示：{e}"))?;
+            Ok(id)
         })
     })
     .await
-    .map_err(err)?;
-    if let Err(e) = shown {
-        return Err(format!("实例已保留，可在管理中重试显示：{e}"));
-    }
-    Ok(id)
+    .map_err(err)?
 }
 #[tauri::command]
 async fn manage_instance(
@@ -900,7 +903,7 @@ async fn window_action(
     } else if label == "main" {
         action != "resize-panel"
     } else if label == "edge" {
-        ["edge-hover", "edge-keyboard"].contains(&action.as_str())
+        ["edge-hover", "edge-activate"].contains(&action.as_str())
     } else if label.starts_with("detail-") {
         action == "close-detail"
     } else if label == "panel" {
@@ -908,24 +911,15 @@ async fn window_action(
             "show",
             "settings",
             "collapse",
-            "enter",
-            "leave",
-            "editing",
-            "idle",
             "float",
             "hide",
             "remove",
             "detail",
-            "interaction-start",
             "resize-panel",
-            "interaction-end",
-            "menu-open",
-            "menu-close",
         ]
         .contains(&action.as_str())
             && instance.as_ref().is_none_or(|id| {
-                (id == "panel-groups" && ["menu-open", "menu-close"].contains(&action.as_str()))
-                    || windows::instance(&app, id).is_ok_and(|i| i["location"] == "panel")
+                windows::instance(&app, id).is_ok_and(|i| i["location"] == "panel")
             })
     } else if let Some(id) = label.strip_prefix("float-") {
         ["show", "pin", "hide", "remove", "embed", "detail"].contains(&action.as_str())
@@ -935,6 +929,10 @@ async fn window_action(
     };
     if !allowed {
         return Err("CAPABILITY_DENIED: 当前窗口无此展示权限".into());
+    }
+    let scene = windows::panel_scene();
+    if action == "outside-panel" && !windows::scene_is_foreground(scene) {
+        return Ok(());
     }
     if action == "hide-all" {
         app.state::<Core>().assistant.cancel_all()?;
@@ -955,6 +953,7 @@ async fn window_action(
                 "restore-all" => windows::restore(app),
                 "toggle" => windows::toggle(app),
                 "collapse" => windows::collapse(app),
+                "outside-panel" => windows::dismiss_from_outside(app, scene),
                 "lock-panel" | "unlock-panel" => {
                     windows::set_panel_locked(app, action == "lock-panel")
                 }
@@ -978,52 +977,12 @@ async fn window_action(
                 "embed" => windows::move_to(app, id()?, "panel"),
                 "detail" => windows::detail(app, id()?),
                 "close-detail" => windows::destroy_window(app, window.label()),
-                "edge-hover" | "edge-keyboard" => {
+                "edge-hover" | "edge-activate" => {
                     if windows::show_panel_from_edge(app, action == "edge-hover")? {
                         app.state::<Core>()
                             .edge_hits
                             .fetch_add(1, Ordering::Relaxed);
                     }
-                    Ok(())
-                }
-                "editing" | "idle" => {
-                    let core = app.state::<Core>();
-                    let mut v = core.visibility.lock().map_err(err)?;
-                    v.editing = action == "editing";
-                    v.epoch += 1;
-                    drop(v);
-                    if action == "idle" {
-                        windows::auto_collapse(app);
-                    }
-                    Ok(())
-                }
-                "interaction-start" | "interaction-end" | "menu-open" | "menu-close" => {
-                    let core = app.state::<Core>();
-                    let mut v = core.visibility.lock().map_err(err)?;
-                    let key = instance.clone().unwrap_or_else(|| "panel-settings".into());
-                    match action.as_str() {
-                        "interaction-start" => v.interacting = true,
-                        "interaction-end" => v.interacting = false,
-                        "menu-open" => {
-                            v.menus.insert(key);
-                        }
-                        _ => {
-                            v.menus.remove(&key);
-                        }
-                    }
-                    v.epoch += 1;
-                    drop(v);
-                    if action == "interaction-end" || action == "menu-close" {
-                        windows::auto_collapse(app);
-                    }
-                    Ok(())
-                }
-                "enter" => {
-                    app.state::<Core>().visibility.lock().map_err(err)?.epoch += 1;
-                    Ok(())
-                }
-                "leave" => {
-                    windows::auto_collapse(app);
                     Ok(())
                 }
                 "destroy" => windows::destroy_views(app),
@@ -1056,8 +1015,12 @@ async fn drag_panel_edge(app: AppHandle, window: tauri::WebviewWindow) -> AppRes
     if !matches!(window.label(), "panel" | "edge") {
         return Err("CAPABILITY_DENIED: 当前窗口无挂件拖动权限".into());
     }
+    // 展开动作仍在建窗或滑入时，先记录按住挂件的实际鼠标位置。
+    let Some(press) = desktop_native::panel_edge_press()? else {
+        return Ok(false);
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        windows::serialized(&app, |app| windows::drag_panel_edge(app, &window))
+        windows::serialized(&app, |app| windows::drag_panel_edge(app, &window, press))
     })
     .await
     .map_err(err)?
@@ -1211,25 +1174,81 @@ fn surface_failed(
     windows::failed(&app, label, &instance, message.chars().take(1000).collect())
 }
 
+fn panel_shortcut_available(core: &Core) -> bool {
+    core.integration
+        .as_ref()
+        .is_none_or(|config| config.panel_shortcut_enabled())
+}
+
+fn panel_shortcut_enabled(store: &Store) -> bool {
+    store.preference("panel_shortcut_enabled").as_deref() != Some("false")
+}
+
 #[tauri::command]
-fn set_shortcut(app: AppHandle, value: String) -> AppResult<()> {
+fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) -> AppResult<()> {
     let core = app.state::<Core>();
     let old = core
         .store
         .preference("shortcut")
         .unwrap_or("Ctrl+Alt+Space".into());
+    let available = panel_shortcut_available(&core);
+    let was_enabled = panel_shortcut_enabled(&core.store);
+    let shortcut = app.global_shortcut();
+    if let Some(enabled) = enabled {
+        if enabled == was_enabled {
+            return Ok(());
+        }
+        let registered = available && shortcut.is_registered(old.as_str());
+        if available && enabled {
+            shortcut
+                .register(old.as_str())
+                .map_err(|e| format!("快捷键注册失败：{e}"))?;
+        } else if registered {
+            shortcut.unregister(old.as_str()).map_err(err)?;
+        }
+        if let Err(error) = core.store.save_preference(
+            "panel_shortcut_enabled",
+            if enabled { "true" } else { "false" },
+        ) {
+            if available && enabled {
+                let _ = shortcut.unregister(old.as_str());
+            } else if registered {
+                let _ = shortcut.register(old.as_str());
+            }
+            return Err(error);
+        }
+        return Ok(());
+    }
+    let Some(value) = value else {
+        return Err("缺少快捷键".into());
+    };
     if old == value {
         return Ok(());
     }
-    app.global_shortcut()
-        .register(value.as_str())
-        .map_err(|e| format!("快捷键注册失败，保留原键：{e}"))?;
+    let key = value
+        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        .map_err(err)?;
+    if old
+        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        .is_ok_and(|old| old == key)
+    {
+        return core.store.save_preference("shortcut", &value);
+    }
+    if available && was_enabled {
+        shortcut
+            .register(key)
+            .map_err(|e| format!("快捷键注册失败，保留原键：{e}"))?;
+    }
     if let Err(e) = core.store.save_preference("shortcut", &value) {
-        let _ = app.global_shortcut().unregister(value.as_str());
+        if available && was_enabled {
+            let _ = shortcut.unregister(key);
+        }
         return Err(e);
     }
-    if let Err(e) = app.global_shortcut().unregister(old.as_str()) {
-        core.report(format!("旧快捷键释放失败：{e}"));
+    if available && was_enabled {
+        if let Err(e) = shortcut.unregister(old.as_str()) {
+            core.report(format!("旧快捷键释放失败：{e}"));
+        }
     }
     Ok(())
 }
@@ -1481,7 +1500,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     });
     let show = MenuItem::with_id(app, "show", "管理组件", true, None::<&str>)?;
     let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
-    let panel = MenuItem::with_id(app, "panel", "打开组件面板", true, None::<&str>)?;
+    let panel = MenuItem::with_id(app, "panel", "切换组件面板", true, None::<&str>)?;
     let assistant = MenuItem::with_id(app, "assistant", "网页 AI 助手", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
@@ -1504,9 +1523,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             });
         }
     }
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id(MAIN_TRAY)
         .icon(tauri::image::Image::new_owned(pixels, 32, 32))
-        .tooltip("SoulDesk · Ctrl+Alt+Space")
+        .tooltip("SoulDesk")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
@@ -1539,30 +1558,35 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .build(app)?;
-    if app
-        .state::<Core>()
-        .integration
-        .as_ref()
-        .is_none_or(|c| c.panel_shortcut_enabled())
-    {
+    let core = app.state::<Core>();
+    if panel_shortcut_available(&core) && panel_shortcut_enabled(&core.store) {
         if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
             app.state::<Core>()
                 .report(format!("快捷键不可用：{e}；请从托盘更改"));
         }
     }
-    if app.state::<Core>().integration.is_none() && app.state::<Core>().verification.is_none() {
-        #[cfg(windows)]
+    let normal_run = core.integration.is_none() && core.verification.is_none();
+    #[cfg(windows)]
+    if normal_run
+        || core
+            .integration
+            .as_ref()
+            .is_some_and(|c| c.mode == "widgetjs-manual")
+    {
         match desktop_input::start(
             app.handle(),
-            windows::panel_preferences(app.handle())?["desktopDoubleClick"]
-                .as_bool()
-                .unwrap_or(true),
+            normal_run
+                && windows::panel_preferences(app.handle())?["desktopDoubleClick"]
+                    .as_bool()
+                    .unwrap_or(true),
         ) {
             Ok(listener) => {
                 app.manage(listener);
             }
             Err(error) => app.state::<Core>().report(error),
         }
+    }
+    if normal_run {
         updates::start(app.handle());
     }
     // 正常启动恢复桌面场景；显式隔离历史验收继续由其入口拥有。
@@ -1670,7 +1694,13 @@ pub fn run() {
                                 });
                                 return;
                             }
-                            clipboard_shortcuts::Route::Main => {}
+                            clipboard_shortcuts::Route::Main => {
+                                if !panel_shortcut_available(&core)
+                                    || !panel_shortcut_enabled(&core.store)
+                                {
+                                    return;
+                                }
+                            }
                         }
                         windows::dispatch(app, |app| {
                             let before = app.webview_windows().iter().any(|(label, w)| {
@@ -1832,21 +1862,12 @@ pub fn run() {
                         }
                     });
                 }
-                tauri::WindowEvent::Focused(false) if window.label() == "panel" => {
-                    windows::panel_focus_lost(app)
-                }
                 tauri::WindowEvent::Focused(focused)
                     if window.label().starts_with("clipboard-") =>
                 {
                     app.state::<Core>()
                         .clipboard
                         .focus_window(window.label(), *focused);
-                }
-                tauri::WindowEvent::Focused(true) if window.label() == "panel" => {
-                    let core = app.state::<Core>();
-                    if let Ok(mut v) = core.visibility.lock() {
-                        v.epoch += 1;
-                    };
                 }
                 tauri::WindowEvent::Destroyed => {
                     if let Some(core) = app.try_state::<Core>() {

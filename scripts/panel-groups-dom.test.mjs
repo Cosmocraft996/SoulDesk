@@ -80,6 +80,7 @@ async function fixture({ legacy = false, active = null, locked = false, query = 
       if (command === 'snapshot') return { ...structuredClone(state), panelScroll: positions.get(state.panelGroups?.active ?? null) };
       if (command === 'panel_view' && args.update.event === 'scroll') { positions.set(args.update.group, args.update.position); return; }
       if (command === 'create_instance' && f.fail) throw Error('测试添加失败');
+      if (command === 'set_shortcut' && typeof args.enabled === 'boolean') state.panelShortcutEnabled = args.enabled;
       if (command === 'drag_panel_edge') return f.edgeDragged ?? false;
       if (command === 'window_action' && ['enable-widget-backdrop', 'disable-widget-backdrop'].includes(args.action)) {
         if (f.fail) throw Error('测试衬底保存失败');
@@ -197,20 +198,18 @@ test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时�
   } finally { await reopened.close(); }
 });
 
-test('删除确认和移动分组对话框保护面板，取消后解除且不删除实例', async () => {
+test('删除确认和移动分组对话框可取消，实例内容保留', async () => {
   const f = await fixture();
-  const overlayActions = () => f.calls.filter(([command, args]) => command === 'window_action' && args.instance == null && ['menu-open', 'menu-close'].includes(args.action)).map(([, args]) => args.action);
   try {
     await click(button('删除实例'));
     assert.ok(document.querySelector('.remove-instance-dialog[open]'));
-    assert.equal(overlayActions().at(-1), 'menu-open');
     await click(document.querySelector('[data-action="cancel-remove"]'));
-    assert.equal(overlayActions().at(-1), 'menu-close');
+    assert.equal(document.querySelector('.remove-instance-dialog'), null);
     assert.equal(f.calls.some(([command, args]) => command === 'window_action' && args.action === 'remove'), false);
     await click(button('更多功能')); await click(button('移动到分组'));
-    assert.equal(overlayActions().at(-1), 'menu-open');
+    assert.ok(document.querySelector('dialog[open]'));
     await click(textButton(document.querySelector('dialog[open]'), '取消'));
-    assert.equal(overlayActions().at(-1), 'menu-close');
+    assert.equal(document.querySelector('dialog[open]'), null);
   } finally { await f.close(); }
 });
 
@@ -377,32 +376,81 @@ test('面板偏好连续改动立即预览，只保存修改字段，失败恢�
   } finally { await f.close(); }
 });
 
-test('收起态悬停展开，轻点与拖动不展开，并保留键盘入口', async () => {
+function edgePointer(node, type, { pointerType = 'mouse', buttons = 0 } = {}) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0, buttons });
+  Object.defineProperties(event, { pointerType: { value: pointerType }, isPrimary: { value: true }, pointerId: { value: 1 } });
+  node.dispatchEvent(event);
+}
+
+test('收起态挂件单击优先，停留后展开，按住经过和快速移出不展开', async () => {
   const f = await fixture({ query: '?edge=1&style=rocket&side=left' });
   try {
     const toggle = button('展开组件面板');
     assert.equal(toggle.dataset.edgeSide, 'left');
     assert.equal(toggle.querySelector('[data-edge-style]').dataset.edgeStyle, 'rocket');
-    const pointer = type => {
-      const event = new MouseEvent(type, { bubbles: true, button: 0 });
-      Object.defineProperties(event, { pointerType: { value: 'mouse' }, isPrimary: { value: true }, pointerId: { value: 1 } });
-      toggle.dispatchEvent(event);
-    };
     const opens = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action.startsWith('edge-')).map(([, args]) => args.action);
-    const waitHover = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
-    await click(toggle);
-    await act(async () => { pointer('pointerover'); pointer('pointerout'); });
-    await waitHover();
+    await act(async () => {
+      edgePointer(toggle, 'pointerover', { buttons: 1 });
+      edgePointer(toggle, 'pointerout');
+      edgePointer(toggle, 'pointerover', { pointerType: 'touch' });
+      edgePointer(toggle, 'pointerout');
+      edgePointer(toggle, 'pointerover');
+      edgePointer(toggle, 'pointerout');
+      await new Promise(resolve => setTimeout(resolve, 220));
+    });
     assert.deepEqual(opens(), []);
-    await act(async () => { pointer('pointerover'); pointer('pointerdown'); toggle.click(); pointer('pointerout'); });
-    await waitHover();
-    assert.ok(f.calls.some(([command]) => command === 'drag_panel_edge'));
-    assert.deepEqual(opens(), []);
-    await act(async () => pointer('pointerover'));
-    await waitHover();
-    assert.deepEqual(opens(), ['edge-hover']);
-    await act(async () => toggle.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })));
-    assert.deepEqual(opens(), ['edge-hover', 'edge-keyboard']);
+    await act(async () => {
+      edgePointer(toggle, 'pointerover');
+      edgePointer(toggle, 'pointerdown', { buttons: 1 });
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
+      await new Promise(resolve => setTimeout(resolve, 220));
+    });
+    assert.deepEqual(opens(), ['edge-activate']);
+    await act(async () => {
+      edgePointer(toggle, 'pointerout');
+      edgePointer(toggle, 'pointerover');
+      assert.deepEqual(opens(), ['edge-activate']);
+      await new Promise(resolve => setTimeout(resolve, 220));
+    });
+    assert.deepEqual(opens(), ['edge-activate', 'edge-hover']);
+  } finally { await f.close(); }
+});
+
+test('管理页主键点击只把普通区域交给外部收起，面板按钮走显式切换', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  try {
+    const toggle = document.querySelector('[data-panel-toggle]');
+    await act(async () => {
+      edgePointer(toggle.querySelector('kbd'), 'pointerdown', { buttons: 1 });
+      toggle.click();
+      edgePointer(document.querySelector('.management-content h1'), 'pointerdown', { buttons: 1 });
+    });
+    assert.deepEqual(f.calls.filter(([command]) => command === 'window_action').map(([, args]) => args.action), ['toggle', 'outside-panel']);
+    const checkbox = [...document.querySelectorAll('input[type="checkbox"]')].find(input => input.labels[0]?.textContent === '启用面板快捷键');
+    await click(checkbox);
+    assert.equal(f.state.panelShortcutEnabled, false);
+    assert.equal(toggle.querySelector('kbd'), null);
+    await click(checkbox);
+    assert.equal(toggle.querySelector('kbd').textContent, 'Ctrl+Alt+Space');
+  } finally { await f.close(); }
+});
+
+test('展开后按住挂件仍发起移动，拖完不会误收起，轻点可收起', async () => {
+  const f = await fixture();
+  try {
+    const toggle = button('收起组件面板');
+    const collapseCalls = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action === 'collapse');
+    const pressAndRelease = () => act(async () => {
+      edgePointer(toggle, 'pointerdown', { buttons: 1 });
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
+    });
+    f.edgeDragged = true;
+    await pressAndRelease();
+    assert.equal(f.calls.filter(([command]) => command === 'drag_panel_edge').length, 1);
+    assert.equal(collapseCalls().length, 0);
+    f.edgeDragged = false;
+    await pressAndRelease();
+    assert.equal(collapseCalls().length, 1);
   } finally { await f.close(); }
 });
 
@@ -464,7 +512,7 @@ test('桌面外壳接收边线事件，清空及切换实例时移除高亮和�
   assert.equal(f.listeners.get('host:snap-edges').size, 0);
 });
 
-test('组件浮动菜单提供窄卡片的通用操作，按 Esc 返回入口并解除面板保护', async () => {
+test('组件浮动菜单提供窄卡片的通用操作，按 Esc 返回入口', async () => {
   const f = await fixture();
   try {
     const surface = document.querySelector('.widget-surface');
@@ -481,8 +529,33 @@ test('组件浮动菜单提供窄卡片的通用操作，按 Esc 返回入口并
     assert.equal(more.getAttribute('aria-expanded'), 'false');
     assert.equal(surface.querySelector('.surface-menu'), null);
     assert.equal(document.activeElement, more);
-    assert.deepEqual(f.calls.filter(([command, args]) => command === 'window_action' && args.action.startsWith('menu-')).map(([, args]) => args.action), ['menu-open', 'menu-close']);
   } finally { await f.close(); }
+});
+
+test('鼠标离开桌面或面板上的组件时收起更多菜单和工具栏', async () => {
+  for (const query of ['?instance=desktop', '?panel=1']) {
+    const f = await fixture({ query });
+    try {
+      const surface = document.querySelector('.widget-surface');
+      const more = surface.querySelector('[aria-label="更多功能"]');
+      const leave = (relatedTarget, pointerType = 'mouse') => act(async () => {
+        const event = new MouseEvent('pointerout', { bubbles: true, relatedTarget });
+        Object.defineProperty(event, 'pointerType', { value: pointerType });
+        more.dispatchEvent(event);
+      });
+      await act(async () => { more.focus(); more.click(); });
+      const menu = surface.querySelector('.surface-menu');
+      await leave(menu.querySelector('button'));
+      assert.equal(more.getAttribute('aria-expanded'), 'true');
+      await leave(document.body, 'touch');
+      assert.equal(more.getAttribute('aria-expanded'), 'true');
+      await leave(document.body);
+      assert.equal(more.getAttribute('aria-expanded'), 'false');
+      assert.equal(surface.querySelector('.surface-menu'), null);
+      assert.equal(surface.classList.contains('menu-open'), false);
+      assert.equal(surface.contains(document.activeElement), false);
+    } finally { await f.close(); }
+  }
 });
 
 async function canvasFixture() {
@@ -534,11 +607,10 @@ test('面板指针拖动实时吸附、脱离并保存最终吸附位置', async
     await f.pointer(handle, 'pointerup', 104, 49);
     assert.deepEqual(highlighted(document), []);
     assert.deepEqual(f.calls.find(([name]) => name === 'save_panel_layout')[1], { instance: 'a', layout: { x: 130, y: 120, width: 200, height: 180 } });
-    assert.equal(f.calls.at(-1)[1].action, 'interaction-end');
   } finally { await f.close(); }
 });
 
-test('面板缩放保存吸附尺寸；取消或保存失败恢复布局并释放交互保护', async () => {
+test('面板缩放保存吸附尺寸；取消或保存失败恢复布局', async () => {
   const f = await canvasFixture();
   try {
     const handle = f.article.querySelector('.resize-handle');
@@ -559,7 +631,6 @@ test('面板缩放保存吸附尺寸；取消或保存失败恢复布局并释�
     assert.equal(f.article.style.width, '200px'); assert.equal(f.article.style.height, '180px');
     assert.match(f.errors[0], /布局保存失败/);
     assert.deepEqual(highlighted(document), []);
-    assert.equal(f.calls.at(-1)[1].action, 'interaction-end');
     f.fail = false;
     await f.pointer(handle, 'pointerdown', 10, 10);
     await f.pointer(handle, 'pointermove', 104, 49);

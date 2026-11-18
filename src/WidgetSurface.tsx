@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
-import { invoke } from './host';
 import { listen } from '@tauri-apps/api/event';
 import type { SnapEdge } from './panel-layout';
 
@@ -25,14 +24,15 @@ export function WidgetSurface({ instance, inPanel = false, snapEdges, items, onD
     void stop.catch(error => { if (!disposed) onError(String(error)); });
     return () => { disposed = true; void stop.then(off => off()).catch(() => {}); };
   }, [inPanel, instance]);
-  useEffect(() => {
-    if (!inPanel || !menu) return;
-    void invoke('window_action', { action: 'menu-open', instance }).catch(e => onError(String(e)));
-    return () => { void invoke('window_action', { action: 'menu-close', instance }).catch(() => {}); };
-  }, [inPanel, menu, instance]);
   const button = (item: SurfaceAction) => <button className="icon-button" key={item.label} title={item.label} aria-label={item.label} disabled={item.disabled} onClick={() => { setMenu(false); item.action(); }}><Icon name={item.icon} /></button>;
   const quickActions = items.filter(item => !item.more);
-  return <section className={`widget-surface${menu ? ' menu-open' : ''}`} onKeyDown={event => {
+  return <section className={`widget-surface${menu ? ' menu-open' : ''}`} onPointerLeave={event => {
+    if (!menu || event.pointerType === 'touch') return;
+    setMenu(false);
+    const focused = event.currentTarget.ownerDocument.activeElement;
+    // 移除宿主控件的焦点，避免菜单收起后工具栏仍因键盘焦点保持可见。
+    if (focused instanceof HTMLElement && event.currentTarget.contains(focused) && focused.matches('.surface-chrome *, .surface-menu *, .resize-handle')) focused.blur();
+  }} onKeyDown={event => {
     if (event.key === 'Escape' && menu) {
       event.stopPropagation();
       setMenu(false);

@@ -1415,9 +1415,12 @@ mod tests {
         let desktop = create_instance(&store, "local.example.clock").unwrap();
         let ungrouped = create_instance_at(&store, "local.example.clock", "panel").unwrap();
         let groups = store
-            .change_panel_groups(crate::panel::GroupChange::Create {
-                name: "工作".into(),
-            })
+            .change_panel_groups(
+                crate::panel::GroupChange::Create {
+                    name: "工作".into(),
+                },
+                None,
+            )
             .unwrap();
         let added = create_instance_at(&store, "local.example.clock", "panel").unwrap();
         assert_eq!(store.panel_groups().unwrap().active, groups.active);
@@ -1459,9 +1462,12 @@ mod tests {
             serde_json::from_str(include_str!("../../examples/clock/manifest.json")).unwrap();
         import(&store, &fixture(&root, &manifest, None)).unwrap();
         store
-            .change_panel_groups(crate::panel::GroupChange::Create {
-                name: "工作".into(),
-            })
+            .change_panel_groups(
+                crate::panel::GroupChange::Create {
+                    name: "工作".into(),
+                },
+                None,
+            )
             .unwrap();
         let before = store.snapshot().unwrap();
         store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_panel_add BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试分组保存失败'); END;").unwrap();

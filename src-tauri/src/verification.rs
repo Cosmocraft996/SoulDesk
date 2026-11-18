@@ -337,6 +337,7 @@ async fn check(
         5,
     )
     .await?;
+    let previous_scene = windows::panel_scene();
     windows::hide_all(app)?;
     if app
         .webview_windows()
@@ -345,8 +346,7 @@ async fn check(
     {
         return Err("隐藏全部仍有可见窗口".into());
     }
-    let epoch = app.state::<Core>().visibility.lock().map_err(err)?.epoch;
-    windows::auto_collapse(app);
+    windows::dismiss_from_outside(app, previous_scene)?;
     tokio::time::sleep(Duration::from_secs(1)).await;
     if app
         .webview_windows()
@@ -355,7 +355,7 @@ async fn check(
     {
         return Err("旧收起回调意外恢复视图".into());
     }
-    report.record("隐藏全部含浮窗和入口且不意外唤出", json!({"epoch":epoch}))?;
+    report.record("隐藏全部含浮窗和入口且不意外唤出", json!(true))?;
     windows::toggle(app)?;
     if !app
         .get_webview_window(&format!("float-{a}"))
@@ -824,7 +824,7 @@ fn shortcut_conflict(app: &AppHandle) -> AppResult<Value> {
     let key = [0x7a, 0x79, 0x78].into_iter().find(|key| unsafe { RegisterHotKey(std::ptr::null_mut(), 0x5344, MOD_CONTROL | MOD_ALT | MOD_SHIFT, *key) } != 0).ok_or("无法建立隔离快捷键冲突条件")?;
     let _reservation = Reservation;
     let candidate = format!("Ctrl+Alt+Shift+F{}", key - 0x70 + 1);
-    let failure = crate::set_shortcut(app.clone(), candidate.clone())
+    let failure = crate::set_shortcut(app.clone(), Some(candidate.clone()), None)
         .err()
         .ok_or("已占用快捷键被错误接受")?;
     if !failure.contains("保留原键")

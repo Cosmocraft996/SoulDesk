@@ -54,9 +54,6 @@ export function WidgetFrame({ instance, probe = false, page, assistantShell = fa
       if (page) resource.searchParams.set('page', page);
       let handshake = 0;
       listener = async e => {
-        if (!probe && inPanel && e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:editing' && e.data?.protocol === 1) {
-          void invoke('window_action', { action: e.data.editing === true ? 'editing' : 'idle' }).catch(() => {}); return;
-        }
         if (e.source === frame.current?.contentWindow && e.origin === resource.origin && e.data?.type === 'souldesk:user-pointer' && e.data?.protocol === 1) {
           if (!probe && !new URLSearchParams(location.search).has('instance')) return;
           void invoke(probe ? 'desktop_widget_activate' : 'surface_activate').catch(cause => { if (!disposed) setError(String(cause)); });

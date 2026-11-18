@@ -1,3 +1,4 @@
+use crate::panel::{first_panel_slot, GroupChange, Groups, Layout, PlacementArea, WIDGET_GAP};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
@@ -38,6 +39,125 @@ pub(crate) fn save_panel_groups(db: &Connection, groups: &crate::panel::Groups) 
     db.execute("INSERT INTO app_settings VALUES('panel_groups',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         [serde_json::to_string(groups).map_err(err)?]).map_err(err)?;
     Ok(())
+}
+
+fn set_presentation(
+    db: &Connection,
+    id: &str,
+    location: &str,
+    visible: bool,
+    pinned: bool,
+) -> AppResult<()> {
+    if db
+        .execute(
+            "UPDATE widget_instances SET location=?1,visible=?2,pinned=?3 WHERE id=?4",
+            params![location, visible, pinned, id],
+        )
+        .map_err(err)?
+        != 1
+    {
+        return Err("实例不存在".into());
+    }
+    Ok(())
+}
+
+fn parse_panel_layout(raw: &str) -> AppResult<Layout> {
+    let layout: Layout = serde_json::from_str(raw).map_err(err)?;
+    layout.validate(1.0, 1.0)?;
+    Ok(layout)
+}
+
+fn write_panel_layout(db: &Connection, id: &str, layout: Layout) -> AppResult<()> {
+    db.execute("INSERT INTO app_settings VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![format!("panel_layout:{id}"), serde_json::to_string(&layout).map_err(err)?]).map_err(err)?;
+    Ok(())
+}
+
+pub(crate) struct PanelPlacement {
+    previous: Option<Layout>,
+    anchored: Vec<String>,
+}
+
+fn place_panel_instance(
+    db: &Connection,
+    id: &str,
+    groups: &Groups,
+    area: PlacementArea,
+) -> AppResult<PanelPlacement> {
+    let group = groups.membership.get(id);
+    let mut statement = db
+        .prepare(
+            "SELECT i.id,i.width,i.height,p.manifest,s.value FROM widget_instances i
+         JOIN widget_packages p ON p.id=i.package_id
+         LEFT JOIN app_settings s ON s.key='panel_layout:'||i.id
+         WHERE i.id=?1 OR (i.location='panel' AND i.visible=1) ORDER BY i.position,i.rowid",
+        )
+        .map_err(err)?;
+    let rows = statement
+        .query_map([id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<u32>>(1)?,
+                r.get::<_, Option<u32>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(err)?;
+
+    let mut moving = None;
+    let mut peers = Vec::new();
+    let mut defaults = Vec::new();
+    let mut next_y: f64 = 0.0;
+    let mut min_width: f64 = 0.0;
+    for row in rows {
+        let (peer, width, height, manifest, raw) = row.map_err(err)?;
+        if groups.membership.get(&peer) != group {
+            continue;
+        }
+        let manifest: crate::widgets::Manifest = serde_json::from_str(&manifest).map_err(err)?;
+        let min = manifest.min_size;
+        let saved = raw.as_deref().map(parse_panel_layout).transpose()?;
+        let mut layout = saved.unwrap_or(Layout {
+            x: 0.0,
+            y: next_y,
+            width: f64::from(width.unwrap_or(manifest.default_size.width)),
+            height: f64::from(height.unwrap_or(manifest.default_size.height)),
+        });
+        layout.width = layout.width.max(f64::from(min.width));
+        layout.height = layout.height.max(f64::from(min.height));
+        min_width = min_width.max(f64::from(min.width));
+        if peer == id {
+            moving = Some((layout, saved, min));
+            continue;
+        }
+        // 与前端按实例顺序推导旧布局。只固定会被新位置推下去的未保存组件。
+        if saved.is_none() && moving.is_some() {
+            defaults.push((peer, layout));
+        }
+        next_y = next_y.max(layout.y + layout.height + WIDGET_GAP);
+        peers.push((layout, min));
+    }
+
+    let (mut layout, previous, min) = moving.ok_or("组件或组件包不存在")?;
+    let available = area.canvas_width(min_width)?;
+    let mut occupied: Vec<_> = peers
+        .into_iter()
+        .map(|(layout, min)| layout.fitted(available, &min))
+        .collect();
+    let fitted = layout.fitted(available, &min);
+    (layout.x, layout.y) = first_panel_slot(fitted.width, fitted.height, available, &mut occupied)?;
+    layout.validate(f64::from(min.width), f64::from(min.height))?;
+    write_panel_layout(db, id, layout)?;
+    let mut anchored = Vec::new();
+    for (peer, fallback) in defaults
+        .into_iter()
+        .take_while(|(_, g)| g.y < layout.y + layout.height + WIDGET_GAP)
+    {
+        fallback.validate(1.0, 1.0)?;
+        write_panel_layout(db, &peer, fallback)?;
+        anchored.push(peer);
+    }
+    Ok(PanelPlacement { previous, anchored })
 }
 
 pub struct Store {
@@ -249,20 +369,52 @@ impl Store {
         if !["desktop", "panel"].contains(&location) {
             return Err("INVALID_ARGUMENT: 未知展示位置".into());
         }
-        if self
-            .db
-            .lock()
-            .map_err(err)?
-            .execute(
-                "UPDATE widget_instances SET location=?1,visible=?2,pinned=?3 WHERE id=?4",
-                params![location, visible, pinned, id],
+        let db = self.db.lock().map_err(err)?;
+        set_presentation(&db, id, location, visible, pinned)
+    }
+
+    pub(crate) fn embed_in_panel(
+        &self,
+        id: &str,
+        pinned: bool,
+        area: PlacementArea,
+    ) -> AppResult<PanelPlacement> {
+        let mut db = self.db.lock().map_err(err)?;
+        let tx = db.transaction().map_err(err)?;
+        let groups = panel_groups(&tx)?;
+        let placement = place_panel_instance(&tx, id, &groups, area)?;
+        set_presentation(&tx, id, "panel", true, pinned)?;
+        tx.commit().map_err(err)?;
+        Ok(placement)
+    }
+
+    pub(crate) fn rollback_panel_embed(
+        &self,
+        id: &str,
+        visible: bool,
+        pinned: bool,
+        placement: PanelPlacement,
+    ) -> AppResult<()> {
+        let mut db = self.db.lock().map_err(err)?;
+        let tx = db.transaction().map_err(err)?;
+        set_presentation(&tx, id, "desktop", visible, pinned)?;
+        if let Some(previous) = placement.previous {
+            write_panel_layout(&tx, id, previous)?;
+        } else {
+            tx.execute(
+                "DELETE FROM app_settings WHERE key=?1",
+                [format!("panel_layout:{id}")],
             )
-            .map_err(err)?
-            != 1
-        {
-            return Err("实例不存在".into());
+            .map_err(err)?;
         }
-        Ok(())
+        for peer in placement.anchored {
+            tx.execute(
+                "DELETE FROM app_settings WHERE key=?1",
+                [format!("panel_layout:{peer}")],
+            )
+            .map_err(err)?;
+        }
+        tx.commit().map_err(err)
     }
 
     pub fn save_preference(&self, key: &str, value: &str) -> AppResult<()> {
@@ -275,14 +427,17 @@ impl Store {
         panel_groups(&db)
     }
 
-    pub fn change_panel_groups(
+    pub(crate) fn change_panel_groups(
         &self,
-        change: crate::panel::GroupChange,
-    ) -> AppResult<crate::panel::Groups> {
-        let db = self.db.lock().map_err(err)?;
-        let mut groups = panel_groups(&db)?;
-        if let crate::panel::GroupChange::Move { instance, .. } = &change {
-            let location: Option<String> = db
+        change: GroupChange,
+        area: Option<PlacementArea>,
+    ) -> AppResult<Groups> {
+        let mut db = self.db.lock().map_err(err)?;
+        let tx = db.transaction().map_err(err)?;
+        let mut groups = panel_groups(&tx)?;
+        let mut relocating = None;
+        if let GroupChange::Move { instance, group } = &change {
+            let location: Option<String> = tx
                 .query_row(
                     "SELECT location FROM widget_instances WHERE id=?1",
                     [instance],
@@ -293,9 +448,16 @@ impl Store {
             if location.as_deref() != Some("panel") {
                 return Err("CONFLICT: 组件不存在或已移出面板，请刷新后重试".into());
             }
+            if groups.membership.get(instance) != group.as_ref() {
+                relocating = Some(instance.clone());
+            }
         }
         groups.change(change)?;
-        save_panel_groups(&db, &groups)?;
+        if let Some(instance) = relocating {
+            place_panel_instance(&tx, &instance, &groups, area.ok_or("缺少面板工作区")?)?;
+        }
+        save_panel_groups(&tx, &groups)?;
+        tx.commit().map_err(err)?;
         Ok(groups)
     }
 
@@ -308,8 +470,7 @@ impl Store {
         let mut layouts = serde_json::Map::new();
         for row in rows {
             let (id, raw) = row.map_err(err)?;
-            let layout: crate::panel::Layout = serde_json::from_str(&raw).map_err(err)?;
-            layout.validate(1.0, 1.0)?;
+            let layout = parse_panel_layout(&raw)?;
             layouts.insert(id, serde_json::to_value(layout).map_err(err)?);
         }
         Ok(Value::Object(layouts))
@@ -330,8 +491,7 @@ impl Store {
                 .as_f64()
                 .ok_or("组件最小尺寸无效")?,
         )?;
-        db.execute("INSERT INTO app_settings VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![format!("panel_layout:{id}"), serde_json::to_string(&layout).map_err(err)?]).map_err(err)?;
-        Ok(())
+        write_panel_layout(&db, id, layout)
     }
 
     pub fn save_window_layout(&self, label: &str, geometry: &Value) -> AppResult<()> {
@@ -381,9 +541,22 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn panel_test_area() -> PlacementArea {
+        PlacementArea {
+            work_area: crate::desktop_geometry::WorkArea {
+                left: 0,
+                top: 0,
+                width: 1600,
+                height: 900,
+                scale_factor: 1.0,
+            },
+            ratio: 0.5,
+            edge_width: 12.0,
+        }
+    }
+
     #[test]
-    fn panel_groups_keep_instances_layout_and_selection_across_restart_and_deletion() {
-        use crate::panel::GroupChange;
+    fn panel_groups_reposition_moved_instances_and_persist_selection_across_restart() {
         let root = std::env::temp_dir().join(format!("souldesk-groups-{}", uuid::Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         let package = crate::widgets::stage_bytes(
@@ -402,29 +575,41 @@ mod tests {
             crate::panel::Groups::default()
         );
         let groups = store
-            .change_panel_groups(GroupChange::Create {
-                name: "工作".into(),
-            })
+            .change_panel_groups(
+                GroupChange::Create {
+                    name: "工作".into(),
+                },
+                None,
+            )
             .unwrap();
         let group = groups.active.unwrap();
         let automatic = groups.groups[0].auto_color.clone();
         store
-            .change_panel_groups(GroupChange::Color {
-                group: Some(group.clone()),
-                color: Some("#123abc".into()),
-            })
+            .change_panel_groups(
+                GroupChange::Color {
+                    group: Some(group.clone()),
+                    color: Some("#123abc".into()),
+                },
+                None,
+            )
             .unwrap();
         store
-            .change_panel_groups(GroupChange::Color {
-                group: None,
-                color: Some("#fffefd".into()),
-            })
+            .change_panel_groups(
+                GroupChange::Color {
+                    group: None,
+                    color: Some("#fffefd".into()),
+                },
+                None,
+            )
             .unwrap();
+        let peer =
+            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
         let move_to_group = || GroupChange::Move {
             instance: id.clone(),
             group: Some(group.clone()),
         };
-        assert!(store.change_panel_groups(move_to_group()).is_err());
+        let area = Some(panel_test_area());
+        assert!(store.change_panel_groups(move_to_group(), area).is_err());
         store.presentation(&id, "panel", true, false).unwrap();
         let layout = crate::panel::Layout {
             x: 20.,
@@ -434,63 +619,102 @@ mod tests {
         };
         store.save_panel_layout(&id, layout).unwrap();
         let original = store.snapshot().unwrap()["instances"].clone();
-        store.change_panel_groups(move_to_group()).unwrap();
+        store
+            .change_panel_groups(GroupChange::Select { group: None }, None)
+            .unwrap();
+        let before = store.panel_groups().unwrap();
+        store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_move BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试分组移动失败'); END;").unwrap();
+        assert!(store.change_panel_groups(move_to_group(), area).is_err());
+        assert_eq!(store.panel_groups().unwrap(), before);
+        assert_eq!(store.panel_layouts().unwrap()[&id], json!(layout));
+        assert!(store.panel_layouts().unwrap().get(&peer).is_none());
+        store
+            .db
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER refuse_move")
+            .unwrap();
+        let moved = store.change_panel_groups(move_to_group(), area).unwrap();
+        assert_eq!(moved.active, None);
+        assert_eq!(
+            store.panel_layouts().unwrap()[&peer],
+            json!({"x":0.0,"y":0.0,"width":360.0,"height":240.0})
+        );
         assert!(store
-            .change_panel_groups(GroupChange::Move {
-                instance: "missing".into(),
-                group: None
-            })
+            .change_panel_groups(
+                GroupChange::Move {
+                    instance: "missing".into(),
+                    group: None
+                },
+                area
+            )
             .is_err());
         assert!(store
-            .change_panel_groups(GroupChange::Move {
-                instance: id.clone(),
-                group: Some("missing".into())
-            })
+            .change_panel_groups(
+                GroupChange::Move {
+                    instance: id.clone(),
+                    group: Some("missing".into())
+                },
+                area
+            )
             .is_err());
         assert_eq!(store.snapshot().unwrap()["instances"], original);
         drop(store);
         let store = Store::open(root).unwrap();
         let groups = store.panel_groups().unwrap();
-        assert_eq!(groups.active.as_ref(), Some(&group));
+        assert_eq!(groups.active, None);
         assert_eq!(groups.groups[0].auto_color, automatic);
         assert_eq!(groups.groups[0].color.as_deref(), Some("#123ABC"));
         assert_eq!(groups.ungrouped_color.as_deref(), Some("#FFFEFD"));
         assert_eq!(groups.membership.get(&id), Some(&group));
         assert_eq!(
             store.panel_layouts().unwrap()[&id],
-            serde_json::to_value(layout).unwrap()
+            json!(Layout {
+                x: 372.0,
+                y: 0.0,
+                ..layout
+            })
         );
         let sessions = crate::widgets::Sessions::default();
         store
-            .change_panel_groups(GroupChange::Select { group: None })
+            .change_panel_groups(GroupChange::Select { group: None }, None)
             .unwrap();
         assert!(
             crate::widgets::open_display_session(&store, &sessions, "panel", &id, None).is_err()
         );
         store
-            .change_panel_groups(GroupChange::Select {
-                group: Some(group.clone()),
-            })
+            .change_panel_groups(
+                GroupChange::Select {
+                    group: Some(group.clone()),
+                },
+                None,
+            )
             .unwrap();
         assert!(
             crate::widgets::open_display_session(&store, &sessions, "panel", &id, None).is_ok()
         );
         store
-            .change_panel_groups(GroupChange::Remove { id: group })
+            .change_panel_groups(GroupChange::Remove { id: group }, None)
             .unwrap();
         assert_eq!(store.snapshot().unwrap()["instances"], original);
         assert!(store.panel_groups().unwrap().contains(&id));
         let group = store
-            .change_panel_groups(GroupChange::Create {
-                name: "生活".into(),
-            })
+            .change_panel_groups(
+                GroupChange::Create {
+                    name: "生活".into(),
+                },
+                None,
+            )
             .unwrap()
             .active;
         store
-            .change_panel_groups(GroupChange::Move {
-                instance: id.clone(),
-                group,
-            })
+            .change_panel_groups(
+                GroupChange::Move {
+                    instance: id.clone(),
+                    group,
+                },
+                area,
+            )
             .unwrap();
         crate::widgets::remove_instance(&store, &sessions, &id).unwrap();
         assert!(store.panel_groups().unwrap().membership.is_empty());
@@ -502,17 +726,70 @@ mod tests {
             std::env::temp_dir().join(format!("souldesk-groups-save-{}", uuid::Uuid::new_v4()));
         let store = Store::open(root).unwrap();
         store
-            .change_panel_groups(crate::panel::GroupChange::Create {
-                name: "原有分组".into(),
-            })
+            .change_panel_groups(
+                crate::panel::GroupChange::Create {
+                    name: "原有分组".into(),
+                },
+                None,
+            )
             .unwrap();
         let before = store.panel_groups().unwrap();
         store.db.lock().unwrap().execute_batch("CREATE TEMP TRIGGER refuse_groups BEFORE INSERT ON app_settings WHEN NEW.key='panel_groups' BEGIN SELECT RAISE(ABORT,'测试保存失败'); END;").unwrap();
         assert!(store
-            .change_panel_groups(crate::panel::GroupChange::Select { group: None })
+            .change_panel_groups(GroupChange::Select { group: None }, None)
             .is_err());
         assert_eq!(store.panel_groups().unwrap(), before);
     }
+
+    #[test]
+    fn panel_embed_fills_top_gap_and_restores_previous_layout_on_rollback() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-panel-embed-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root).unwrap();
+        let package = crate::widgets::stage_bytes(
+            &store,
+            crate::presets::find("local.example.clock")
+                .unwrap()
+                .unwrap()
+                .archive()
+                .unwrap(),
+        )
+        .unwrap();
+        crate::widgets::activate(&store, &package).unwrap();
+        let id =
+            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        let old_layout = Layout {
+            x: 30.0,
+            y: 640.0,
+            width: 365.0,
+            height: 220.0,
+        };
+        store.save_panel_layout(&id, old_layout).unwrap();
+        store.presentation(&id, "desktop", false, true).unwrap();
+        let peer =
+            crate::widgets::create_instance_at(&store, "local.example.clock", "panel").unwrap();
+        let before = store.snapshot().unwrap()["instances"].clone();
+        let placement = store.embed_in_panel(&id, true, panel_test_area()).unwrap();
+        let layouts = store.panel_layouts().unwrap();
+        assert_eq!(
+            layouts[&id],
+            json!(Layout {
+                x: 372.0,
+                y: 0.0,
+                ..old_layout
+            })
+        );
+        assert_eq!(layouts[&peer]["y"], 0.0);
+
+        store
+            .rollback_panel_embed(&id, false, true, placement)
+            .unwrap();
+        assert_eq!(store.snapshot().unwrap()["instances"], before);
+        let layouts = store.panel_layouts().unwrap();
+        assert_eq!(layouts[&id], json!(old_layout));
+        assert!(layouts.get(&peer).is_none());
+    }
+
     #[test]
     fn panel_layout_survives_restart_without_changing_desktop_geometry() {
         let root = std::env::temp_dir().join(format!("souldesk-panel-{}", uuid::Uuid::new_v4()));
