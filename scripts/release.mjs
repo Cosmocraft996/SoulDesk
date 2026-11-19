@@ -1,10 +1,26 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const releaseRepository = 'Cosmocraft996/SoulDesk';
+const windowsPlatforms = ['windows-x86_64', 'windows-x86_64-nsis'];
+const installerDownloadUrl = (version, name) => `https://github.com/${releaseRepository}/releases/download/v${version}/${encodeURIComponent(name)}`;
+
+export function createUpdateManifest({ version, installerName, signature, notes, createdAt }) {
+  const entry = {
+    url: installerDownloadUrl(version, installerName),
+    signature: signature.toString('utf8').trim(),
+  };
+  return {
+    version,
+    notes: notes ?? '',
+    pub_date: new Date(createdAt).toISOString(),
+    platforms: Object.fromEntries(windowsPlatforms.map(platform => [platform, entry])),
+  };
+}
+
 export function verifyRelease(packageVersion, cargoVersion, config, ref = '') {
   if (!/^\d+\.\d+\.\d+$/.test(packageVersion) || packageVersion !== cargoVersion || packageVersion !== config.version) throw new Error('主程序三处版本必须一致，且为正式语义版本');
   if (ref.startsWith('refs/tags/') && ref !== `refs/tags/v${packageVersion}`) throw new Error('版本标签与源码版本不一致，已阻止错误发布');
@@ -28,10 +44,14 @@ export function verifySignedArtifact(payload, encodedPublicKey, encodedSignature
   return createHash('sha256').update(payload).digest('hex');
 }
 
-export function verifyReleaseDraft(draft, { version, installerName, installerDigest, signature, manifestBytes }) {
+function assertReleaseDraft(draft, version) {
   if (draft?.tag_name !== `v${version}` || draft.draft !== true || draft.prerelease !== false) {
     throw new Error('发行必须是本版本的正式版草稿');
   }
+}
+
+export function verifyReleaseDraft(draft, { version, installerName, installerDigest, signature, manifestBytes }) {
+  assertReleaseDraft(draft, version);
 
   const expectedDigests = {
     [installerName]: installerDigest,
@@ -46,8 +66,10 @@ export function verifyReleaseDraft(draft, { version, installerName, installerDig
   }
 
   const installer = draft.assets.find(asset => asset.name === installerName);
-  if (!Number.isSafeInteger(installer.id) || installer.id < 1) throw new Error('草稿安装包附件编号无效');
-  const downloadUrl = `https://api.github.com/repos/${releaseRepository}/releases/assets/${installer.id}`;
+  const downloadUrl = installerDownloadUrl(version, installerName);
+  // GitHub 可能为草稿返回临时路径，发布后的下载地址使用正式标签。
+  const draftDownloadUrl = installer.browser_download_url?.replace(/\/download\/untagged-[^/]+\//, `/download/v${version}/`);
+  if (draftDownloadUrl !== downloadUrl) throw new Error('草稿安装包的公开下载地址不匹配');
   const manifest = JSON.parse(manifestBytes.toString('utf8'));
   const publishedAt = Date.parse(manifest?.pub_date);
   if (manifest?.version !== version || typeof manifest.notes !== 'string' ||
@@ -55,7 +77,7 @@ export function verifyReleaseDraft(draft, { version, installerName, installerDig
     throw new Error('更新清单的版本、说明或日期无效');
   }
   const expectedSignature = signature.toString('utf8').trim();
-  for (const platform of ['windows-x86_64', 'windows-x86_64-nsis']) {
+  for (const platform of windowsPlatforms) {
     const entry = manifest.platforms?.[platform];
     if (entry?.url !== downloadUrl || typeof entry.signature !== 'string' || entry.signature.trim() !== expectedSignature) {
       throw new Error(`更新清单的下载地址或签名不匹配：${platform}`);
@@ -83,13 +105,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (process.env.GITHUB_REPOSITORY !== releaseRepository || !Number.isSafeInteger(releaseId) || releaseId < 1) {
         throw new Error('发行仓库或草稿编号无效');
       }
-      // 打包动作将同一份清单写到工作区并上传。用 GitHub 返回的附件摘要核验实际上传内容。
-      const manifestBytes = readFileSync(new URL('latest.json', root));
-      const draft = JSON.parse(execFileSync('gh', ['api', `repos/${releaseRepository}/releases/${releaseId}`], {
+      const readDraft = () => JSON.parse(execFileSync('gh', ['api', `repos/${releaseRepository}/releases/${releaseId}`], {
         encoding: 'utf8',
         timeout: 30_000,
       }));
+      let draft = readDraft();
       if (draft.id !== releaseId) throw new Error('发行草稿编号不匹配');
+      assertReleaseDraft(draft, pkg.version);
+      const manifestPath = new URL('latest.json', root);
+      if (process.argv.includes('--upload-manifest')) {
+        const manifest = createUpdateManifest({ version: pkg.version, installerName: files[0], signature, notes: draft.body, createdAt: draft.created_at });
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+        if (!draft.assets.some(asset => asset.name === 'latest.json')) {
+          execFileSync('gh', ['release', 'upload', draft.tag_name, 'latest.json', '--repo', releaseRepository], { timeout: 30_000 });
+          draft = readDraft();
+          if (draft.id !== releaseId) throw new Error('发行草稿编号不匹配');
+        }
+      }
+      const manifestBytes = readFileSync(manifestPath);
       verifyReleaseDraft(draft, { version: pkg.version, installerName: files[0], installerDigest: digest, signature, manifestBytes });
       console.log('草稿的安装包、签名和更新清单均已核验');
     }

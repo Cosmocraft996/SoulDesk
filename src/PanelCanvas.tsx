@@ -126,7 +126,7 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
     }
   };
   const values = Object.values(layouts);
-  const height = Math.max(180, ...values.map(g => g.y + g.height + 12)) + viewportHeight * 0.3;
+  const height = Math.max(180, ...values.map(g => g.y + g.height + 12)) + viewportHeight * 0.5;
   const width = Math.max(available, ...values.map(g => g.x + g.width));
   return <div ref={viewport} className={`panel-scroll${active ? ' manipulating' : ''}`} onScroll={event => {
     const prev = lastScroll.current;

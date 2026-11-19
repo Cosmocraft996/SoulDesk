@@ -596,7 +596,7 @@ async function canvasFixture() {
   return f;
 }
 
-test('面板在最靠下的组件之后额外留出滚动区可视高度的30%', async t => {
+test('面板在最靠下的组件之后额外留出滚动区可视高度的50%', async t => {
   let viewportHeight = 400;
   let resize;
   const originalObserver = globalThis.ResizeObserver;
@@ -611,10 +611,10 @@ test('面板在最靠下的组件之后额外留出滚动区可视高度的30%',
     const canvas = document.querySelector('.panel-canvas');
     const last = canvas.querySelectorAll('.panel-widget')[1];
     const bottom = parseFloat(last.style.top) + parseFloat(last.style.height);
-    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 120);
+    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 200);
     viewportHeight = 600;
     await act(async () => resize());
-    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 180);
+    assert.equal(parseFloat(canvas.style.height) - bottom, 12 + 300);
     assert.equal(parseFloat(last.style.top) + parseFloat(last.style.height), bottom);
   } finally { await f.close(); }
 });
@@ -705,18 +705,26 @@ test('新建分组先等待保存，失败保留草稿与当前组，成功后�
   } finally { await f.close(); }
 });
 
-function groupStrip(width = 280) {
+function groupStrip(width = 280, tabWidths = [76, 76, 76]) {
   const strip = document.querySelector('.panel-group-tabs');
   const rect = (left, width) => ({ left, right: left + width, width, top: 0, bottom: 36 });
   strip.getBoundingClientRect = () => rect(0, width);
+  strip.style.columnGap = '4px';
   let scroll = 0;
   Object.defineProperty(strip, 'scrollLeft', {
     get: () => scroll,
-    set: value => { scroll = Math.max(0, Math.min(value, strip.children.length * 80 - width)); },
+    set: value => { scroll = Math.max(0, Math.min(value, tabWidths.reduce((sum, item) => sum + item + 4, 0) - width)); },
   });
-  for (const node of strip.children) {
+  for (const [index, node] of [...strip.children].entries()) {
     node.setPointerCapture = () => {};
-    node.getBoundingClientRect = () => rect([...strip.children].indexOf(node) * 80 - scroll, 76);
+    Object.defineProperties(node, {
+      offsetWidth: { value: tabWidths[index] },
+      offsetLeft: { get: () => [...strip.children].slice(0, [...strip.children].indexOf(node)).reduce((left, tab) => left + tab.offsetWidth + 4, 0) },
+    });
+    node.getBoundingClientRect = () => {
+      const shift = parseFloat(node.style.transform.slice('translateX('.length)) || 0;
+      return rect(node.offsetLeft - scroll + shift, node.offsetWidth);
+    };
   }
   return strip;
 }
@@ -726,16 +734,25 @@ const groupPointer = (node, type, x, y = 15) => act(async () => node.dispatchEve
 })));
 const pointerClick = node => act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
 const tabOrder = () => [...document.querySelector('.panel-group-tabs').children].map(node => node.title);
+const floatingTab = () => document.querySelector('.panel-group-floating');
 
-test('拖动顶部标签先预览插入位置，保存失败保留顺序，成功后保留当前组与组件', async () => {
+test('分组标签浮起跟随指针，邻居滑开让位，保存失败退回原顺序，成功后保留当前组与组件', async () => {
   const f = await fixture({ active: 'work' });
   try {
-    groupStrip();
+    groupStrip(280, [76, 102, 58]);
     const original = ['未分组', '工作', '生活'];
     const life = tab('生活');
-    const drag = async () => { await groupPointer(life, 'pointerdown', 180); await groupPointer(life, 'pointermove', 95); };
+    const work = tab('工作');
+    const drag = async () => { await groupPointer(life, 'pointerdown', 195); await groupPointer(life, 'pointermove', 95, 23); };
     await drag();
-    assert.equal(tab('工作').dataset.dropSide, 'before');
+    assert.equal(floatingTab().style.transform, 'translate3d(86px, 8px, 0)');
+    assert.equal(floatingTab().style.width, '58px');
+    assert.equal(floatingTab().getAttribute('aria-hidden'), 'true');
+    assert.equal(work.style.transform, 'translateX(62px)');
+    assert.equal(tab('未分组').style.transform, '');
+    await groupPointer(life, 'pointermove', 130);
+    assert.equal(work.style.transform, '', '返回时以相邻标签原位置判断，避免让位后落点来回跳动');
+    await groupPointer(life, 'pointermove', 95);
     assert.deepEqual(tabOrder(), original);
     assert.equal(f.calls.some(([name]) => name === 'manage_panel_group'), false);
     let release;
@@ -744,17 +761,23 @@ test('拖动顶部标签先预览插入位置，保存失败保留顺序，成�
     await groupPointer(life, 'pointerup', 95);
     assert.equal(life.disabled, true);
     assert.deepEqual(tabOrder(), original);
+    assert.equal(floatingTab().style.transform, 'translate3d(80px, 0px, 0)');
+    assert.equal(floatingTab().dataset.settling, 'true');
+    assert.equal(work.style.transform, 'translateX(62px)');
     await act(async () => release());
     assert.match(document.querySelector('.panel-notice').textContent, /测试保存失败/);
     assert.deepEqual(tabOrder(), original);
     assert.equal(life.dataset.dragging, undefined);
-    assert.equal(tab('工作').dataset.dropSide, undefined);
+    assert.equal(floatingTab(), null);
+    assert.equal(work.style.transform, '');
 
     f.fail = false;
     await drag();
     await groupPointer(life, 'pointerup', 95);
     await pointerClick(life);
     assert.deepEqual(tabOrder(), ['未分组', '生活', '工作']);
+    assert.equal(floatingTab(), null);
+    assert.equal(work.style.transform, '');
     assert.deepEqual(f.calls.filter(([name]) => name === 'manage_panel_group').map(([, args]) => args.change), [
       { action: 'reorder', ids: ['life', 'work'] }, { action: 'reorder', ids: ['life', 'work'] },
     ]);
@@ -786,6 +809,8 @@ test('分组栏支持轻点切换，固定标签、原位松手和取消拖动�
       await groupPointer(life, cancel === 'pointercancel' ? cancel : 'pointerup', 95, cancel === 'outside' ? 50 : 15);
       await pointerClick(life);
       assert.equal(life.dataset.dragging, undefined);
+      assert.equal(floatingTab(), null);
+      assert.equal(work.style.transform, '');
       assert.equal(tab('未分组').getAttribute('aria-selected'), 'true');
     }
     await groupPointer(life, 'pointerdown', 180);
@@ -815,7 +840,8 @@ test('拖动到分组栏边缘时可以把标签排到滚动区外的分组之�
       await act(async () => draw());
     }
     assert.equal(strip.scrollLeft, 80);
-    assert.equal(tab('生活').dataset.dropSide, 'after');
+    assert.equal(tab('生活').style.transform, 'translateX(-80px)');
+    assert.equal(floatingTab().style.transform, 'translate3d(122px, 0px, 0)');
     await groupPointer(work, 'pointerup', 154);
     assert.deepEqual(tabOrder(), ['未分组', '生活', '工作']);
     assert.equal(frames.size, 0);

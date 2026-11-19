@@ -3,12 +3,13 @@ import type { SVGProps } from 'react';
 // 自绘线条图标，不引入组件库；可操作按钮在使用处提供中文名称。
 const paths = {
   plus: 'M12 5v14M5 12h14',
+  grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   groups: 'M3 6h6l2 2h10v12H3V6ZM4 3h7l2 2h7',
   moveToGroup: 'M3 6h6l2 2h10v12H3V6ZM7 14h10m-3-3 3 3-3 3',
   trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
   up: 'm6 15 6-6 6 6',
   down: 'm6 9 6 6 6-6',
-  settings: 'M9 3h6l1 4 4 2v6l-4 2-1 4H9l-1-4-4-2V9l4-2 1-4ZM9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0',
+  sliders: 'M3 6h18M8 3v6M3 12h18M16 9v6M3 18h18M10 15v6',
   close: 'm6 6 12 12M18 6 6 18',
   collapse: 'm9 5 7 7-7 7',
   grip: 'M8 5h.01M16 5h.01M8 12h.01M16 12h.01M8 19h.01M16 19h.01',

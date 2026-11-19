@@ -181,8 +181,8 @@ export function App() {
     <header className="panel-topbar">
       {data && <PanelGroups state={groups} instances={data.instances} busy={busy} message={message.startsWith('操作失败：') ? message : ''} onChange={changeGroup} />}
       <nav className="panel-tools" aria-label="面板操作">
-        <button className="icon-button" title="添加与管理组件" aria-label="添加与管理组件" onClick={() => void run(() => action('show'))}><Icon name="plus" /></button>
-        <button className="icon-button" title="面板设置" aria-label="面板设置" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="settings" /></button>
+        <button className="icon-button" title="管理组件" aria-label="管理组件" onClick={() => void run(() => action('show'))}><Icon name="grid" /></button>
+        <button className="icon-button" title="面板设置" aria-label="面板设置" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="sliders" /></button>
         <button className="icon-button" title={panelLocked ? '解锁面板' : '锁定面板'} aria-label="锁定面板" aria-pressed={panelLocked} disabled={busy || !data} onClick={() => void run(() => action(panelLocked ? 'unlock-panel' : 'lock-panel'))}>
           <Icon name={panelLocked ? 'pin' : 'pinOff'} fill={panelLocked ? 'currentColor' : 'none'} />
         </button>

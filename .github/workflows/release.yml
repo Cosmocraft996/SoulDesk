@@ -62,16 +62,15 @@ jobs:
           prerelease: false
           generateReleaseNotes: false
           uploadPlainBinary: false
-          uploadUpdaterJson: true
+          uploadUpdaterJson: false
           uploadUpdaterSignatures: true
-          updaterJsonPreferNsis: true
           tauriScript: node scripts/desktop.mjs
           args: --ci --bundles nsis -- --locked
-      - name: 核验草稿的安装包、签名和更新清单
+      - name: 上传公开下载清单并核验草稿附件
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ steps.bundle.outputs.releaseId }}
-        run: node scripts/release.mjs --verify-draft
+        run: node scripts/release.mjs --verify-draft --upload-manifest
       - name: 发布为最新正式版
         if: github.event_name == 'push' && github.ref_type == 'tag'
         shell: pwsh

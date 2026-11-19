@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { verifyRelease, verifyReleaseDraft, verifySignedArtifact, releaseRepository } from './release.mjs';
+import { createUpdateManifest, verifyRelease, verifyReleaseDraft, verifySignedArtifact, releaseRepository } from './release.mjs';
 const config = { version: '0.5.0', identifier: 'local.souldesk.desktop', bundle: { createUpdaterArtifacts: true, targets: ['nsis'] }, plugins: { updater: { pubkey: 'test-public-key', requireSignedVersion: true, endpoints: [`https://github.com/${releaseRepository}/releases/latest/download/latest.json`] } } };
 test('打包拒绝版本错配、错误标签、其他仓库更新源和未签名构建', () => {
   assert.equal(verifyRelease('0.5.0', '0.5.0', config, 'refs/tags/v0.5.0'), 'v0.5.0');
@@ -26,7 +26,8 @@ test('官方命令行生成的真实签名可验证，篡改安装内容、签�
 });
 
 const installerName = 'SoulDesk_0.5.0_x64-setup.exe';
-const installerUrl = `https://api.github.com/repos/${releaseRepository}/releases/assets/15`;
+const installerUrl = `https://github.com/${releaseRepository}/releases/download/v0.5.0/${installerName}`;
+const installerApiUrl = `https://api.github.com/repos/${releaseRepository}/releases/assets/15`;
 const signature = readFileSync(new URL('../src-tauri/tests/fixtures/update-payload.txt.sig', import.meta.url));
 const platform = { url: installerUrl, signature: signature.toString('utf8') };
 const validManifest = {
@@ -41,7 +42,7 @@ function draftFixture(manifest = validManifest) {
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
   const installerDigest = hash(readFileSync(new URL('../src-tauri/tests/fixtures/update-payload.txt', import.meta.url)));
   const assets = [
-    { id: 15, name: installerName, digest: `sha256:${installerDigest}` },
+    { id: 15, name: installerName, digest: `sha256:${installerDigest}`, browser_download_url: installerUrl },
     { id: 16, name: `${installerName}.sig`, digest: `sha256:${hash(signature)}` },
     { id: 17, name: 'latest.json', digest: `sha256:${hash(manifestBytes)}` },
   ].map(asset => ({ ...asset, state: 'uploaded' }));
@@ -73,10 +74,22 @@ test('更新清单须描述本版本并将两个 Windows x64 更新项绑定到�
     assert.throws(() => verifyReleaseDraft(draft, build), /更新清单的版本、说明或日期无效/);
   }
   for (const key of Object.keys(validManifest.platforms)) {
-    for (const entry of [undefined, { ...platform, url: installerUrl + '0' }, { ...platform, signature: 'wrong' }]) {
+    for (const entry of [undefined, { ...platform, url: installerApiUrl }, { ...platform, url: installerUrl + '0' }, { ...platform, signature: 'wrong' }]) {
       const platforms = { ...validManifest.platforms, [key]: entry };
       const { draft, build } = draftFixture({ ...validManifest, platforms });
       assert.throws(() => verifyReleaseDraft(draft, build), /更新清单的下载地址或签名不匹配/);
     }
   }
+});
+
+test('生成的更新清单使用公开下载地址并保留发行说明和签名', () => {
+  const manifest = createUpdateManifest({ version: '0.5.0', installerName, signature,
+    notes: '测试发行说明', createdAt: '2026-11-19T00:00:00Z' });
+  assert.deepEqual(manifest, validManifest);
+  const { draft, build } = draftFixture(manifest);
+  verifyReleaseDraft(draft, build);
+  draft.assets[0].browser_download_url = installerUrl.replace('/v0.5.0/', '/untagged-a1b2c3/');
+  verifyReleaseDraft(draft, build);
+  draft.assets[0].browser_download_url = installerApiUrl;
+  assert.throws(() => verifyReleaseDraft(draft, build), /公开下载地址不匹配/);
 });
