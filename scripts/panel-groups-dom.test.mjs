@@ -968,6 +968,50 @@ test('从组件工具栏移动分组，失败保留选择，成功后可在目�
   } finally { await f.close(); }
 });
 
+test('组件库离线分类，官方广场和组件库均能组合分类与搜索', async () => {
+  const f = await fixture({ query: '?management=1' });
+  const clock = { ...f.state.packages[0], id: 'local.souldesk.widgetjs.clock', name: '时钟' };
+  const imported = { ...clock, id: 'local.fixture.note', name: '本地便签' };
+  f.state.packages = [clock, imported];
+  const entries = [
+    { id: clock.id, name: clock.name, category: '桌面组件', summary: '显示当地时间', versions: [] },
+    { id: imported.id, name: imported.name, category: '效率', summary: '记录临时内容', versions: [] },
+  ];
+  const base = f.invoke;
+  f.invoke = async (command, args) => command === 'official_catalog'
+    ? { online: !args?.cachedOnly, catalog: { revision: 6, widgets: entries } }
+    : base(command, args);
+  const select = label => click(textButton(button('组件分类'), label));
+  const names = () => [...document.querySelectorAll('.library-grid h2')].map(node => node.textContent);
+  const navigate = label => click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith(label)));
+  try {
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
+    assert.deepEqual(f.calls.filter(([command]) => command === 'official_catalog'),
+      [['official_catalog', { cachedOnly: true }]]);
+    await select('时间');
+    assert.deepEqual(names(), ['时钟']);
+    await input(button('搜索组件'), '便签');
+    assert.deepEqual(names(), []);
+    await select('其他');
+    assert.deepEqual(names(), ['本地便签']);
+
+    await navigate('官方广场');
+    await select('时间');
+    await input(button('搜索组件'), '当地');
+    assert.deepEqual(names(), ['时钟']);
+    await select('效率');
+    assert.deepEqual(names(), []);
+    await click(textButton(document, '清除筛选'));
+    assert.deepEqual(names(), ['时钟', '本地便签']);
+
+    await navigate('组件库');
+    assert.equal(textButton(button('组件分类'), '其他'), undefined);
+    await select('效率');
+    await input(button('搜索组件'), '临时内容');
+    assert.deepEqual(names(), ['本地便签']);
+  } finally { await f.close(); }
+});
+
 test('官方广场选兼容版本，更新确认显示新增权限，试加载失败保留原登记', async () => {
   const f = await fixture({ query: '?management=1' });
   const id = 'official.souldesk.test';

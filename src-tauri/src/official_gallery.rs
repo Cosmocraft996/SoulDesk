@@ -308,8 +308,16 @@ pub async fn official_catalog(
     window: WebviewWindow,
     core: State<'_, Core>,
     state: State<'_, Gallery>,
+    cached_only: Option<bool>,
 ) -> AppResult<GalleryResponse> {
     management(&window)?;
+    if cached_only.unwrap_or(false) {
+        return Ok(GalleryResponse {
+            catalog: cached(&core.store).map(|(_, catalog)| catalog),
+            online: false,
+            error: None,
+        });
+    }
     let _guard = state.0.lock().await;
     let previous = cached(&core.store);
     let fetched = match network_config(&core.store) {

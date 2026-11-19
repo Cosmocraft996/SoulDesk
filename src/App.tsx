@@ -3,7 +3,8 @@ import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import appPackage from '../package.json' with { type: 'json' };
 import { invoke } from './host';
-import { OfficialGallery } from './OfficialGallery';
+import { OfficialGallery, type CatalogResponse } from './OfficialGallery';
+import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
 import { WidgetFrame } from './WidgetFrame';
 import { NetworkSettings } from './NetworkSettings';
 import { PanelCanvas, type PanelScroll } from './PanelCanvas';
@@ -59,6 +60,17 @@ export function App() {
   const [movingGroup, setMovingGroup] = useState<string>();
   const [focusedPackage, setFocusedPackage] = useState<string>();
   const [tab, setTab] = useState<'gallery' | 'library' | 'instances' | 'checks'>(query.get('tab') === 'checks' ? 'checks' : 'library');
+  const [libraryCatalog, setLibraryCatalog] = useState<CatalogResponse['catalog']>(null);
+  const libraryOpen = tab === 'library' && !panel && !edge && !desktop && !detail && !trial;
+  useEffect(() => {
+    if (!libraryOpen || !isTauri()) return;
+    let current = true;
+    void invoke<CatalogResponse>('official_catalog', { cachedOnly: true }).then(
+      result => { if (current) setLibraryCatalog(result?.catalog ?? null); },
+      () => { if (current) setLibraryCatalog(null); },
+    );
+    return () => { current = false; };
+  }, [libraryOpen]);
   const [shortcut, setShortcut] = useState<string>();
   const [menu, setMenu] = useState(false);
   const [resizingPanel, setResizingPanel] = useState(false);
@@ -238,10 +250,29 @@ export function App() {
         onAdd={packageId => void run(() => invoke('create_instance', { packageId }), '已添加到侧边面板')}
         onUninstall={unregister} onManage={managePackageInstances} onRefresh={refresh} />
       : tab === 'library' ? <><div className="heading"><div><small>添加到面板，按需摆到桌面</small><h1>从一个组件开始</h1><p>添加后出现在侧边面板当前分组，可从组件标题栏放到桌面。同一种组件可添加多份，各自保存配置。</p></div><button disabled={busy || !data} onClick={() => void run(() => invoke('import_package'), '导入操作结束；已登记的兼容版本可在已添加中恢复。')}>导入本地 ZIP</button></div>
-      <div className="library-grid">{data?.packages.map(p => <article className="package" key={p.id}><div className="package-symbol" data-kind={p.id}>▦</div><span className="badge">本地组件 · {p.version}</span><h2>{p.name}</h2><p>独立本地组件，通过受限宿主接口运行。</p><div className="package-actions"><button className="primary" disabled={busy || data.hiddenAll} onClick={() => void run(() => invoke('create_instance', { packageId: p.id }), '已添加到侧边面板')}>＋ 添加到面板</button><small>{data.instances.filter(i => i.packageId === p.id).length} 个实例</small></div><div className="gallery-actions actions">
-        {data.instances.some(i => i.packageId === p.id) ? <button disabled={busy} onClick={() => managePackageInstances(p.id)}>管理实例</button>
-          : <button disabled={busy} onClick={() => unregister(p.id)}>卸载</button>}
-      </div></article>)}</div>
+      {data && <WidgetBrowser items={data.packages.map(pkg => {
+        const official = libraryCatalog?.widgets.find(entry => entry.id === pkg.id);
+        return { ...pkg, category: widgetCategory(pkg.id, official?.category), summary: official?.summary };
+      })}>
+        {pkg => {
+          const count = data.instances.filter(instance => instance.packageId === pkg.id).length;
+          return <article className="package" key={pkg.id}>
+            <div className="package-symbol" data-kind={pkg.id}>▦</div>
+            <span className="badge">{pkg.category} · v{pkg.version}</span>
+            <h2>{pkg.name}</h2>
+            {pkg.summary && <p>{pkg.summary}</p>}
+            <div className="package-actions">
+              <button className="primary" disabled={busy || data.hiddenAll}
+                onClick={() => void run(() => invoke('create_instance', { packageId: pkg.id }), '已添加到侧边面板')}>＋ 添加到面板</button>
+              <small>{count} 个实例</small>
+            </div>
+            <div className="gallery-actions actions">
+              {count ? <button disabled={busy} onClick={() => managePackageInstances(pkg.id)}>管理实例</button>
+                : <button disabled={busy} onClick={() => unregister(pkg.id)}>卸载</button>}
+            </div>
+          </article>;
+        }}
+      </WidgetBrowser>}
       {data?.packages.length === 0 && <div className="empty"><h2>还没有组件</h2><p>从官方广场安装组件，或导入本地 ZIP。</p><button onClick={() => setTab('gallery')}>浏览官方广场</button></div>}
       <p className="muted">本地组件按你信任的代码运行，组件包可独立导入。部分联网组件需自行配置服务或登录。</p></> : tab === 'instances' ? <><div className="heading"><div><small>桌面与面板，互不牵连</small><h1>已添加的组件</h1><p>眼睛按钮仅隐藏视图，垃圾桶按钮需确认后删除实例及其配置与自选，价格警报独立保留。</p></div></div>
       {focusedPackage && <p className="notice">正在管理 {data?.packages.find(p => p.id === focusedPackage)?.name ?? '组件'} 的实例。

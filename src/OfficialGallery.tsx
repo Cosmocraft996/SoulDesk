@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import appPackage from '../package.json' with { type: 'json' };
 import { invoke } from './host';
+import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
 
 interface Release {
   version: string;
@@ -19,7 +20,7 @@ interface Entry {
   versions: Release[];
 }
 
-interface Response {
+export interface CatalogResponse {
   catalog: { revision: number; widgets: Entry[] } | null;
   online: boolean;
   error: string | null;
@@ -110,7 +111,7 @@ function ConfirmRelease({ target, onClose, onInstalled }: {
 }
 
 export function OfficialGallery({ packages, instances, unavailable, canAdd, onAdd, onUninstall, onManage, onRefresh }: Props) {
-  const [result, setResult] = useState<Response>();
+  const [result, setResult] = useState<CatalogResponse>();
   const [loading, setLoading] = useState(true);
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const request = useRef(0);
@@ -118,7 +119,7 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
     const current = ++request.current;
     setLoading(true);
     try {
-      const response = await invoke<Response>('official_catalog');
+      const response = await invoke<CatalogResponse>('official_catalog');
       if (request.current === current) setResult(response);
     } catch (error) {
       if (request.current === current) {
@@ -133,6 +134,10 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
     return () => { request.current++; };
   }, [refresh]);
 
+  const entries = result?.catalog?.widgets.map(entry => ({
+    ...entry, category: widgetCategory(entry.id, entry.category),
+  })) ?? [];
+
   return <>
     <div className="heading"><div><h1>官方广场</h1><p>浏览、安装和更新 SoulDesk 官方组件。</p></div>
       <button disabled={loading} onClick={() => void refresh()}>{loading ? '正在刷新…' : '刷新目录'}</button>
@@ -143,8 +148,8 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
     </p>}
     {result?.catalog && <p className="gallery-revision muted">目录修订号 {result.catalog.revision}</p>}
     {result?.catalog?.widgets.length === 0 && <p className="empty">暂无已收录的组件</p>}
-    <div className="library-grid">
-      {result?.catalog?.widgets.map(entry => {
+    <WidgetBrowser items={entries}>
+      {entry => {
         const local = packages.find(item => item.id === entry.id);
         const count = instances.filter(item => item.packageId === entry.id).length;
         const published = entry.versions.filter(item => item.status === 'published')
@@ -155,7 +160,7 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
         const comparison = local && selected ? compareVersion(local.version, selected.version) : -1;
         const same = comparison === 0 && local?.digest === selected?.sha256;
         const conflict = comparison === 0 && !same;
-        const online = result.online && !loading;
+        const online = result?.online && !loading;
         return <article className="package gallery-package" key={entry.id}>
           <span className="badge">{entry.category}</span><h2>{entry.name}</h2>
           <p>{entry.summary}</p>
@@ -173,8 +178,8 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
               : <button disabled={unavailable} onClick={() => onUninstall(entry.id)}>卸载</button>)}
           </div>
         </article>;
-      })}
-    </div>
+      }}
+    </WidgetBrowser>
     {confirmation && <ConfirmRelease target={confirmation} onClose={() => setConfirmation(undefined)} onInstalled={onRefresh} />}
   </>;
 }

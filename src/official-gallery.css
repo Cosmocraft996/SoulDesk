@@ -4,3 +4,31 @@
 .gallery-actions { margin-top: 14px; }
 .gallery-actions > button { font-size: 12px; }
 .gallery-release-notes { white-space: pre-wrap; }
+.widget-filters { display: grid; gap: 10px; }
+.widget-search { display: flex; align-items: center; position: relative; }
+.widget-search > svg { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.widget-search > input { width: 100%; padding: 9px 12px 9px 38px; }
+.widget-categories {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 4px 3px 8px;
+  margin-inline: -3px;
+}
+.widget-categories > button {
+  flex: none;
+  white-space: nowrap;
+  padding: 6px 13px;
+  color: var(--muted);
+}
+.widget-categories > button[aria-pressed="true"] {
+  background: var(--app-selected, #343434);
+  border-color: var(--app-accent, #aaa);
+  color: var(--app-accent, #eee);
+}
+.widget-result-count { margin: 7px 0 10px; }
+.widget-empty { min-height: 150px; gap: 8px; }
+.library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+.package-actions { margin-top: auto; flex-wrap: wrap; }

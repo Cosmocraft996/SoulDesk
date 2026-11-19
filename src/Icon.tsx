@@ -23,6 +23,7 @@ const paths = {
   hide: 'm3 3 18 18M10 10a3 3 0 0 0 4 4M4 8l-2 4s4 6 10 6l4-1M9 6l3-1c6 0 10 7 10 7l-2 3',
   detail: 'M4 3h16v18H4V3ZM8 8h8M8 12h8M8 16h5',
   reload: 'M20 7V3l-4 4M20 7a8 8 0 1 0 0 10M20 7h-5',
+  search: 'M16 10a6 6 0 1 1-12 0 6 6 0 0 1 12 0Zm-1.7 4.3L20 20',
   download: 'M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5',
 } as const;
 export type IconName = keyof typeof paths;

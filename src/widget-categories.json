@@ -1,0 +1,82 @@
+{
+  "AI 工具": [
+    "local.souldesk.widgetjs.ai-assistant",
+    "local.souldesk.widgetjs.ai-job",
+    "local.souldesk.widgetjs.ai-mermaid",
+    "local.souldesk.widgetjs.ai-mindmap",
+    "local.souldesk.widgetjs.ai-translate",
+    "local.souldesk.widgetjs.clipboard-search"
+  ],
+  "桌面工具": [
+    "local.souldesk.prompt-favorites",
+    "local.souldesk.website-favorites",
+    "local.souldesk.widgetjs.base-panel",
+    "local.souldesk.widgetjs.clipboard",
+    "local.souldesk.widgetjs.convert",
+    "local.souldesk.widgetjs.grid",
+    "local.souldesk.widgetjs.key-stroke",
+    "local.souldesk.widgetjs.phone-reminder",
+    "local.souldesk.widgetjs.server"
+  ],
+  "效率": [
+    "local.souldesk.widgetjs.dynamic-island",
+    "local.souldesk.widgetjs.excalidraw",
+    "local.souldesk.widgetjs.mindmap",
+    "local.souldesk.widgetjs.note",
+    "local.souldesk.widgetjs.pomodoro",
+    "local.souldesk.widgetjs.sit-reminder",
+    "local.souldesk.widgetjs.todo",
+    "local.souldesk.widgetjs.water-reminder",
+    "official.souldesk.daily-note"
+  ],
+  "热点资讯": [
+    "local.souldesk.widgetjs.hotspot-bangumi",
+    "local.souldesk.widgetjs.hotspot-bilibili",
+    "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
+    "local.souldesk.widgetjs.hotspot-cls-telegraph",
+    "local.souldesk.widgetjs.hotspot-douyin",
+    "local.souldesk.widgetjs.hotspot-tou-tiao",
+    "local.souldesk.widgetjs.hotspot-weibo",
+    "local.souldesk.widgetjs.hotspot-zhihu"
+  ],
+  "天气": [
+    "local.souldesk.widgetjs.weather-large",
+    "local.souldesk.widgetjs.weather-medium",
+    "local.souldesk.widgetjs.weather-small"
+  ],
+  "个性化": [
+    "local.souldesk.widgetjs.energy-label",
+    "local.souldesk.widgetjs.photo",
+    "local.souldesk.widgetjs.sticker"
+  ],
+  "日历": [
+    "local.souldesk.widgetjs.birthday-list",
+    "local.souldesk.widgetjs.calendar",
+    "local.souldesk.widgetjs.calendar-large"
+  ],
+  "时间": [
+    "local.souldesk.widgetjs.clock",
+    "local.souldesk.widgetjs.countdown",
+    "local.souldesk.widgetjs.countdown-list",
+    "local.souldesk.widgetjs.deadline",
+    "local.souldesk.widgetjs.flip-clock",
+    "local.souldesk.widgetjs.glitch-clock",
+    "local.souldesk.widgetjs.labor",
+    "local.souldesk.widgetjs.mickey-clock",
+    "local.souldesk.widgetjs.text-clock",
+    "local.souldesk.widgetjs.time-progress",
+    "local.souldesk.widgetjs.wave-progress",
+    "official.souldesk.local-clock"
+  ],
+  "行情与警报": [
+    "local.souldesk.market",
+    "local.souldesk.widgetjs.coin-medium",
+    "local.souldesk.widgetjs.coin-small",
+    "local.souldesk.widgetjs.forex",
+    "local.souldesk.widgetjs.gold",
+    "local.souldesk.widgetjs.metal",
+    "local.souldesk.widgetjs.stock",
+    "local.souldesk.widgetjs.stock-medium",
+    "local.souldesk.widgetjs.stock-small"
+  ]
+}

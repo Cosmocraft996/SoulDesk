@@ -42,7 +42,7 @@ pub(crate) async fn run(
 ) -> AppResult<()> {
     let core = app.state::<Core>();
     let store = &core.store;
-    let catalog_state = official_catalog(main.clone(), app.state(), app.state()).await?;
+    let catalog_state = official_catalog(main.clone(), app.state(), app.state(), None).await?;
     if let Some(error) = catalog_state.error {
         return Err(format!("联网取得签名目录失败：{error}"));
     }
@@ -197,7 +197,7 @@ pub(crate) async fn run(
         json!(catalog.revision),
     )?;
     store.save_preference("network", r#"{"mode":"http","host":"127.0.0.1","port":1}"#)?;
-    let offline = official_catalog(main.clone(), app.state(), app.state()).await?;
+    let offline = official_catalog(main.clone(), app.state(), app.state(), None).await?;
     check(
         report,
         "断网读取持久化签名目录",
