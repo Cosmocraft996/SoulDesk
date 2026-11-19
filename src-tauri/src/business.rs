@@ -397,6 +397,25 @@ pub async fn gateway(
     result
 }
 
+fn market_log_status(feed: &market::Feed) -> AppResult<String> {
+    #[derive(serde::Serialize)]
+    struct Status<'a> {
+        error: Option<&'a str>,
+        generation: u64,
+        status: &'a str,
+        subscriptions: usize,
+    }
+
+    let state = feed.state.lock().map_err(err)?;
+    serde_json::to_string(&Status {
+        error: state.error.as_deref(),
+        generation: state.generation,
+        status: &state.status,
+        subscriptions: state.subscriptions,
+    })
+    .map_err(err)
+}
+
 pub fn start(
     app: &AppHandle,
     rx: tokio::sync::watch::Receiver<market::Desired>,
@@ -472,6 +491,8 @@ pub fn start(
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
+        // 每次只检查当前订阅和连接状态，跳过休眠期间错过的刷新。
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut previous = String::new();
         loop {
             timer.tick().await;
@@ -501,8 +522,9 @@ pub fn start(
             if let Err(e) = refresh() {
                 core.report(e);
             }
-            let value = core.business.feed.snapshot().unwrap_or(Value::Null);
-            let status=json!({"status":value["status"],"error":value["error"],"generation":value["generation"],"subscriptions":value["subscriptions"]}).to_string();
+            let status = market_log_status(&core.business.feed).unwrap_or_else(|_| {
+                r#"{"error":null,"generation":null,"status":null,"subscriptions":null}"#.into()
+            });
             if previous != status {
                 if let Err(e) = core.store.log("market", &status) {
                     core.report(e);
