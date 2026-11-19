@@ -19,6 +19,16 @@ test('G1/G2宿主命令已登记且授予宿主窗口', () => {
     if (command !== 'trial_failed') assert.ok(capabilities[0].permissions.includes(`allow-${command.replaceAll('_', '-')}`));
   }
 });
+test('官方目录与线上安装命令仅授予管理窗口', () => {
+  const build = readFileSync(new URL('build.rs', root), 'utf8');
+  for (const name of ['official_catalog', 'install_official']) {
+    assert.ok(build.includes('"' + name + '"'));
+    for (const type of ['host', 'panel', 'surface', 'detail', 'trial']) {
+      const capability = JSON.parse(readFileSync(new URL('capabilities/' + type + '.json', root), 'utf8'));
+      assert.equal(capability.permissions.includes('allow-' + name.replaceAll('_', '-')), type === 'host');
+    }
+  }
+});
 test('面板分组管理仅授予管理窗口与面板，不授予组件展示窗口', () => {
   const build = readFileSync(new URL('build.rs', root), 'utf8');
   assert.ok(build.includes('"manage_panel_group"'));

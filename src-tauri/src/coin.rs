@@ -79,10 +79,8 @@ impl IndexCache {
     }
 }
 pub fn index_url(instrument: &str) -> AppResult<String> {
-    let coins: Vec<Value> = serde_json::from_str(include_str!(
-        "../../components/widgetjs/coin-common/coins.json"
-    ))
-    .map_err(err)?;
+    let coins: Vec<Value> =
+        serde_json::from_str(include_str!("../component-assets/coins.json")).map_err(err)?;
     if !coins.iter().any(|value| value["type"] == instrument) {
         return Err("INVALID_ARGUMENT: 不在原币种目录中".into());
     }

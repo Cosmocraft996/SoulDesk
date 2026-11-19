@@ -50,6 +50,7 @@ mod launcher;
 pub mod market;
 mod media;
 pub mod network;
+mod official_gallery;
 mod packages;
 mod panel;
 mod pomodoro;
@@ -97,13 +98,54 @@ use std::{
     time::Duration,
 };
 use store::{err, now_ms, AppResult, Store};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    AppHandle, Emitter, Manager, State,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 #[cfg(not(windows))]
 use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
 const MAIN_TRAY: &str = "souldesk-main";
+
+#[derive(Clone, Copy, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AppTheme {
+    #[default]
+    Ink,
+    Pine,
+    Oat,
+    Iris,
+}
+
+impl AppTheme {
+    const KEY: &str = "app_theme";
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Ink => "ink",
+            Self::Pine => "pine",
+            Self::Oat => "oat",
+            Self::Iris => "iris",
+        }
+    }
+
+    fn stored(store: &Store) -> Self {
+        let value = store.preference(Self::KEY);
+        [Self::Ink, Self::Pine, Self::Oat, Self::Iris]
+            .into_iter()
+            .find(|theme| Some(theme.id()) == value.as_deref())
+            .unwrap_or_default()
+    }
+
+    fn chrome(self) -> tauri::Theme {
+        match self {
+            Self::Ink | Self::Pine => tauri::Theme::Dark,
+            Self::Oat | Self::Iris => tauri::Theme::Light,
+        }
+    }
+}
 
 /// 仅供显式命令行恢复验收使用；不是组件网关能力。
 pub async fn run_recovery_probe(report: std::path::PathBuf) -> Result<(), String> {
@@ -138,6 +180,7 @@ pub struct Core {
     active_tasks: AtomicU64,
     last_error: Arc<Mutex<Option<String>>>,
     verification: Option<verification::Config>,
+    panel_shortcut_registered: AtomicBool,
     shortcut_hits: AtomicU64,
     shortcut_trace: Mutex<Option<Value>>,
     second_launches: AtomicU64,
@@ -154,11 +197,15 @@ pub struct Core {
     updates: updates::State,
 }
 impl Core {
-    fn report(&self, error: String) {
+    fn log_error(&self, error: &str) {
         eprintln!("SoulDesk: {error}");
-        if let Err(e) = self.store.log("error", &error) {
+        if let Err(e) = self.store.log("error", error) {
             eprintln!("诊断日志保存失败：{e}");
         }
+    }
+
+    fn report(&self, error: String) {
+        self.log_error(&error);
         if let Ok(mut e) = self.last_error.lock() {
             *e = Some(error);
         }
@@ -172,9 +219,6 @@ async fn snapshot(
     core: State<'_, Core>,
 ) -> AppResult<Value> {
     let mut value = core.store.snapshot()?;
-    value["packages"] = json!(presets::catalog(
-        value["packages"].as_array().ok_or("组件目录无效")?
-    )?);
     {
         let visibility = core.visibility.lock().map_err(err)?;
         value["hiddenAll"] = json!(visibility.hidden);
@@ -193,11 +237,16 @@ async fn snapshot(
     value["panelLowered"] =
         json!(value["panelOpen"] == true && !windows::scene_is_foreground(windows::panel_scene()));
     value["panelShortcutEnabled"] = json!(panel_shortcut_enabled(&core.store));
+    if panel_shortcut_available(&core) {
+        value["panelShortcutRegistered"] =
+            json!(core.panel_shortcut_registered.load(Ordering::Relaxed));
+    }
     value["panel"] = windows::panel_preferences(&app)?;
     value["panelGeometry"] = windows::panel_metrics(&app)?;
     value["panelLayouts"] = core.store.panel_layouts()?;
     value["widgetBackdrop"] =
         json!(core.store.preference("widget_backdrop").as_deref() == Some("true"));
+    value["appTheme"] = json!(AppTheme::stored(&core.store).id());
     value["updates"] = updates::snapshot(&app)?;
     value["autostart"] = json!(windows::autostart_enabled().ok());
     value["windowTasks"] = json!(core.window_tasks.load(Ordering::Relaxed));
@@ -237,15 +286,10 @@ async fn import_package(app: AppHandle) -> AppResult<Value> {
 }
 
 #[tauri::command]
-async fn update_preset(app: AppHandle, package_id: String) -> AppResult<()> {
-    packages::update_preset(&app, &package_id).await
-}
-#[tauri::command]
 async fn create_instance(app: AppHandle, package_id: String) -> AppResult<String> {
     if app.state::<Core>().visibility.lock().map_err(err)?.hidden {
         return Err("请先恢复组件显示".into());
     }
-    packages::ensure_preset(&app, &package_id).await?;
     tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&app, |app| {
             if windows::hidden(app)? {
@@ -891,13 +935,14 @@ async fn window_action(
     window: tauri::WebviewWindow,
     action: String,
     instance: Option<String>,
+    theme: Option<AppTheme>,
 ) -> AppResult<()> {
     let label = window.label();
     let allowed = if matches!(action.as_str(), "lock-panel" | "unlock-panel") {
         label == "panel" && instance.is_none()
     } else if matches!(
         action.as_str(),
-        "enable-widget-backdrop" | "disable-widget-backdrop"
+        "enable-widget-backdrop" | "disable-widget-backdrop" | "set-app-theme"
     ) {
         label == "main" && instance.is_none()
     } else if label == "main" {
@@ -911,6 +956,7 @@ async fn window_action(
             "show",
             "settings",
             "collapse",
+            "edge-activate",
             "float",
             "hide",
             "remove",
@@ -968,6 +1014,18 @@ async fn window_action(
                     )?;
                     windows::changed(app)
                 }
+                "set-app-theme" => {
+                    let theme = theme.ok_or("INVALID_ARGUMENT: 缺少应用主题")?;
+                    let core = app.state::<Core>();
+                    core.store.save_preference(AppTheme::KEY, theme.id())?;
+                    if let Err(error) = window.set_theme(Some(theme.chrome())) {
+                        core.log_error(&format!("应用标题栏切换主题失败：{error}"));
+                    }
+                    if let Err(error) = windows::changed(app) {
+                        core.log_error(&format!("应用主题同步事件失败：{error}"));
+                    }
+                    Ok(())
+                }
                 "resize-panel" => windows::resize_panel_width(app),
                 "pin" => windows::pin(app, id()?),
                 "hide" => windows::hide_instance(app, id()?),
@@ -978,7 +1036,22 @@ async fn window_action(
                 "detail" => windows::detail(app, id()?),
                 "close-detail" => windows::destroy_window(app, window.label()),
                 "edge-hover" | "edge-activate" => {
-                    if windows::show_panel_from_edge(app, action == "edge-hover")? {
+                    let opened = if action == "edge-hover" {
+                        windows::show_panel_on_hover(app)?
+                    } else {
+                        let foreground = windows::scene_is_foreground(scene);
+                        let source = if foreground { "panel" } else { "edge" };
+                        if scene != windows::panel_scene()
+                            || window.label() != source
+                            || windows::hidden(app)?
+                            || !window.is_visible().map_err(err)?
+                        {
+                            return Ok(());
+                        }
+                        windows::toggle(app)?;
+                        !foreground
+                    };
+                    if opened {
                         app.state::<Core>()
                             .edge_hits
                             .fetch_add(1, Ordering::Relaxed);
@@ -1184,6 +1257,24 @@ fn panel_shortcut_enabled(store: &Store) -> bool {
     store.preference("panel_shortcut_enabled").as_deref() != Some("false")
 }
 
+fn register_panel_shortcut(app: &AppHandle, value: &str) -> AppResult<()> {
+    let shortcuts = app.global_shortcut();
+    if shortcuts.is_registered(value) {
+        return Err(format!("快捷键 {value} 已被 SoulDesk 的其他功能占用"));
+    }
+    shortcuts.register(value).map_err(|error| {
+        app.state::<Core>()
+            .log_error(&format!("面板快捷键 {value} 注册失败：{error}"));
+        if matches!(&error, tauri_plugin_global_shortcut::Error::GlobalHotkey(reason)
+            if reason.starts_with("HotKey already registered:"))
+        {
+            format!("快捷键 {value} 已被占用，请更换键位")
+        } else {
+            format!("无法注册快捷键 {value}，请检查键位后重试")
+        }
+    })
+}
+
 #[tauri::command]
 fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) -> AppResult<()> {
     let core = app.state::<Core>();
@@ -1193,61 +1284,69 @@ fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) ->
         .unwrap_or("Ctrl+Alt+Space".into());
     let available = panel_shortcut_available(&core);
     let was_enabled = panel_shortcut_enabled(&core.store);
+    let registered = core.panel_shortcut_registered.load(Ordering::Relaxed);
     let shortcut = app.global_shortcut();
     if let Some(enabled) = enabled {
-        if enabled == was_enabled {
-            return Ok(());
-        }
-        let registered = available && shortcut.is_registered(old.as_str());
-        if available && enabled {
-            shortcut
-                .register(old.as_str())
-                .map_err(|e| format!("快捷键注册失败：{e}"))?;
-        } else if registered {
+        if available && enabled && !registered {
+            register_panel_shortcut(&app, &old)?;
+        } else if !enabled && registered {
             shortcut.unregister(old.as_str()).map_err(err)?;
+        }
+        if enabled == was_enabled {
+            core.panel_shortcut_registered
+                .store(available && enabled, Ordering::Relaxed);
+            return Ok(());
         }
         if let Err(error) = core.store.save_preference(
             "panel_shortcut_enabled",
             if enabled { "true" } else { "false" },
         ) {
-            if available && enabled {
+            if available && enabled && !registered {
                 let _ = shortcut.unregister(old.as_str());
-            } else if registered {
-                let _ = shortcut.register(old.as_str());
+            } else if !enabled && registered && register_panel_shortcut(&app, &old).is_err() {
+                core.panel_shortcut_registered
+                    .store(false, Ordering::Relaxed);
             }
             return Err(error);
         }
+        core.panel_shortcut_registered
+            .store(available && enabled, Ordering::Relaxed);
         return Ok(());
     }
     let Some(value) = value else {
         return Err("缺少快捷键".into());
     };
-    if old == value {
-        return Ok(());
-    }
     let key = value
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
-        .map_err(err)?;
-    if old
+        .map_err(|_| "快捷键格式无效，例如 Ctrl+Alt+Space".to_string())?;
+    let same_key = old
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
-        .is_ok_and(|old| old == key)
-    {
-        return core.store.save_preference("shortcut", &value);
+        .is_ok_and(|old| old == key);
+    let register = available && was_enabled && (!registered || !same_key);
+    if register {
+        register_panel_shortcut(&app, &value).map_err(|error| {
+            if registered {
+                format!("{error}。已保留原键")
+            } else {
+                error
+            }
+        })?;
     }
-    if available && was_enabled {
-        shortcut
-            .register(key)
-            .map_err(|e| format!("快捷键注册失败，保留原键：{e}"))?;
-    }
-    if let Err(e) = core.store.save_preference("shortcut", &value) {
-        if available && was_enabled {
-            let _ = shortcut.unregister(key);
+    if old != value {
+        if let Err(error) = core.store.save_preference("shortcut", &value) {
+            if register {
+                let _ = shortcut.unregister(key);
+            }
+            return Err(error);
         }
-        return Err(e);
     }
-    if available && was_enabled {
-        if let Err(e) = shortcut.unregister(old.as_str()) {
-            core.report(format!("旧快捷键释放失败：{e}"));
+    if register {
+        core.panel_shortcut_registered
+            .store(true, Ordering::Relaxed);
+        if registered {
+            if let Err(e) = shortcut.unregister(old.as_str()) {
+                core.report(format!("旧快捷键释放失败：{e}"));
+            }
         }
     }
     Ok(())
@@ -1415,10 +1514,38 @@ async fn schedule_test(
     Ok(id)
 }
 
+fn tray_panel_should_toggle(event: &TrayIconEvent, skip_release: &AtomicBool) -> bool {
+    match event {
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Down,
+            ..
+        } => {
+            // 双击的尾部释放可能落在托盘外，下一次按下重新开始。
+            skip_release.store(false, Ordering::Relaxed);
+            false
+        }
+        TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+        } => {
+            // Windows 在第二次按下时送达双击，第一次释放已完成切换。
+            skip_release.store(true, Ordering::Relaxed);
+            false
+        }
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } => !skip_release.swap(false, Ordering::Relaxed),
+        _ => false,
+    }
+}
+
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::{
         menu::{Menu, MenuItem},
-        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+        tray::TrayIconBuilder,
     };
     let args = std::env::args().collect::<Vec<_>>();
     let integration = integration::parse(&args)?;
@@ -1472,6 +1599,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         active_tasks: AtomicU64::new(0),
         last_error: Arc::new(Mutex::new(initial_error)),
         verification,
+        panel_shortcut_registered: AtomicBool::new(false),
         shortcut_hits: AtomicU64::new(0),
         shortcut_trace: Mutex::new(None),
         second_launches: AtomicU64::new(0),
@@ -1523,18 +1651,14 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             });
         }
     }
+    let skip_tray_release = AtomicBool::new(false);
     TrayIconBuilder::with_id(MAIN_TRAY)
         .icon(tauri::image::Image::new_owned(pixels, 32, 32))
         .tooltip("SoulDesk")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
+        .on_tray_icon_event(move |tray, event| {
+            if tray_panel_should_toggle(&event, &skip_tray_release) {
                 windows::dispatch(tray.app_handle(), windows::toggle);
             }
         })
@@ -1570,10 +1694,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
     let core = app.state::<Core>();
     if panel_shortcut_available(&core) && panel_shortcut_enabled(&core.store) {
-        if let Err(e) = app.global_shortcut().register(shortcut.as_str()) {
-            app.state::<Core>()
-                .report(format!("快捷键不可用：{e}；请从托盘更改"));
-        }
+        let registered = register_panel_shortcut(app.handle(), &shortcut).is_ok();
+        core.panel_shortcut_registered
+            .store(registered, Ordering::Relaxed);
     }
     let normal_run = core.integration.is_none() && core.verification.is_none();
     #[cfg(windows)]
@@ -1648,6 +1771,71 @@ fn prevent_exit(quitting: bool, code: Option<i32>) -> bool {
 }
 
 #[cfg(test)]
+mod tray_panel_tests {
+    use super::*;
+
+    fn click(button: MouseButton, button_state: MouseButtonState) -> TrayIconEvent {
+        TrayIconEvent::Click {
+            id: MAIN_TRAY.into(),
+            position: tauri::PhysicalPosition::new(0.0, 0.0),
+            rect: tauri::Rect::default(),
+            button,
+            button_state,
+        }
+    }
+
+    fn double_click(button: MouseButton) -> TrayIconEvent {
+        TrayIconEvent::DoubleClick {
+            id: MAIN_TRAY.into(),
+            position: tauri::PhysicalPosition::new(0.0, 0.0),
+            rect: tauri::Rect::default(),
+            button,
+        }
+    }
+
+    #[test]
+    fn tray_panel_double_click_keeps_only_the_first_release() {
+        let skip_release = AtomicBool::new(false);
+        let down = click(MouseButton::Left, MouseButtonState::Down);
+        let up = click(MouseButton::Left, MouseButtonState::Up);
+        assert!(!tray_panel_should_toggle(&down, &skip_release));
+        assert!(tray_panel_should_toggle(&up, &skip_release));
+        assert!(!tray_panel_should_toggle(
+            &double_click(MouseButton::Left),
+            &skip_release
+        ));
+        assert!(!tray_panel_should_toggle(&up, &skip_release));
+        assert!(!tray_panel_should_toggle(&down, &skip_release));
+        assert!(tray_panel_should_toggle(&up, &skip_release));
+    }
+
+    #[test]
+    fn tray_panel_next_press_resets_an_unfinished_double_click() {
+        let skip_release = AtomicBool::new(false);
+        assert!(!tray_panel_should_toggle(
+            &double_click(MouseButton::Left),
+            &skip_release
+        ));
+        assert!(!tray_panel_should_toggle(
+            &click(MouseButton::Right, MouseButtonState::Up),
+            &skip_release
+        ));
+        assert!(!tray_panel_should_toggle(
+            &click(MouseButton::Left, MouseButtonState::Down),
+            &skip_release
+        ));
+        assert!(!tray_panel_should_toggle(
+            &double_click(MouseButton::Right),
+            &skip_release
+        ));
+        assert!(tray_panel_should_toggle(
+            &click(MouseButton::Left, MouseButtonState::Up),
+            &skip_release
+        ));
+    }
+}
+
+#[cfg(test)]
 mod exit_tests {
     use super::prevent_exit;
 
@@ -1716,7 +1904,7 @@ pub fn run() {
                             let before = app.webview_windows().iter().any(|(label, w)| {
                                 label != "edge" && w.is_visible().unwrap_or(false)
                             });
-                            windows::toggle(app)?;
+                            windows::toggle_locked_panel(app)?;
                             let after = app.webview_windows().iter().any(|(label, w)| {
                                 label != "edge" && w.is_visible().unwrap_or(false)
                             });
@@ -1791,7 +1979,8 @@ pub fn run() {
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
                 snapshot,
                 import_package,
-                update_preset,
+                official_gallery::official_catalog,
+                official_gallery::install_official,
                 create_instance,
                 manage_instance,
                 reorder_instances,
@@ -1826,6 +2015,7 @@ pub fn run() {
             ];
             handler(invoke)
         })
+        .manage(official_gallery::Gallery::default())
         .setup(setup)
         .on_window_event(|window, event| {
             let app = window.app_handle();

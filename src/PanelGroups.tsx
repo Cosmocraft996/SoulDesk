@@ -61,13 +61,7 @@ function dropIndex(strip: HTMLDivElement, drag: GroupDrag, x: number, y: number)
 const validColor = (color: string | null | undefined): color is string => !!color && /^#[0-9a-f]{6}$/i.test(color);
 function colorStyle(color: string): CSSProperties {
   const safe = validColor(color) ? color.toUpperCase() : palette.neutral;
-  const rgb = [1, 3, 5].map(offset => parseInt(safe.slice(offset, offset + 2), 16));
-  // 固定深色底保证黑白等自定义颜色的文字可读性，底色不受桌面壁纸影响。
-  const tint = (amount: number) => `rgb(${rgb.map(value => Math.round(34 * (1 - amount) + value * amount)).join(', ')})`;
-  return {
-    '--group-color': safe, '--group-bg': tint(.14), '--group-hover': tint(.22), '--group-active': tint(.30),
-    '--group-border': `rgb(${rgb.map(value => Math.round(value * .65 + 255 * .35)).join(', ')})`,
-  } as CSSProperties;
+  return { '--group-color': safe } as CSSProperties;
 }
 
 function ColorEditor({ name, automatic, saved, busy, onSave, onCancel }: {

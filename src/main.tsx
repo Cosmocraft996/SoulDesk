@@ -3,6 +3,8 @@ import { App } from './App';
 import { DesktopProbe } from './DesktopProbe';
 import { WidgetFrame } from './WidgetFrame';
 import './style.css';
+import './app-theme.css';
+import './official-gallery.css';
 
 const probeKind = new URLSearchParams(location.search).get('desktopProbe');
 const probe = probeKind !== null && ['clock', 'card', 'panel', 'trial'].includes(probeKind);

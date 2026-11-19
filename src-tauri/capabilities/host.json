@@ -9,6 +9,8 @@
     "core:event:default",
     "allow-snapshot",
     "allow-import-package",
+    "allow-official-catalog",
+    "allow-install-official",
     "allow-create-instance",
     "allow-manage-instance",
     "allow-reorder-instances",
@@ -20,7 +22,6 @@
     "allow-report-view",
     "allow-business-settings",
     "allow-set-panel",
-    "allow-update-preset"
-    ,"allow-save-panel-layout", "allow-app-update", "allow-manage-panel-group"
+    "allow-save-panel-layout", "allow-app-update", "allow-manage-panel-group"
   ]
 }

@@ -6,7 +6,7 @@ use crate::{
 };
 use std::{
     sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -69,7 +69,7 @@ impl Visibility {
     }
 }
 
-// 最低位表示面板在前台。代次防止排队的旧点击收起重新打开的面板。
+// 最低位表示面板在前台。代次隔离旧点击和旧收起计时。
 static PANEL_SCENE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn panel_scene() -> u64 {
@@ -83,6 +83,74 @@ pub(crate) fn scene_is_foreground(scene: u64) -> bool {
 fn set_panel_foreground(foreground: bool) {
     let next = (panel_scene().wrapping_add(2) & !1) | u64::from(foreground);
     PANEL_SCENE.store(next, Ordering::Release);
+}
+
+const PANEL_DISMISS_DELAY: Duration = Duration::from_secs(3);
+
+#[derive(Clone, Copy, Default)]
+enum PanelPresence {
+    #[default]
+    Unseen,
+    Present,
+    Left(Instant),
+}
+
+impl PanelPresence {
+    fn update(&mut self, present: bool, now: Instant) -> bool {
+        if present {
+            *self = Self::Present;
+        } else if matches!(self, Self::Present) {
+            *self = Self::Left(now);
+        }
+        matches!(self, Self::Left(since) if now.duration_since(*since) >= PANEL_DISMISS_DELAY)
+    }
+}
+
+fn watch_panel_dismissal(w: &WebviewWindow, pointer_started_inside: bool) -> AppResult<()> {
+    let app = w.app_handle().clone();
+    let raw = native::handle(w)?;
+    let scene = panel_scene();
+    let mut pointer = PanelPresence::default();
+    let mut focus = PanelPresence::default();
+    pointer.update(pointer_started_inside, Instant::now());
+    tauri::async_runtime::spawn(async move {
+        while panel_scene() == scene && native::owned_alive(raw) {
+            if let Ok((inside, focused)) = native::panel_presence(raw) {
+                let now = Instant::now();
+                let mouse_elapsed = pointer.update(inside, now);
+                let focus_elapsed = focus.update(focused, now);
+                if mouse_elapsed || focus_elapsed {
+                    let handle = app.clone();
+                    let result = tauri::async_runtime::spawn_blocking(move || {
+                        serialized(&handle, |app| {
+                            if panel_scene() != scene || !native::owned_alive(raw) {
+                                return Ok(true);
+                            }
+                            let (inside, focused) = native::panel_presence(raw)?;
+                            if (mouse_elapsed && !inside) || (focus_elapsed && !focused) {
+                                collapse(app)?;
+                                return Ok(true);
+                            }
+                            Ok(false)
+                        })
+                    })
+                    .await
+                    .map_err(err)
+                    .and_then(|result| result);
+                    match result {
+                        Ok(true) => break,
+                        Ok(false) => (),
+                        Err(error) => {
+                            app.state::<Core>().report(error);
+                            break;
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+    Ok(())
 }
 
 pub fn serialized<T>(
@@ -142,50 +210,83 @@ pub(crate) fn build(
     let clipboard = label.starts_with("clipboard-") && !clipboard_tool;
     let surface =
         label.starts_with("float-") || label == "panel" || keyboard || notice || rest || clipboard;
-    let mut builder = WebviewWindowBuilder::new(app,label,WebviewUrl::App(url.into()))
-        .title(if label=="main" {"SoulDesk · 组件管理"} else if label=="panel" {"SoulDesk · 组件面板"} else {"SoulDesk · 组件"})
-        .inner_size(width,height).min_inner_size(120.,80.).visible(false).focused(false)
-        .theme(Some(tauri::Theme::Dark)).initialization_script(host_script(app))
-        .initialization_script_for_all_frames("if(window!==window.top)document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:user-pointer',protocol:1},origin);}},true);");
-    // 隔离运行连 WebView 缓存也写入本次目录，不接触正常用户数据。
-    let directory = app.state::<Core>().store.root.join("webview").join(label);
-    std::fs::create_dir_all(&directory).map_err(err)?;
-    builder = builder.data_directory(directory);
+    let core = app.state::<Core>();
+    let theme = if label == "main" {
+        crate::AppTheme::stored(&core.store).chrome()
+    } else {
+        tauri::Theme::Dark
+    };
     // 仅文档组件的正式容器使用HTML文件拖放；其他窗口保留现有处理器。
-    if html_drop_for_window(&app.state::<Core>().store, label)? {
-        builder = builder.disable_drag_drop_handler();
-    }
-    if surface {
-        builder = builder
-            .decorations(false)
-            .resizable(false)
-            .shadow(false)
-            .skip_taskbar(true)
-            .transparent(true)
-            .background_color(tauri::window::Color(0, 0, 0, 0));
-    }
-    if label == "panel" {
-        builder = builder.always_on_top(true);
-    }
-    if notice {
-        builder = builder
-            .always_on_top(true)
-            .focusable(false)
-            .min_inner_size(120., 1.);
-    }
-    if rest {
-        builder = builder.always_on_top(true).focusable(true);
-    }
-    if keyboard {
-        builder = builder.always_on_top(true).focusable(false);
-    }
-    if clipboard {
-        builder = builder
-            .always_on_top(true)
-            .focusable(true)
-            .min_inner_size(120., 1.);
-    }
-    let w = builder.build().map_err(err)?;
+    let html_drop = html_drop_for_window(&core.store, label)?;
+    let create = |profile: &str| -> tauri::Result<WebviewWindow> {
+        // 隔离运行连 WebView 缓存也写入本次目录，不接触正常用户数据。
+        let directory = core.store.root.join("webview").join(profile);
+        std::fs::create_dir_all(&directory)?;
+        let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.as_str().into()))
+            .title(match label {
+                "main" => "SoulDesk · 组件管理",
+                "panel" => "SoulDesk · 组件面板",
+                _ => "SoulDesk · 组件",
+            })
+            .inner_size(width, height)
+            .min_inner_size(120., 80.)
+            .visible(false)
+            .focused(false)
+            .theme(Some(theme))
+            .data_directory(directory)
+            .initialization_script(host_script(app))
+            .initialization_script_for_all_frames("if(window!==window.top)document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:user-pointer',protocol:1},origin);}},true);");
+        if html_drop {
+            builder = builder.disable_drag_drop_handler();
+        }
+        if surface {
+            builder = builder
+                .decorations(false)
+                .resizable(false)
+                .shadow(false)
+                .skip_taskbar(true)
+                .transparent(true)
+                .background_color(tauri::window::Color(0, 0, 0, 0));
+        }
+        if label == "panel" {
+            builder = builder.always_on_top(true);
+        }
+        if notice {
+            builder = builder
+                .always_on_top(true)
+                .focusable(false)
+                .min_inner_size(120., 1.);
+        }
+        if rest {
+            builder = builder.always_on_top(true).focusable(true);
+        }
+        if keyboard {
+            builder = builder.always_on_top(true).focusable(false);
+        }
+        if clipboard {
+            builder = builder
+                .always_on_top(true)
+                .focusable(true)
+                .min_inner_size(120., 1.);
+        }
+        builder.build()
+    };
+    let result = create(label);
+    #[cfg(windows)]
+    let result = match result {
+        Err(tauri::Error::Runtime(error))
+            if label == "main" && error.to_string().contains("HRESULT(0x8007139F)") =>
+        {
+            // WebView2 拒绝复用现有环境时，组件管理可使用单独的缓存目录。
+            let window = create("main-recovery").map_err(|retry| {
+                format!("组件管理 WebView2 初始化失败：{error}；备用目录初始化失败：{retry}")
+            })?;
+            core.log_error(&format!("组件管理已通过备用 WebView2 目录打开：{error}"));
+            Ok(window)
+        }
+        result => result,
+    };
+    let w = result.map_err(err)?;
     if surface {
         native::prepare(&w)?;
     }
@@ -398,7 +499,8 @@ pub(crate) fn host_script(app: &AppHandle) -> String {
     if let Some(url) = &app.config().build.dev_url {
         origins.push(url.origin().ascii_serialization());
     }
-    format!("if(window.top===window&&{}.includes(location.origin)){{Object.defineProperty(window,'__SOULDESK_HOST_TOKEN__',{{value:{}}});}}",serde_json::to_string(&origins).unwrap(),serde_json::to_string(&core.host_token).unwrap())
+    let theme = crate::AppTheme::stored(&core.store).id();
+    format!("if(window.top===window&&{}.includes(location.origin)){{Object.defineProperties(window,{{__SOULDESK_HOST_TOKEN__:{{value:{}}},__SOULDESK_APP_THEME__:{{value:{theme:?}}}}});}}",serde_json::to_string(&origins).unwrap(),serde_json::to_string(&core.host_token).unwrap())
 }
 pub fn main_window(app: &AppHandle) -> AppResult<WebviewWindow> {
     if let Some(w) = app.get_webview_window("main") {
@@ -983,12 +1085,10 @@ fn panel_placement_area(app: &AppHandle) -> AppResult<crate::panel::PlacementAre
     Ok(crate::panel::PlacementArea {
         work_area: work_area(&dock_monitor(app, &settings)?),
         ratio: settings.ratio,
-        edge_width: settings.edge_style.size().0,
     })
 }
 
 fn panel_min_width(app: &AppHandle) -> AppResult<f64> {
-    let edge_width = read_panel_settings(app)?.edge_style.size().0;
     let minimum = active_panel_instances(app)?
         .iter()
         .filter_map(|i| i["id"].as_str())
@@ -996,7 +1096,7 @@ fn panel_min_width(app: &AppHandle) -> AppResult<f64> {
         .collect::<AppResult<Vec<_>>>()?
         .into_iter()
         .fold(0f64, f64::max);
-    Ok(crate::panel::minimum_panel_width(edge_width, minimum))
+    Ok(crate::panel::minimum_panel_width(minimum))
 }
 
 pub fn resize_panel_width(app: &AppHandle) -> AppResult<()> {
@@ -1186,26 +1286,24 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
     }
     Ok(())
 }
-pub fn show_panel_from_edge(app: &AppHandle, hover: bool) -> AppResult<bool> {
+pub fn show_panel_on_hover(app: &AppHandle) -> AppResult<bool> {
     let Some(edge) = app.get_webview_window("edge") else {
         return Ok(false);
     };
     if hidden(app)? || scene_is_foreground(panel_scene()) || !edge.is_visible().map_err(err)? {
         return Ok(false);
     }
-    if hover {
-        let blocked = app
-            .state::<Core>()
-            .visibility
-            .lock()
-            .map_err(err)?
-            .edge_hover_block
-            .is_some();
-        if blocked || app.get_webview_window("panel").is_some() || !native::hover_hits(&edge)? {
-            return Ok(false);
-        }
+    let blocked = app
+        .state::<Core>()
+        .visibility
+        .lock()
+        .map_err(err)?
+        .edge_hover_block
+        .is_some();
+    if blocked || app.get_webview_window("panel").is_some() || !native::hover_hits(&edge)? {
+        return Ok(false);
     }
-    show_panel(app, !hover)?;
+    show_panel(app, false)?;
     Ok(true)
 }
 
@@ -1250,6 +1348,8 @@ pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
         app.get_webview_window("panel").ok_or("面板已关闭")?
     };
     place_panel(app, &w, geometry)?;
+    let pointer_started_inside = native::pointer_inside(&w).unwrap_or(false);
+    let entering_foreground = created || !scene_is_foreground(panel_scene());
     if created {
         wait_panel_shell(app)?;
         let settings = read_panel_settings(app)?;
@@ -1260,6 +1360,7 @@ pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
     } else if !scene_is_foreground(panel_scene()) {
         set_panel_layer(&w, true)?;
     } else {
+        native::maintain_panel_layer(&w, true)?;
         native::show(&w)?;
     }
     if focus {
@@ -1268,6 +1369,9 @@ pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
     if let Some(edge) = app.get_webview_window("edge") {
         native::hide(&edge)?;
     }
+    if entering_foreground && !panel_locked(app)? {
+        watch_panel_dismissal(&w, pointer_started_inside)?;
+    }
     changed(app)
 }
 pub fn collapse(app: &AppHandle) -> AppResult<()> {
@@ -1275,13 +1379,7 @@ pub fn collapse(app: &AppHandle) -> AppResult<()> {
         return Ok(());
     };
     let settings = read_panel_settings(app)?;
-    let locked = app
-        .state::<Core>()
-        .visibility
-        .lock()
-        .map_err(err)?
-        .panel_locked;
-    if locked {
+    if panel_locked(app)? {
         if !scene_is_foreground(panel_scene()) {
             return Ok(());
         }
@@ -1338,11 +1436,40 @@ fn block_hover_until_exit(app: &AppHandle, edge: &WebviewWindow) -> AppResult<()
     }
     Ok(())
 }
-pub fn set_panel_locked(app: &AppHandle, locked: bool) -> AppResult<()> {
+fn panel_locked(app: &AppHandle) -> AppResult<bool> {
+    Ok(app
+        .state::<Core>()
+        .visibility
+        .lock()
+        .map_err(err)?
+        .panel_locked)
+}
+
+fn save_panel_lock(app: &AppHandle, locked: bool) -> AppResult<()> {
     let core = app.state::<Core>();
     core.store
         .save_preference("panel_locked", if locked { "true" } else { "false" })?;
     core.visibility.lock().map_err(err)?.panel_locked = locked;
+    Ok(())
+}
+
+pub fn set_panel_locked(app: &AppHandle, locked: bool) -> AppResult<()> {
+    if panel_locked(app)? == locked {
+        return Ok(());
+    }
+    let panel = app.get_webview_window("panel");
+    if !locked && panel.is_some() && !scene_is_foreground(panel_scene()) {
+        show_panel(app, true)?;
+    }
+    save_panel_lock(app, locked)?;
+    if let Some(panel) = panel {
+        if scene_is_foreground(panel_scene()) {
+            set_panel_foreground(true);
+            if !locked {
+                watch_panel_dismissal(&panel, false)?;
+            }
+        }
+    }
     changed(app)
 }
 pub fn edge_window(app: &AppHandle) -> AppResult<WebviewWindow> {
@@ -1781,6 +1908,26 @@ pub fn toggle(app: &AppHandle) -> AppResult<()> {
         show_panel(app, true)
     }
 }
+
+pub fn toggle_locked_panel(app: &AppHandle) -> AppResult<()> {
+    let open = app.get_webview_window("panel").is_some();
+    let was_locked = panel_locked(app)?;
+    let locked = !open;
+    if locked != was_locked {
+        save_panel_lock(app, locked)?;
+    }
+    let result = if open { collapse(app) } else { toggle(app) };
+    if let Err(error) = result {
+        if locked != was_locked && app.get_webview_window("panel").is_some() == open {
+            if let Err(restore) = save_panel_lock(app, was_locked) {
+                return Err(format!("{error}；恢复面板锁定失败：{restore}"));
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub(crate) fn dismiss_from_outside(app: &AppHandle, scene: u64) -> AppResult<()> {
     if scene_is_foreground(scene) && panel_scene() == scene && !hidden(app)? {
         collapse(app)?;
@@ -1858,6 +2005,21 @@ pub fn destroy_views(app: &AppHandle) -> AppResult<()> {
 #[cfg(test)]
 mod document_drop_tests {
     use super::*;
+
+    #[test]
+    fn panel_waits_three_seconds_after_leaving_and_resets_on_return() {
+        let start = Instant::now();
+        let at = |milliseconds| start + Duration::from_millis(milliseconds);
+        let mut presence = PanelPresence::default();
+        assert!(!presence.update(false, at(0)));
+        assert!(!presence.update(false, at(3_000)));
+        assert!(!presence.update(true, at(4_000)));
+        assert!(!presence.update(false, at(4_100)));
+        assert!(!presence.update(false, at(7_099)));
+        assert!(!presence.update(true, at(7_100)));
+        assert!(!presence.update(false, at(7_200)));
+        assert!(presence.update(false, at(10_200)));
+    }
 
     #[test]
     fn panel_scroll_survives_window_recreation_and_stale_view_cannot_overwrite_it() {
@@ -2018,11 +2180,10 @@ pub fn monitor_changes(app: &AppHandle) -> AppResult<()> {
         app.state::<Core>().assistant.monitor_changed(app)?;
         repair(app)?;
     }
-    if !scene_is_foreground(panel_scene()) {
-        if let Some(panel) = app.get_webview_window("panel") {
-            if let Err(error) = native::maintain_panel_desktop_slot(&panel) {
-                app.state::<Core>().report(error);
-            }
+    if let Some(panel) = app.get_webview_window("panel") {
+        if let Err(error) = native::maintain_panel_layer(&panel, scene_is_foreground(panel_scene()))
+        {
+            app.state::<Core>().report(error);
         }
     }
     for w in app

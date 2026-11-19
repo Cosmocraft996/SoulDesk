@@ -1,5 +1,0 @@
-import{createApp,h,ref,onMounted,onBeforeUnmount}from'vue';import{connectHost}from'../../../sdk/host.js';import App from'./App.vue';import Overlay from'./Overlay.vue';import'./style.css';
-const host=await connectHost(),overlay=new URLSearchParams(location.search).get('role')==='keyboard-overlay';
-// 采用预编译模板，保持组件内容安全策略禁止动态脚本求值。
-const app=overlay?createApp({setup(){const snapshot=ref({visible:false,modifierKeys:[],normalKey:null,capsLock:null,isCapsLockOn:false});let timer,disposed=false,pending=false;async function poll(){if(pending||disposed)return;pending=true;try{const next=await host.request('keyboard.peek');if(!disposed)snapshot.value=next;}catch{if(!disposed)snapshot.value={visible:false,modifierKeys:[],normalKey:null,capsLock:null};}finally{pending=false;}}onMounted(()=>{void poll();timer=setInterval(poll,40);});onBeforeUnmount(()=>{disposed=true;clearInterval(timer);});return()=>h(Overlay,{snapshot:snapshot.value});}}):createApp(App,{host});
-app.mount('#app');await host.ready();window.addEventListener('pagehide',()=>app.unmount(),{once:true});

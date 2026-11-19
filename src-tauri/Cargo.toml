@@ -1,6 +1,6 @@
 [package]
 name = "souldesk"
-version = "0.5.2"
+version = "0.5.5"
 description = "SoulDesk 通用桌面组件"
 edition = "2021"
 rust-version = "1.92"
@@ -27,6 +27,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 sha2 = "=0.10.9"
+ring = "=0.17.14"
 uuid = { version = "=1.29.2", features = ["v4", "serde"] }
 mime_guess = "=2.0.5"
 flate2 = "=1.1.11"

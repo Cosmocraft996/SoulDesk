@@ -967,9 +967,7 @@ impl Service {
 #[cfg(windows)]
 fn play_completion_sound() -> AppResult<()> {
     use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_SYNC};
-    let bytes = include_bytes!(
-        "../../components/widgetjs/pomodoro-source/original/pomodoro-ding-BPamOesd.wav"
-    );
+    let bytes = include_bytes!("../component-assets/pomodoro-ding.wav");
     if unsafe {
         PlaySoundW(
             bytes.as_ptr().cast(),

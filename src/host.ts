@@ -1,6 +1,11 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 
-declare global { interface Window { readonly __SOULDESK_HOST_TOKEN__?: string } }
+declare global {
+  interface Window {
+    readonly __SOULDESK_HOST_TOKEN__?: string;
+    readonly __SOULDESK_APP_THEME__?: string;
+  }
+}
 
 // 令牌只注入宿主顶层页面，不传给组件或写入数据库。
 export function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {

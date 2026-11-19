@@ -1,7 +1,0 @@
-来源：https://github.com/rtugeek/utilities
-固定提交：3d733215bac3e9c1e58125518f100c1601650828
-原文件：src/widgets/key-stroke/KeyStrokeWidgetView.vue
-SHA256（Git原始LF字节）：ead4faedf9b0a316e9d4377ac46bf574c8f0793b08b1224c148b4db917469927
-原名称：快捷键敲击（BackgroundWidget）
-移植版本：0.1.0。显式启用宿主键盘演示，仅修饰键组合/CapsLock，无输入历史。原生与桌面效果待人工验收。
-原固定仓库未提供LICENSE；按用户确认仅本机自用，未授权发布上游代码。

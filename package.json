@@ -1,7 +1,7 @@
 {
   "name": "souldesk",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.5.5",
   "type": "module",
   "packageManager": "pnpm@11.25.0",
   "engines": {
@@ -10,27 +10,22 @@
   "scripts": {
     "dev": "node scripts/desktop.mjs dev",
     "dev:web": "vite --host 127.0.0.1",
-    "check": "node scripts/prepare-widgetjs.mjs --check && tsc --noEmit && node scripts/desktop.mjs fmt -- --check",
-    "test": "node scripts/prepare-widgetjs.mjs --check && pnpm test:web && node scripts/desktop.mjs test --locked",
-    "test:web": "node --test src/widget-url.test.ts src/widget-permissions.test.ts src/panel-layout.test.ts scripts/panel-groups-dom.test.mjs scripts/release.test.mjs scripts/verification-contract.test.mjs scripts/capabilities.test.mjs examples/market/price.test.js scripts/child-cleanup.test.mjs scripts/shorten-soak.test.mjs scripts/verify-upgrade.test.mjs scripts/widgetjs-packages.test.mjs components/widgetjs/progress-common/periods.test.js components/widgetjs/note/note-model.test.js components/widgetjs/hotspot-source/endpoints.test.js components/widgetjs/forex/forex-model.test.js sdk/host.test.js scripts/excalidraw-assets.test.mjs components/widgetjs/excalidraw-source/scene-model.test.js components/widgetjs/excalidraw-source/file-access.test.js components/widgetjs/photo-common/model.test.js components/widgetjs/convert-source/conversion.test.js components/widgetjs/metal/metal-model.test.js components/widgetjs/gold-source/gold-model.test.js components/widgetjs/stock-medium-source/index-model.test.js components/widgetjs/stock-small-source/stock-model.test.js components/widgetjs/coin-small-source/coin-model.test.js components/widgetjs/grid/grid-model.test.js components/widgetjs/coin-medium-source/coin-model.test.js sdk/runtime.test.js components/widgetjs/energy-label/energy-model.test.js components/widgetjs/base-panel/panel-model.test.js components/widgetjs/water-reminder/water-model.test.js components/widgetjs/mindmap-source/document-model.test.js components/widgetjs/server-source/server-model.test.js scripts/widgetjs-server-render.test.mjs components/widgetjs/labor-source/labor-model.test.js scripts/widgetjs-labor-render.test.mjs components/widgetjs/deadline-source/deadline-model.test.js scripts/widgetjs-deadline-render.test.mjs components/widgetjs/calendar-source/calendar-model.test.js scripts/widgetjs-calendar-render.test.mjs components/widgetjs/countdown-source/countdown-model.test.js scripts/widgetjs-countdown-render.test.mjs components/widgetjs/birthday-list-source/birthday-model.test.js scripts/widgetjs-birthday-render.test.mjs components/widgetjs/todo-source/todo-model.test.js scripts/widgetjs-todo-render.test.mjs components/widgetjs/calendar-large-source/calendar-large-model.test.js scripts/widgetjs-calendar-large-source.test.mjs scripts/widgetjs-calendar-large-render.test.mjs components/widgetjs/pomodoro-source/pomodoro-model.test.js scripts/widgetjs-pomodoro-render.test.mjs scripts/widgetjs-heic-worker.test.mjs components/widgetjs/hotspot-source/images.test.js components/widgetjs/coin-common/verify.test.js components/widgetjs/coin-small-source/coin-chart.test.js scripts/widgetjs-clock-render.test.mjs components/widgetjs/weather-source/weather-model.test.js scripts/widgetjs-weather-render.test.mjs components/widgetjs/stock-source/stock-model.test.js scripts/widgetjs-stock-render.test.mjs components/widgetjs/shared-library/client.test.js scripts/widgetjs-shared-edit-render.test.mjs scripts/widgetjs-keyboard-render.test.mjs components/widgetjs/reminder-source/client.test.js scripts/widgetjs-reminder-render.test.mjs components/widgetjs/ai-source/client.test.js components/widgetjs/ai-source/graphics.test.js scripts/widgetjs-ai-render.test.mjs scripts/widgetjs-ai-dom.test.mjs components/widgetjs/clipboard-source/client.test.js components/widgetjs/clipboard-source/tool-host.test.js scripts/widgetjs-clipboard-render.test.mjs scripts/widgetjs-clipboard-dom.test.mjs components/widgetjs/ai-source/assistant-client.test.js scripts/widgetjs-assistant-dom.test.mjs scripts/widgetjs-assistant-render.test.mjs components/widgetjs/job-source/capture.test.js components/widgetjs/job-source/client.test.js scripts/widgetjs-job-dom.test.mjs scripts/widgetjs-build-state.test.mjs scripts/widgetjs-entry-dom.test.mjs scripts/widgetjs-content-cache.test.mjs",
+    "check": "tsc --noEmit && node scripts/desktop.mjs fmt -- --check",
+    "test": "pnpm test:web && node scripts/desktop.mjs test --locked",
+    "test:web": "node --test src/widget-url.test.ts src/widget-permissions.test.ts src/panel-layout.test.ts scripts/panel-groups-dom.test.mjs scripts/release.test.mjs scripts/verification-contract.test.mjs scripts/capabilities.test.mjs scripts/child-cleanup.test.mjs scripts/shorten-soak.test.mjs scripts/verify-upgrade.test.mjs sdk/host.test.js sdk/runtime.test.js",
     "build:web": "tsc --noEmit && vite build",
     "build": "node scripts/desktop.mjs build",
     "example:build": "node scripts/build-example.mjs",
-    "widgetjs:build": "node scripts/build-widgetjs.mjs",
     "g1:fixtures": "node scripts/build-g1-fixtures.mjs",
     "g1:verify": "node scripts/verify-installed.mjs --g1",
     "g2:verify": "node scripts/verify-installed.mjs --g2",
     "g3:verify": "node scripts/verify-installed.mjs --g3",
     "g3:upgrade": "node scripts/verify-upgrade.mjs",
-    "market:build": "node scripts/build-example.mjs examples/market",
     "market:probe": "node scripts/desktop.mjs market",
     "recovery:probe": "node scripts/desktop.mjs recovery",
     "network:probe": "node scripts/desktop.mjs network",
     "g0:verify": "node scripts/verify-installed.mjs",
-    "g0:verify:auto": "node scripts/verify-installed.mjs --auto",
-    "check:widgets": "tsc --project components/widgetjs/excalidraw-source/tsconfig.json && tsc --project components/widgetjs/mindmap-source/tsconfig.json",
-    "widgetjs:prepare": "node scripts/prepare-widgetjs.mjs",
-    "widgetjs:check": "node scripts/prepare-widgetjs.mjs --check"
+    "g0:verify:auto": "node scripts/verify-installed.mjs --auto"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",

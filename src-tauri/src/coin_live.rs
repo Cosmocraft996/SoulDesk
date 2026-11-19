@@ -19,10 +19,8 @@ use tokio_util::sync::CancellationToken;
 const URL: &str = "wss://wspri.okx.com:8443/ws/v5/ipublic";
 const CHANNEL: &str = "cup-tickers-3s";
 fn currencies() -> Vec<String> {
-    let coins: Vec<Value> = serde_json::from_str(include_str!(
-        "../../components/widgetjs/coin-common/coins.json"
-    ))
-    .expect("固定币种目录需有效");
+    let coins: Vec<Value> = serde_json::from_str(include_str!("../component-assets/coins.json"))
+        .expect("固定币种目录需有效");
     coins
         .into_iter()
         .filter_map(|coin| coin["ccy"].as_str().map(str::to_owned))

@@ -1,9 +1,0 @@
-来源：https://github.com/rtugeek/stock
-固定提交：0f5157961908bb3fdec71d443117783a3496571f
-原始标识：cn.stocks.widget.stock_medium
-原文件：src/widgets/stock-medium/stock-medium-widget-view.tsx、stock-medium-config-view.tsx、src/api/bai-du-stock-api.ts、src/store/use-stock-color-store.ts。
-原项目未附许可证，按用户明确的本机自用范围保留来源，不作公开分发结论。
-保留原三个固定指数（000001/SH上证、399001/SZ深证、399006/SZ创业板）、三列三行/交易所标签、红绿涨跌与60秒刷新；React/Tailwind包装改为相同布局的原生DOM/CSS。涨跌色从原包共享偏好改为SoulDesk实例独立配置。
-原目录没有配置页路由，独立配置文件中刷新间隔/代码/图表高度只有临时React状态，实际主视图仍写死三代码和60秒且没有图表；不把未接线选项伪装成原有可用功能。本包设置仅提供已接线的涨跌色。
-数据仍用原百度selfselect/sug接口和skip_login=1，宿主固定地址与原三个代码。要求代码、index类型、ab市场和交易所同时匹配，价格与百分比保留十进制字符串，缺失或异常不显示0；每行独立失败并保留上次值，不清空其他行。接口原refresh_time为空时明确标明源未提供报价时间，读取时间不能冒充报价时间；保留原交易状态并标记刷新失败或读取超过2分钟。隐藏试加载不联网，不参与币安行情和价格警报。
-原数据源真实联网、指数方向/状态及桌面显示仍待验证；包与逻辑检查不是实时行情验收。

@@ -1,1 +1,0 @@
-{"schemaVersion":1,"id":"local.souldesk.widgetjs.phone-reminder","name":"来电提醒","version":"0.1.0","hostApiMajor":1,"loadCheck":1,"entry":"dist/index.html","defaultSize":{"width":760,"height":470},"minSize":{"width":360,"height":320},"capabilities":["reminders.phone"],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}}

@@ -304,10 +304,8 @@ fn base(context: &Knowledge) -> String {
     parts.join("\n")
 }
 fn input(d: &Document, text_value: Option<&str>) -> AppResult<Message> {
-    let prompts: Value = serde_json::from_str(include_str!(
-        "../../components/widgetjs/job-source/prompts.json"
-    ))
-    .map_err(|_| "DATA_UNAVAILABLE: 原知识提示词资源无效")?;
+    let prompts: Value = serde_json::from_str(include_str!("../component-assets/job-prompts.json"))
+        .map_err(|_| "DATA_UNAVAILABLE: 原知识提示词资源无效")?;
     let content = if d.kind == Kind::Interview {
         let value = text_value
             .filter(|v| !v.trim().is_empty() && v.chars().count() <= 10000 && text(v, 40000))
@@ -338,10 +336,9 @@ fn body(d: &Document, model: &str) -> AppResult<Value> {
     }
     let mut system = base(&d.context);
     if d.kind == Kind::Interview {
-        let prompts: Value = serde_json::from_str(include_str!(
-            "../../components/widgetjs/job-source/prompts.json"
-        ))
-        .map_err(|_| "DATA_UNAVAILABLE: 原面试提示词资源无效")?;
+        let prompts: Value =
+            serde_json::from_str(include_str!("../component-assets/job-prompts.json"))
+                .map_err(|_| "DATA_UNAVAILABLE: 原面试提示词资源无效")?;
         system.push('\n');
         system.push_str(&filled(
             prompts["interviewer"]

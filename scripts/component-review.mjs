@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const documentPath = join(root, 'docs/20-组件筛选与手动验证清单.md');
 const staticRoot = join(root, 'docs/component-review');
+const galleryRoot = resolve(process.env.SOULDESK_WIDGETS_ROOT || join(root, '..', 'SoulDesk-Widgets'));
 const decisionNames = { '': '未筛选', keep: '保留', trim: '裁剪', undecided: '待定' };
 const resultNames = { untested: '待验证', passed: '通过', partial: '部分通过', failed: '失败' };
 const sourceCategories = { S1: '行情与汇率', S2: '实用工具', S3: '热点资讯', S4: '时钟与进度', S5: '笔记与图形', S6: 'AI与剪切板', S7: '笔记与图形', S8: '日历与专注', S9: '系统与服务器', S10: '图片与文件', S11: '图片与文件', S12: 'AI与剪切板', S13: 'AI与剪切板', S14: '提醒与进度', S16: '天气', native: '项目原有' };
@@ -28,8 +29,9 @@ export function loadReviewCatalog() {
     const number = Number(cells[0]), slug = cells[1].match(/`([^`]+)`/)[1];
     const name = cells[1].match(/\[([^\]]+)\]/)?.[1] || cells[1].split('`')[0].trim();
     const id = number <= 61 ? `local.souldesk.widgetjs.${slug}` : slug;
-    const manifestPath = number <= 61 ? `components/widgetjs/${slug}/manifest.json` : 'examples/market/manifest.json';
-    const manifest = JSON.parse(readFileSync(join(root, manifestPath), 'utf8'));
+    const gallerySlug = number <= 61 ? slug : 'market';
+    const manifestPath = join(galleryRoot, 'widgets', gallerySlug, 'manifest.json');
+    const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : { version: '历史记录' };
     const upstreamItem = upstream.items.find(item => item.souldeskId === id);
     const source = sources.get(cells[3]) || { label: 'SoulDesk 项目', pinnedUrl: 'https://github.com/Cosmocraft996/SoulDesk' };
     const projectUrl = source.pinnedUrl.replace(/\/tree\/[^/]+.*$/, '');
@@ -40,7 +42,7 @@ export function loadReviewCatalog() {
       category: sourceCategories[cells[3]] || sourceCategories.native, sourceLabel: source.label, projectUrl,
       pinnedUrl: source.pinnedUrl, originalTitle: upstreamItem?.title || name,
       originalDescription: upstreamItem?.description || '',
-      sourcePath: number <= 61 ? `components/widgetjs/${slug}/SOURCE.txt` : manifestPath };
+      sourcePath: number <= 61 ? join(galleryRoot, 'widgets', gallerySlug, 'src/SOURCE.txt') : manifestPath };
   });
   if (new Set(items.map(item => item.id)).size !== items.length || items.length === 0) throw Error('清单存在重复标识或没有组件');
   const build = {
@@ -96,7 +98,7 @@ export function createReviewServer({ stateDir = join(root, 'artifacts/component-
       if (req.method === 'GET' && url.pathname === '/api/source') {
         const item = catalog.items.find(item => item.id === url.searchParams.get('id'));
         if (!item) return json(res, 404, { error: '组件不存在' });
-        const contents = readFileSync(join(root, item.sourcePath));
+        const contents = readFileSync(item.sourcePath);
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' });
         return res.end(contents);
       }

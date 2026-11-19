@@ -1,8 +1,0 @@
-来源：https://github.com/rtugeek/photo
-固定提交：84ab455aa34cd29cd14e8a999d50e714c8dae637
-原始标识：widgetjs.cn.photo.photo
-原文件：src/widgets/photo/PhotoWidgetView.vue、PhotoConfigView.vue、model/PhotoConfig.ts。
-原项目未附许可证，按用户明确的本机自用范围保留来源，不作公开分发结论。
-保留原相册的覆盖裁切、圆角、800毫秒淡出、前后循环、每轮随机顺序、1～86400秒轮播、鼠标移动后暂停3秒与空目录设置入口。Vue展示改用原生DOM；左右箭头用文字替代图标依赖。
-FileApi/WidgetApi改为SoulDesk按实例目录授权与设置。用户经原生对话框选择后，宿主私有保存目录，组件仅取得直接子文件的名称及版本；不扫描子目录。支持原jpg/jpeg/gif/png/webp，按需读取当前照片，单图16 MiB、相册4096张、目录条目8192项；超限/删除/加载失败明确显示，保留上次照片。取消不替换目录；清除授权或删除实例不删除原照片。目录重新选择、会话失效与旧读取响应不能覆盖新图。
-隐藏试加载不读取文件夹；包与核心逻辑检查不代替原生选目录、真实图片显示/动画、暂停轮播及重启恢复验收。

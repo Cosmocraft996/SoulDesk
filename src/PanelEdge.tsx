@@ -49,14 +49,14 @@ export function EdgeStylePicker({ value, onChange }: { value: EdgeStyle; onChang
   </fieldset>;
 }
 
-export function PanelEdge({ visual, expanded, onHover, onActivate, onError }: {
-  visual: EdgeVisual; expanded: boolean; onHover: () => void; onActivate: () => void; onError: (message: string) => void;
+export function PanelEdge({ visual, expanded, locked, onHover, onActivate, onError }: {
+  visual: EdgeVisual; expanded: boolean; locked: boolean; onHover: () => void; onActivate: () => void; onError: (message: string) => void;
 }) {
   const gesture = useRef<{ pointer: number; x: number; y: number; moved: boolean; result: Promise<boolean> } | undefined>(undefined);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cancelHover = () => clearTimeout(hover.current);
   useEffect(() => () => clearTimeout(hover.current), []);
-  const label = expanded ? '收起组件面板' : '展开组件面板';
+  const label = expanded ? (locked ? '置底组件面板' : '收起组件面板') : '展开组件面板';
   const start = (event: PointerEvent<HTMLButtonElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
     cancelHover();

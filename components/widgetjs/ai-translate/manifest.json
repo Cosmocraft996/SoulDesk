@@ -1,1 +1,0 @@
-{"schemaVersion":1,"id":"local.souldesk.widgetjs.ai-translate","name":"AI翻译","version":"0.1.3","hostApiMajor":1,"loadCheck":1,"entry":"dist/index.html","defaultSize":{"width":650,"height":650},"minSize":{"width":330,"height":300},"capabilities":["storage.instance","ai.generate","clipboard.write"],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}}

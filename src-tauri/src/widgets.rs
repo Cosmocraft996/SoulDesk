@@ -394,6 +394,14 @@ pub fn stage(store: &Store, path: &Path) -> AppResult<StagedPackage> {
 }
 
 pub fn stage_bytes(store: &Store, bytes: Vec<u8>) -> AppResult<StagedPackage> {
+    stage_bytes_checked(store, bytes, |_| Ok(()))
+}
+
+pub(crate) fn stage_bytes_checked(
+    store: &Store,
+    bytes: Vec<u8>,
+    check: impl FnOnce(&Manifest) -> AppResult<()>,
+) -> AppResult<StagedPackage> {
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("INVALID_ARGUMENT: 压缩包超过 20 MiB".into());
     }
@@ -440,6 +448,7 @@ pub fn stage_bytes(store: &Store, bytes: Vec<u8>) -> AppResult<StagedPackage> {
     )
     .map_err(err)?;
     validate_manifest(&m)?;
+    check(&m)?;
     if !files.contains_key(&m.entry) {
         return Err("INVALID_ARGUMENT: 缺少入口文件".into());
     }
@@ -728,11 +737,19 @@ pub(crate) fn remove_instance_before(
 }
 
 pub fn unregister_package(store: &Store, package: &str) -> AppResult<()> {
-    // 外键阻止仍被实例使用的包取消登记；不删除包目录或历史版本。
-    if store
-        .db
-        .lock()
-        .map_err(err)?
+    // 核对引用与取消登记持有同一数据库锁，历史版本资源继续保留。
+    let db = store.db.lock().map_err(err)?;
+    let count: u64 = db
+        .query_row(
+            "SELECT count(*) FROM widget_instances WHERE package_id=?1",
+            [package],
+            |row| row.get(0),
+        )
+        .map_err(err)?;
+    if count != 0 {
+        return Err(format!("仍有 {count} 个实例使用此组件，请先管理实例"));
+    }
+    if db
         .execute("DELETE FROM widget_packages WHERE id=?1", [package])
         .map_err(err)?
         != 1

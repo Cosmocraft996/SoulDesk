@@ -1,2 +1,0 @@
-import{defineConfig}from'vite';import vue from'@vitejs/plugin-vue';import{fileURLToPath}from'node:url';
-export default defineConfig({root:fileURLToPath(new URL('.',import.meta.url)),base:'./',publicDir:false,plugins:[vue()],build:{target:'es2022',outDir:'../birthday-list-bundle',emptyOutDir:false,assetsInlineLimit:0,cssCodeSplit:false,modulePreload:false,rollupOptions:{output:{inlineDynamicImports:true,entryFileNames:'app.js',assetFileNames:asset=>asset.names?.some(name=>name.endsWith('.css'))?'style.css':'[name][extname]'}}}});

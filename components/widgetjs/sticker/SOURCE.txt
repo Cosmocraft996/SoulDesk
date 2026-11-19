@@ -1,8 +1,0 @@
-来源：https://github.com/rtugeek/photo
-固定提交：84ab455aa34cd29cd14e8a999d50e714c8dae637
-原始标识：widgetjs.cn.photo.sticker
-原文件：src/widgets/sticker/StickerWidgetView.vue、StickerConfigView.vue、src/common/AppConfig.ts。
-原项目未附许可证，按用户明确的本机自用范围保留来源，不作公开分发结论。
-保留原折角、阴影/白底、居中缩放、原Unsplash默认图片和本地图片/地址设置；Vue展示改为原生DOM。修正极小容器下减64像素造成负宽度的问题，缩放不放大原图。
-DialogApi改为SoulDesk原生文件选择。为避免长期授予任意本地路径，选中的图片复制到本实例文档存储，支持jpg/jpeg/gif/png/webp，单次打开上限16 MiB、存储32 MiB；源文件删除后已保存副本仍保留。网络地址限HTTPS，图片由WebView系统网络加载。保存成功后才替换当前图片；失败保留原图及重试候选，取消保留原图。隐藏试加载不读取本地或远程图片。
-文件对话框、真实图片解码/外观、远程图片及重启恢复仍待桌面验收。

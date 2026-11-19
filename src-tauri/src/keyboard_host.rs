@@ -485,7 +485,7 @@ mod tests {
         let options = zip::write::SimpleFileOptions::default();
         zip.start_file("manifest.json", options).unwrap();
         zip.write_all(include_bytes!(
-            "../../components/widgetjs/key-stroke/manifest.json"
+            "../component-assets/key-stroke-manifest.json"
         ))
         .unwrap();
         zip.start_file("dist/index.html", options).unwrap();

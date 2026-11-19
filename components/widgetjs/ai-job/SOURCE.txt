@@ -1,8 +1,0 @@
-来源：https://widgetjs.cn/ai/job/ 公开部署，目录标识widgetjs.cn.ai.job.boss。
-固定入口SHA-256：58806a7f80ab5389b49087dd66498bdd7c1982c2578cb199ead31b4e27d3d11f。这是部署字节散列，不是Git提交。
-31份原始部署文件、每份URL/字节数/SHA-256保存在job-source/original与SOURCE_FILES.json。公开部署没有附项目LICENSE，原资源与内嵌第三方声明保留，按用户已确认的自用范围移植；不对外宣称新的许可。
-scripts/adapt-widgetjs-job.mjs保留原Vue渲染、作用域、CSS、图标、岗位卡、筛选与三种知识内容区；替换原Electron、Dexie、OpenAI直连及自动生成行为。
-本机宿主管理实例配置、独立BOSS登录视图、岗位/评分、模型凭据、后台任务和知识聊天记录；远程页面没有宿主IPC。登录由用户手动完成；百科/导图点击生成后请求，面试发送消息后请求。模型连接由用户自行填写并显式启用，后台默认关闭。
-原下载落地页改为SoulDesk本地控制卡；系统标题栏负责窗口控制。原动态饼图改用同一ECharts库的SVG渲染并随窗口释放；导图使用项目已有受限Markmap引擎，Markdown经过净化。保留原教程与四家模型文档的固定帮助入口。
-UPSTREAM_NOTICES.txt保留原部署脚本内的第三方版权/许可声明；THIRD_PARTY_LICENSES.txt列出新增构建实际使用的项目依赖。
-真实登录、职位采集、模型费用、原生窗口、代理及实际连接释放由用户手动验收；离线检查不等于这些能力已通过实机验收。

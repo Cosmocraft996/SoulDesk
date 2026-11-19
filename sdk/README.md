@@ -1,6 +1,6 @@
 # SoulDesk 普通组件接口 v1（G2）
 
-组件为独立静态 ZIP 包，根目录放 manifest.json，资源放 dist/。examples/market/ 为业务组件参考；tests/fixtures/ 仅用于协议验收，不进入用户预置库。执行 pnpm example:build 可生成独立测试包。
+组件为独立静态 ZIP 包，根目录放 `manifest.json`，资源放 `dist/`。[组件广场](https://github.com/Cosmocraft996/SoulDesk-Widgets) 提供正式组件源和构建入口，`tests/fixtures/` 提供协议验收示例。
 
 已实现 `settings.get`、`settings.update`、`storage.get` 和 `storage.set`，均要求 `storage.instance`。`host.js` 完成来源与父窗口核对、消息通道握手、请求编号和普通请求的10秒超时；原生文件选择由用户完成或取消，不套用此超时。组件不直接调用Tauri。
 
@@ -31,7 +31,11 @@ await host.ready();
 
 Windows 默认组件来源为 `http://widget.localhost`；SDK 从宿主提供的入口 URL 取得准确的宿主来源，不向通配符发送有权限消息。实际来源行为需结合安装版验收记录理解。
 
-开发流程：复制模板并修改稳定 ID → 定义配置及默认值 → 用相对资源和 SDK 实现界面 → 初始化后报告就绪 → 独立构建 ZIP → 从管理界面导入 → 新建两个实例并核对配置隔离。普通组件不用修改或重新构建主程序；需要新的特殊后台能力时再升级宿主。
+在项目的 Codex 聊天中选用 [`$souldesk-widget`](../.agents/skills/souldesk-widget/SKILL.md)，描述组件的显示内容、交互和需要保存的数据。例如：
+
+> `$souldesk-widget` 做一个 Prompt 收藏夹。支持新增、编辑、搜索、复制和确认删除，收藏按实例保存在本机。打包成 ZIP 并在隔离实例中导入验证。
+
+从广场仓库运行 `python scripts/widget.py prompt-favorites` 得到示例 ZIP。通过宿主管理窗口「导入本地 ZIP」登记后从组件库添加。开发验证用 `pnpm dev` 默认的隔离数据。
 
 ## 可选本地共享库（本轮0.5.0源码）
 
@@ -85,7 +89,7 @@ API Host仅接受用户专属`*.qweatherapi.com`的HTTPS默认端口，不含路
 
 ## 行情与警报能力（宿主0.3.0起）
 
-`examples/market/` 使用同一协议独立构建：`node scripts/build-example.mjs examples/market`，当前产物 `artifacts/local.souldesk.market-0.2.0.zip`。同一源码也供预置行情组件使用；外部包仍可独立分发和升级，旧宿主遇到未知能力会拒绝导入。
+币安行情与价格警报包在[组件广场](https://github.com/Cosmocraft996/SoulDesk-Widgets/tree/main/widgets/market)维护。包可独立导入和升级，宿主负责行情与后台警报。
 
 | 清单能力 | 接口 |
 |---|---|
@@ -139,6 +143,8 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 `content.source.coin-index`和旧`content.read`也允许`host.request('content.peek',{source:'coin-index',instrument})`。该方法仅返回实例、币种和当前网络配置匹配的进程内展示快照，无记录时返回null，无网络请求。快照沿用原data/source/fetchedAt，并附`cached:true`和最多48个实际`{timestamp,price}`采样。最多保留128个实例，删除实例或退出后清理。页面重建时先恢复快照再报告ready，随后后台更新。正式会话可读取，隐藏试加载拒绝。
 
 `links.open` 开放同名方法，参数为 `{url}`，用于用户点击后打开系统默认浏览器；仅接收无凭证、无自定义端口的HTTPS公开域名，拒绝本地地址、文件及脚本协议。当前Windows使用参数数组交给系统URL处理器，不通过命令解释器。内容与链接能力均核对当前实例会话和声明权限，隐藏试加载拒绝调用，试加载页面应明确显示“不联网”。这些能力仅完成源码/核心检查，真实联网与桌面交互以13的证据为准。
+
+`links.openWeb` 需单独在清单声明，参数为 `{url}`，接受完整的 HTTP 或 HTTPS 网址，支持主机名、IPv4、方括号中的 IPv6 和自定义端口。用户点击后由 Windows 默认浏览器打开，试加载不调用。宿主拒绝带凭证、控制字符及其他协议的地址。网站收藏夹将未写协议的 IP 或带端口地址按 HTTP 保存，显式填写的 HTTPS 保留；HTTP、IP、常见内网域名与自定义端口地址使用本地图标占位。使用该能力的组件包需要含 `links.openWeb` 的宿主版本。
 
 
 ## 原生实时内容（当前0.5.0移植源码）

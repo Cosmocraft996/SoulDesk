@@ -61,16 +61,18 @@ const button = label => document.querySelector(`[aria-label="${label}"]`);
 const textButton = (scope, text) => [...scope.querySelectorAll('button')].find(node => node.textContent === text);
 const tab = name => [...document.querySelectorAll('[role="tab"]')].find(node => node.title === name);
 
-async function fixture({ legacy = false, active = null, locked = false, query = '?panel=1', positions = new Map(), outside } = {}) {
+async function fixture({ legacy = false, active = null, locked = false, query = '?panel=1', positions = new Map(), outside, shortcutRegistered = true, appTheme } = {}) {
   dom.reconfigure({ url: `http://fixture.local/${query}` });
   const state = {
+    appTheme,
     packages: [{ id: 'clock', name: '时钟', version: '1.0.0', defaultSize: { width: 300, height: 180 }, minSize: { width: 100, height: 80 } }],
     instances: ['a', 'b', 'hidden', 'desktop'].map(id => ({ id, packageId: 'clock', location: id === 'desktop' ? 'desktop' : 'panel', visible: id !== 'hidden', pinned: false, width: null, height: null })),
     panelGroups: { groups: [{ id: 'work', name: '工作', autoColor: palette.presets[0].color, color: null }, { id: 'life', name: '生活', autoColor: palette.presets[1].color, color: null }], active, membership: { a: 'work', hidden: 'work' }, ungroupedColor: null },
     panelLayouts: { a: { x: 30, y: 75, width: 320, height: 200 } },
-    panel: { ratio: .4, tint: .12, slideInMs: 250, slideOutMs: 250, desktopDoubleClick: true },
+    panel: { ratio: .4, tint: .5, slideInMs: 100, slideOutMs: 100, desktopDoubleClick: true },
     panelOpen: true,
     panelLocked: locked,
+    panelShortcutRegistered: shortcutRegistered,
     diagnostics: { shortcut: 'Ctrl+Alt+Space' }, updates: {},
   };
   if (legacy) delete state.panelGroups;
@@ -80,8 +82,18 @@ async function fixture({ legacy = false, active = null, locked = false, query = 
       if (command === 'snapshot') return { ...structuredClone(state), panelScroll: positions.get(state.panelGroups?.active ?? null) };
       if (command === 'panel_view' && args.update.event === 'scroll') { positions.set(args.update.group, args.update.position); return; }
       if (command === 'create_instance' && f.fail) throw Error('测试添加失败');
-      if (command === 'set_shortcut' && typeof args.enabled === 'boolean') state.panelShortcutEnabled = args.enabled;
+      if (command === 'set_shortcut') {
+        if (f.fail) throw Error('快捷键已被占用');
+        if (typeof args.enabled === 'boolean') state.panelShortcutEnabled = args.enabled;
+        if (args.value) state.diagnostics.shortcut = args.value;
+        state.panelShortcutRegistered = state.panelShortcutEnabled !== false;
+      }
       if (command === 'drag_panel_edge') return f.edgeDragged ?? false;
+      if (command === 'window_action' && args.action === 'set-app-theme') {
+        if (f.fail) throw Error('测试主题保存失败');
+        state.appTheme = args.theme;
+        return;
+      }
       if (command === 'window_action' && ['enable-widget-backdrop', 'disable-widget-backdrop'].includes(args.action)) {
         if (f.fail) throw Error('测试衬底保存失败');
         state.widgetBackdrop = args.action === 'enable-widget-backdrop';
@@ -166,7 +178,7 @@ test('按组跨窗口记住两轴滚动，屏外组件滚近才加载，显式�
   } finally { await second.close(); }
 });
 
-test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时仍可手动收起', async () => {
+test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时挂件用于置底', async () => {
   const first = await fixture();
   try {
     const lock = button('锁定面板');
@@ -181,10 +193,10 @@ test('锁定从宿主状态恢复，保存失败时保持原状态，锁定时�
     assert.equal(lock.getAttribute('aria-pressed'), 'true');
     assert.notEqual(lock.querySelector('path').getAttribute('d'), unlockedPath);
     assert.equal(lock.querySelector('svg').getAttribute('fill'), 'currentColor');
-    const collapse = button('收起组件面板');
+    const collapse = button('置底组件面板');
     assert.equal(collapse.disabled, false);
     await click(collapse);
-    assert.ok(first.calls.some(([command, args]) => command === 'window_action' && args.action === 'collapse'));
+    assert.ok(first.calls.some(([command, args]) => command === 'window_action' && args.action === 'edge-activate'));
   } finally { await first.close(); }
 
   const reopened = await fixture({ locked: first.state.panelLocked });
@@ -265,16 +277,63 @@ test('未分组可自定义和恢复灰色，取消不保存，无效色值不�
 test('黑白和饱和自定义色的标签文字与底色保持足够对比', async () => {
   const f = await fixture({ active: 'work' });
   const luminance = rgb => rgb.map(value => { const v = value / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+  const css = readFileSync(new URL('../src/app-theme.css', import.meta.url), 'utf8');
+  const cssDom = new JSDOM(`<style>${css}</style>`);
+  const rules = [...cssDom.window.document.styleSheets[0].cssRules];
+  const themes = rules.filter(rule => /^\[data-app-theme="[a-z]+"\]$/.test(rule.selectorText));
+  const groupRule = rules.find(rule => rule.selectorText === '.panel-group-tab, .panel-color-preview');
+  const hexToRgb = hex => hex.trim().slice(1).match(/../g).map(value => parseInt(value, 16));
   try {
+    assert.equal(themes.length, 4);
     await click(button('管理分组'));
     for (const color of ['#FFFFFF', '#000000', '#0000FF', '#00FF00']) {
       await click(textButton(groupRow('工作'), '配色')); await input(button('十六进制颜色'), color); await submit(document.querySelector('.panel-color-editor'));
       assert.equal(colorOf('工作'), color);
-      for (const variable of ['--group-bg', '--group-hover', '--group-active']) {
-        const rgb = tab('工作').style.getPropertyValue(variable).match(/\d+/g).map(Number);
-        assert.ok((luminance([245, 245, 247]) + .05) / (luminance(rgb) + .05) >= 4.5, `${color} 的 ${variable} 可读`);
+      for (const theme of themes) {
+        const text = luminance(hexToRgb(theme.style.getPropertyValue('--app-text')));
+        const card = hexToRgb(theme.style.getPropertyValue('--app-card'));
+        for (const variable of ['--group-bg', '--group-hover', '--group-active']) {
+          const weight = Number(groupRule.style.getPropertyValue(variable).match(/var\(--group-color\) (\d+)%/)[1]) / 100;
+          const background = luminance(hexToRgb(color).map((value, i) => card[i] * (1 - weight) + value * weight));
+          assert.ok((Math.max(text, background) + .05) / (Math.min(text, background) + .05) >= 4.5, `${theme.selectorText} ${color} 的 ${variable} 可读`);
+        }
       }
     }
+  } finally { cssDom.window.close(); await f.close(); }
+});
+
+test('应用主题显示已保存选项，成功后切换，失败保留当前主题', async () => {
+  const f = await fixture({ query: '?tab=checks', appTheme: 'pine' });
+  const choice = id => document.querySelector(`input[name="app-theme"][value="${id}"]`);
+  try {
+    assert.equal(document.documentElement.dataset.appTheme, 'pine');
+    assert.equal(choice('pine').checked, true);
+    assert.equal(document.querySelectorAll('input[name="app-theme"]').length, 4);
+    await click(choice('oat'));
+    assert.equal(f.state.appTheme, 'oat');
+    assert.equal(document.documentElement.dataset.appTheme, 'oat');
+    assert.equal(choice('oat').checked, true);
+    f.fail = true;
+    await click(choice('iris'));
+    assert.equal(document.documentElement.dataset.appTheme, 'oat');
+    assert.equal(choice('oat').checked, true);
+    assert.match(document.querySelector('.notice').textContent, /测试主题保存失败/);
+  } finally { await f.close(); }
+});
+
+test('侧边面板随宿主事件切换主题并保留组件会话与自定义分组色', async () => {
+  const f = await fixture({ active: 'work' });
+  try {
+    assert.equal(document.documentElement.dataset.appTheme, 'ink');
+    const widget = document.querySelector('[data-instance="a"]');
+    assert.ok(widget);
+    const groupColor = colorOf('工作');
+    f.state.appTheme = 'iris';
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
+    assert.equal(document.documentElement.dataset.appTheme, 'iris');
+    assert.equal(document.querySelector('[data-instance="a"]'), widget);
+    assert.deepEqual(f.mounts, ['a']);
+    assert.equal(colorOf('工作'), groupColor);
   } finally { await f.close(); }
 });
 
@@ -315,6 +374,9 @@ test('左边沿主键拖动等待宿主保存，失败撤掉拖动反馈，成�
     await click(button('面板设置'));
     assert.equal(button('面板宽度比例'), null);
     assert.match(document.querySelector('.panel-width-hint').textContent, /55%/);
+    assert.equal(button('面板背景遮罩').value, '50');
+    assert.equal(button('滑入时长').value, '100');
+    assert.equal(button('滑出时长').value, '100');
     await input(button('面板背景遮罩'), '25');
     assert.deepEqual(f.calls.filter(([command]) => command === 'set_panel').at(-1)[1], { tint: .25 });
     assert.equal(document.querySelector('.panel-shell').style.getPropertyValue('--panel-tint'), '0.25');
@@ -328,7 +390,7 @@ test('左边沿可用左右方向键微调，只提交宽度，不覆盖其他�
     await act(async () => button('调整面板宽度').dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowLeft' })));
     assert.ok(Math.abs(f.state.panel.ratio - .42) < 1e-9);
     assert.deepEqual(Object.keys(f.calls.find(([command]) => command === 'set_panel')[1]), ['ratio']);
-    assert.equal(f.state.panel.tint, .12);
+    assert.equal(f.state.panel.tint, .5);
     await act(async () => button('调整面板宽度').dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowRight' })));
     assert.ok(Math.abs(f.state.panel.ratio - .4) < 1e-9);
   } finally { await f.close(); }
@@ -440,11 +502,35 @@ test('管理页主键点击只把普通区域交给外部收起，面板按钮�
   } finally { await f.close(); }
 });
 
+test('面板快捷键未注册时可从管理页打开设置并重试原键', async () => {
+  const f = await fixture({ query: '', shortcutRegistered: false });
+  try {
+    const toggle = document.querySelector('[data-panel-toggle]');
+    assert.equal(toggle.querySelector('kbd'), null);
+    assert.match(document.querySelector('[role="alert"]').textContent, /Ctrl\+Alt\+Space 未能注册/);
+    await click(textButton(document, '快捷键设置'));
+    const field = document.querySelector('#shortcut');
+    assert.equal(field.value, 'Ctrl+Alt+Space');
+    const save = textButton(field.closest('.setting-row'), '保存');
+    f.fail = true;
+    await click(save);
+    assert.match(document.querySelector('[role="alert"]').textContent, /未能注册/);
+    assert.equal(toggle.querySelector('kbd'), null);
+    f.fail = false;
+    await click(save);
+    assert.deepEqual(f.calls.filter(([command]) => command === 'set_shortcut').map(([, args]) => args), [
+      { value: 'Ctrl+Alt+Space' }, { value: 'Ctrl+Alt+Space' },
+    ]);
+    assert.equal(document.querySelector('[role="alert"]'), null);
+    assert.equal(toggle.querySelector('kbd').textContent, 'Ctrl+Alt+Space');
+  } finally { await f.close(); }
+});
+
 test('展开后按住挂件仍发起移动，拖完不会误收起，轻点可收起', async () => {
   const f = await fixture();
   try {
     const toggle = button('收起组件面板');
-    const collapseCalls = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action === 'collapse');
+    const activateCalls = () => f.calls.filter(([command, args]) => command === 'window_action' && args.action === 'edge-activate');
     const pressAndRelease = () => act(async () => {
       edgePointer(toggle, 'pointerdown', { buttons: 1 });
       toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
@@ -452,10 +538,10 @@ test('展开后按住挂件仍发起移动，拖完不会误收起，轻点可�
     f.edgeDragged = true;
     await pressAndRelease();
     assert.equal(f.calls.filter(([command]) => command === 'drag_panel_edge').length, 1);
-    assert.equal(collapseCalls().length, 0);
+    assert.equal(activateCalls().length, 0);
     f.edgeDragged = false;
     await pressAndRelease();
-    assert.equal(collapseCalls().length, 1);
+    assert.equal(activateCalls().length, 1);
   } finally { await f.close(); }
 });
 
@@ -879,5 +965,115 @@ test('从组件工具栏移动分组，失败保留选择，成功后可在目�
     assert.equal(document.querySelector('dialog'), null); assert.equal(f.mounted.size, 0);
     await click(tab('工作')); assert.deepEqual([...f.mounted].sort(), ['a', 'b']);
     assert.equal(f.state.instances.length, 4);
+  } finally { await f.close(); }
+});
+
+test('官方广场选兼容版本，更新确认显示新增权限，试加载失败保留原登记', async () => {
+  const f = await fixture({ query: '?management=1' });
+  const id = 'official.souldesk.test';
+  const digest = 'c'.repeat(64);
+  const local = { ...f.state.packages[0], id, version: '0.1.0', installed: true, digest: 'a'.repeat(64), capabilities: [] };
+  f.state.packages.push(local);
+  const compatible = { version: '0.1.1', minHostVersion: '0.5.0', capabilities: ['storage.instance'],
+    releaseNotes: '启用便签保存', status: 'published', sha256: digest };
+  const official = { id, name: '测试组件', category: '效率', summary: '测试说明', versions: [
+    { ...compatible, version: '0.5.0', minHostVersion: '99.0.0' },
+    { ...compatible, version: '0.4.0', status: 'withdrawn' }, compatible,
+  ] };
+  const base = f.invoke.bind(f);
+  f.invoke = async (command, args) => {
+    if (command === 'official_catalog') return { online: true, catalog: { revision: 4, widgets: [official] } };
+    if (command === 'install_official') {
+      f.calls.push([command, args]);
+      throw Error('试加载超时，原版已保留');
+    }
+    return base(command, args);
+  };
+  try {
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
+    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('官方广场')));
+    const card = document.querySelector('.gallery-package');
+    assert.match(card.textContent, /v0\.1\.1/);
+    assert.doesNotMatch(card.textContent, /v0\.5\.0|v0\.4\.0/);
+    await click(textButton(card, '更新'));
+    const dialog = document.querySelector('dialog[open]');
+    assert.match(dialog.textContent, /新增权限 · 读取和保存当前实例的设置与存储/);
+    await submit(dialog.querySelector('form'));
+    assert.deepEqual(f.calls.find(([name]) => name === 'install_official')[1],
+      { packageId: id, expectedSha256: digest });
+    assert.match(dialog.querySelector('[role=alert]').textContent, /试加载超时/);
+    assert.equal(local.version, '0.1.0');
+  } finally { await f.close(); }
+});
+
+test('目录故障保留可信列表和已装组件状态，已撤回的包可离线卸载', async () => {
+  const f = await fixture({ query: '?management=1' });
+  const id = 'official.souldesk.test';
+  const local = { ...f.state.packages[0], id, version: '0.1.0', installed: true, digest: 'a'.repeat(64) };
+  f.state.packages.push(local);
+  const version = { version: '0.1.0', minHostVersion: '0.5.0', capabilities: [],
+    releaseNotes: '首次发布', status: 'published', sha256: 'b'.repeat(64) };
+  const entry = { id, name: '测试组件', category: '效率', summary: '测试说明', versions: [version] };
+  const base = f.invoke.bind(f);
+  f.invoke = async (command, args) => {
+    if (command === 'unregister_package') {
+      f.state.packages = f.state.packages.filter(item => item.id !== args.packageId);
+    }
+    if (command === 'official_catalog') {
+      return { online: false, error: '官方目录验签失败', catalog: { revision: 4, widgets: [entry] } };
+    }
+    return base(command, args);
+  };
+  try {
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
+    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('官方广场')));
+    assert.match(document.querySelector('[role=status]').textContent, /上次验签成功/);
+    assert.match(document.querySelector('.gallery-package').textContent, /同版本.*冲突/);
+    version.status = 'withdrawn';
+    await click(textButton(document, '刷新目录'));
+    assert.match(document.querySelector('.gallery-package').textContent, /暂无可安装版本/);
+    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('组件库')));
+    const localCard = [...document.querySelectorAll('.library-grid .package')]
+      .find(card => card.querySelector('[data-kind]')?.dataset.kind === id);
+    await click(textButton(localCard, '卸载'));
+    assert.ok(f.calls.some(([name, args]) => name === 'unregister_package' && args.packageId === id));
+    assert.equal(f.state.packages.some(item => item.id === id), false);
+  } finally { await f.close(); }
+});
+
+
+test('官方广场首次安装须确认，完成后由用户决定添加到面板', async () => {
+  const f = await fixture({ query: '?management=1' });
+  const id = 'official.souldesk.test';
+  const release = { version: '0.1.0', minHostVersion: '0.5.2', capabilities: [],
+    releaseNotes: '首次发布', status: 'published', sha256: 'a'.repeat(64) };
+  const widget = { id, name: '测试组件', category: '效率', summary: '测试说明', versions: [release] };
+  const base = f.invoke.bind(f);
+  f.invoke = async (command, args) => {
+    if (command === 'official_catalog') return { online: true, catalog: { revision: 4, widgets: [widget] } };
+    if (command === 'install_official') {
+      f.state.packages.push({ ...f.state.packages[0], id, version: release.version, installed: true, digest: release.sha256 });
+    }
+    if (command === 'create_instance') {
+      f.state.instances.push({ ...f.state.instances[0], id: 'gallery-instance', packageId: id, location: 'panel' });
+    }
+    return base(command, args);
+  };
+  try {
+    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('官方广场')));
+    const card = () => document.querySelector('.gallery-package');
+    await click(textButton(card(), '安装'));
+    assert.equal(f.calls.some(([name]) => name === 'install_official'), false);
+    const dialog = document.querySelector('dialog[open]');
+    assert.match(dialog.textContent, /测试组件.*0\.1\.0.*0\.5\.2.*无需额外权限/);
+    await submit(dialog.querySelector('form'));
+    assert.deepEqual(f.calls.find(([name]) => name === 'install_official')[1],
+      { packageId: id, expectedSha256: release.sha256 });
+    assert.match(card().textContent, /0 个实例/);
+    assert.equal(f.calls.some(([name]) => name === 'create_instance'), false);
+    await click(textButton(card(), '添加到面板'));
+    assert.deepEqual(f.calls.find(([name]) => name === 'create_instance')[1], { packageId: id });
+    assert.ok(textButton(card(), '管理实例'));
+    assert.equal(textButton(card(), '卸载'), undefined);
   } finally { await f.close(); }
 });

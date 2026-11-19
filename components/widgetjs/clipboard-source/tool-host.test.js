@@ -1,2 +1,0 @@
-import test from'node:test';import assert from'node:assert/strict';import{toolHost}from'./tool-host.js';
-test('工具普通文档调用映射固定命名空间，不读写父实例存储或传入范围参数',async()=>{const calls=[],host={instanceId:'parent',preview:false,request:async(m,a)=>{calls.push([m,a]);return{};}};const tool=toolHost(host);await tool.request('storage.get');await tool.request('storage.set',{content:'工具文本'});await tool.request('ai.status');assert.deepEqual(calls,[['ai.document.get',undefined],['ai.document.set',{document:{content:'工具文本'}}],['ai.status',null]]);assert.equal(tool.instanceId,'parent');});

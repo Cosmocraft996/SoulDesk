@@ -1,6 +1,0 @@
-原入口：https://itime.fun/web/assets/index-BJrdQu13.js
-以下为按原文本截取的主题默认值和Deadline目录定义，并非完整入口文件。
-
-x_=new dEe({backgroundColor:"rgba(0,0,0,0.5)",color:"#fff",fontSize:"14px",borderColor:"rgba(255,255,255,0.4)",dividerColor:"rgba(255,255,255,0.4)",primaryColor:"rgb(0, 149, 255)",borderRadius:"22px",backgroundBorderColor:"hsla(0,0%,100%,.06)",backgroundBoxShadowColor:"hsla(0, 0%, 100%, 0.1)"});Object.freeze(x_);
-
-$g=new Ti({name:".deadline",title:{"zh-CN":"Deadline","en-US":"Deadline"},description:{"zh-CN":"最后期限进度条","en-US":"Deadline countdown progress bar"},keywords:[rl.RECOMMEND],categories:["fun","countdown","time"],lang:"zh-CN",width:4,height:2,minWidth:4,maxWidth:4,minHeight:2,maxHeight:2,previewImage:"/images/preview_deadline.png",path:"/widget/deadline",configPagePath:"/widget/config/deadline?frame=true&transparent=false&width=900&height=700",configPage:{path:"/widget/config/deadline",frame:!0,transparent:!1,width:900,height:700}})

@@ -2,6 +2,7 @@
 
 pub(crate) const LEGACY_CONTENT_READ: &str = "content.read";
 pub(crate) const HTTPS_IMAGES: &str = "images.https";
+pub(crate) const OPEN_WEB_LINK: &str = "links.openWeb";
 
 const CONTENT_SOURCE_CAPABILITIES: &[(&str, &str)] = &[
     ("bangumi", "content.source.bangumi"),
@@ -90,6 +91,7 @@ pub(crate) const CAPABILITIES: &[&str] = &[
     "keyboard.display",
     "servers.monitor",
     "links.open",
+    OPEN_WEB_LINK,
 ];
 
 pub(crate) fn known_capability(name: &str) -> bool {

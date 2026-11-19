@@ -1,8 +1,0 @@
-来源：https://github.com/rtugeek/stock
-固定提交：0f5157961908bb3fdec71d443117783a3496571f
-原始标识：cn.stocks.widget.metal
-原文件：src/widgets/metal/metal-widget-view.tsx、metal-config-view.tsx、src/api/metal-api.ts、src/store/use-stock-color-store.ts。
-原项目未附许可证，按用户明确的本机自用范围保留来源，不作公开分发结论。
-保留原四行Gold/Silver/Copper/Platinum、标签色、价格/百分比、红涨绿跌或绿涨红跌、主题设置及源码实际30秒刷新周期。React/styled-components/shadcn外壳改为对应的原生DOM/CSS，原共享包设置改为SoulDesk实例独立配置。
-仍使用原BiQuote接口和XAUUSD/XAGUSD/XCUUSD/XPTUSD，不用币安或其他交易所替代。标明来源、USD中间价Mid、原市场状态与更新时间；原始JSON数字直接严格转为十进制字符串，超出支持范围拒绝，不先做浮点或静默舍入，显示用整数舍入。另按当前公开OpenAPI保留上游source/exchange和quoteAgeSeconds，优先使用lastQuoteAt作为报价时间，缺失来源或交易所明确显示未提供；marketState=null显示状态未提供。保留源stale，超过90秒或未来时间标为旧数据；失败保留上次行情并显示失败，较旧响应不覆盖较新数据。不参与币安行情连接和价格警报。
-固定网关复用宿主网络设置、8秒超时、2 MiB上限、禁止重定向。隐藏试加载不联网。检索工具读取原行情接口被网站robots策略拒绝，未换方式绕行；其公开OpenAPI文档可读取，不等于行情实测通过。实际宿主联网、真实来源时间/状态和桌面显示仍待验收。

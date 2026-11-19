@@ -1,6 +1,5 @@
 //! 组件先在无前台激活的隐藏容器试加载，成功后才切换持久登记。
 use crate::{
-    presets,
     store::{err, AppResult},
     widgets::{self, Preview, StagedPackage},
     windows, Core,
@@ -11,47 +10,22 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 pub async fn install(app: &AppHandle, path: &Path) -> AppResult<widgets::Manifest> {
     let path = path.to_owned();
     install_with(app, move |store| widgets::stage(store, &path)).await
 }
 
-pub async fn ensure_preset(app: &AppHandle, id: &str) -> AppResult<()> {
-    let Some(preset) = presets::find(id)? else {
-        return Ok(());
-    };
-    let installed: bool = app
-        .state::<Core>()
-        .store
-        .db
-        .lock()
-        .map_err(err)?
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM widget_packages WHERE id=?1)",
-            [id],
-            |row| row.get(0),
-        )
-        .map_err(err)?;
-    // 已登记的包（包括手动导入的新版）优先，预置资源不覆盖用户版本或配置。
-    if !installed {
-        install_with(app, move |store| {
-            widgets::stage_bytes(store, preset.archive()?)
-        })
-        .await?;
-    }
-    Ok(())
-}
-
-/// 用户在管理界面显式升级预置版本；沿用隐藏试加载和失败保留，不在启动时覆盖。
-pub async fn update_preset(app: &AppHandle, id: &str) -> AppResult<()> {
-    let preset = presets::find(id)?.ok_or("没有此预置组件")?;
+pub async fn install_verified(
+    app: &AppHandle,
+    bytes: Vec<u8>,
+    check: impl FnOnce(&widgets::Manifest) -> AppResult<()> + Send + 'static,
+) -> AppResult<widgets::Manifest> {
     install_with(app, move |store| {
-        widgets::stage_bytes(store, preset.archive()?)
+        widgets::stage_bytes_checked(store, bytes, check)
     })
-    .await?;
-    app.emit("host:changed", ()).map_err(err)
+    .await
 }
 
 async fn install_with(
@@ -164,7 +138,12 @@ async fn trial_once(
         Ok(())
     }
     .await;
-    if result.is_err() && app.state::<Core>().verification.is_some() {
+    let core = app.state::<Core>();
+    let gallery_check = core
+        .integration
+        .as_ref()
+        .is_some_and(|config| config.mode == "official-gallery");
+    if result.is_err() && (core.verification.is_some() || gallery_check) {
         if let Some(window) = app.get_webview_window(&label) {
             let handle = app.clone();
             let report_label = label.clone();

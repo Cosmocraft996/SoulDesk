@@ -320,8 +320,7 @@ impl Native<'_> {
         let owner = s.owner.clone();
         let icon = TrayIconBuilder::with_id(tray_id(&owner))
             .icon(tauri::image::Image::new_owned(
-                include_bytes!("../../components/widgetjs/pomodoro-source/pomodoro-tray.rgba")
-                    .to_vec(),
+                include_bytes!("../component-assets/pomodoro-tray.rgba").to_vec(),
                 32,
                 32,
             ))

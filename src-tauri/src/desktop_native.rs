@@ -281,7 +281,8 @@ pub fn place(
         if child && ScreenToClient(GetParent(h), &mut point) == 0 {
             return Err(winerr("转换桌面坐标失败"));
         }
-        let insert = if child {
+        let keep_panel_order = w.label() == "panel";
+        let insert = if child || keep_panel_order {
             HWND_TOP
         } else if w.label() == "desktop-probe-panel"
             || GetWindowLongPtrW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0
@@ -290,6 +291,14 @@ pub fn place(
         } else {
             HWND_NOTOPMOST
         };
+        let mut flags = SWP_NOACTIVATE | SWP_FRAMECHANGED;
+        if keep_panel_order {
+            // 几何调整沿用现有层级，置顶和置底只由面板协调器处理。
+            flags |= SWP_NOZORDER;
+        }
+        if show {
+            flags |= SWP_SHOWWINDOW;
+        }
         if SetWindowPos(
             h,
             insert,
@@ -297,7 +306,7 @@ pub fn place(
             point.y,
             width as i32,
             height as i32,
-            SWP_NOACTIVATE | SWP_FRAMECHANGED | if show { SWP_SHOWWINDOW } else { 0 },
+            flags,
         ) == 0
         {
             return Err(winerr("设置窗口几何失败"));
@@ -345,10 +354,14 @@ pub fn hide(w: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 pub fn pointer_inside(w: &WebviewWindow) -> Result<bool, String> {
+    pointer_inside_window(handle(w)? as HWND)
+}
+
+fn pointer_inside_window(window: HWND) -> Result<bool, String> {
     let mut point = POINT::default();
     let mut rect = RECT::default();
     unsafe {
-        if GetCursorPos(&mut point) == 0 || GetWindowRect(handle(w)? as HWND, &mut rect) == 0 {
+        if GetCursorPos(&mut point) == 0 || GetWindowRect(window, &mut rect) == 0 {
             return Err(winerr("读取面板鼠标位置失败"));
         }
     }
@@ -358,6 +371,17 @@ pub fn pointer_inside(w: &WebviewWindow) -> Result<bool, String> {
             && point.y >= rect.top
             && point.y < rect.bottom,
     )
+}
+
+pub(crate) fn panel_presence(raw: usize) -> Result<(bool, bool), String> {
+    let panel = raw as HWND;
+    let active = unsafe { GetForegroundWindow() };
+    // 面板打开的原生对话框仍属于这次面板交互。
+    if !active.is_null() && active != panel && unsafe { GetAncestor(active, GA_ROOTOWNER) } == panel
+    {
+        return Ok((true, true));
+    }
+    Ok((pointer_inside_window(panel)?, active == panel))
 }
 
 pub fn hover_hits(w: &WebviewWindow) -> Result<bool, String> {
@@ -446,6 +470,22 @@ pub fn slide_panel(
 }
 pub fn check_attachment(w: &WebviewWindow, pinned: bool) -> Result<(), String> {
     let h = handle(w)? as HWND;
+    verify_attachment(h, pinned).map_err(|e| attachment_error(w, pinned, e))
+}
+
+fn attachment_error(w: &WebviewWindow, pinned: bool, error: String) -> String {
+    format!(
+        "{} 层级校验失败（预期置顶={pinned}）：{error}；实际 {}",
+        w.label(),
+        describe(w)
+    )
+}
+
+fn is_topmost(h: HWND) -> bool {
+    unsafe { GetWindowLongPtrW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 }
+}
+
+fn verify_attachment(h: HWND, pinned: bool) -> Result<(), String> {
     unsafe {
         attachment_valid(
             IsWindow(h) != 0 && pid(h) == std::process::id(),
@@ -455,18 +495,10 @@ pub fn check_attachment(w: &WebviewWindow, pinned: bool) -> Result<(), String> {
             } else {
                 GetParent(h) == desktop()?
             },
-            GetWindowLongPtrW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0,
+            is_topmost(h),
             pinned,
         )
-        .map_err(|e| {
-            format!(
-                "{} 层级校验失败（预期置顶={pinned}）：{e}；实际 {}",
-                w.label(),
-                describe(w)
-            )
-        })?;
     }
-    Ok(())
 }
 pub fn toggle_pin(w: &WebviewWindow) -> Result<bool, String> {
     let h = handle(w)? as HWND;
@@ -515,7 +547,16 @@ pub fn set_desktop_layer(w: &WebviewWindow, foreground: bool) -> Result<(), Stri
     check_attachment(w, true)
 }
 
-// 查找最高的可见桌面宿主及其上方最后一个普通窗口，跳过面板自己的旧位置。
+fn is_shell_desktop_window(window: HWND, explorer: u32) -> bool {
+    !window.is_null()
+        && pid(window) == explorer
+        && matches!(
+            class(window).as_str(),
+            "Progman" | "WorkerW" | "SHELLDLL_DefView"
+        )
+}
+
+// 查找最高的桌面窗口（包括由桌面图标视图拥有的格子）及其上方的窗口。
 fn panel_desktop_slot(panel: HWND) -> Result<(HWND, bool), String> {
     let explorer = pid(unsafe { GetShellWindow() });
     if explorer == 0 {
@@ -532,7 +573,10 @@ fn panel_desktop_slot(panel: HWND) -> Result<(HWND, bool), String> {
             IsWindowVisible(window) != 0
                 && GetWindowLongPtrW(window, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST == 0
         } {
-            if pid(window) == explorer && matches!(class(window).as_str(), "Progman" | "WorkerW") {
+            if is_shell_desktop_window(window, explorer)
+                || (unsafe { IsIconic(window) } == 0
+                    && is_shell_desktop_window(unsafe { GetWindow(window, GW_OWNER) }, explorer))
+            {
                 return Ok((after, panel_in_slot));
             }
             panel_in_slot = window == panel;
@@ -564,7 +608,7 @@ unsafe extern "system" fn keep_panel_order(
     DefSubclassProc(hwnd, message, wparam, lparam)
 }
 
-fn move_panel_to_slot(panel: HWND, after: HWND) -> Result<(), String> {
+fn move_panel_to_slot(panel: HWND, after: HWND, flags: SET_WINDOW_POS_FLAGS) -> Result<(), String> {
     if unsafe {
         SetWindowPos(
             panel,
@@ -573,7 +617,7 @@ fn move_panel_to_slot(panel: HWND, after: HWND) -> Result<(), String> {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | flags,
         )
     } == 0
     {
@@ -585,13 +629,12 @@ fn move_panel_to_slot(panel: HWND, after: HWND) -> Result<(), String> {
 fn place_panel_above_desktop(panel: HWND) -> Result<(), String> {
     let (after, in_slot) = panel_desktop_slot(panel)?;
     if !in_slot {
-        let topmost = unsafe { GetWindowLongPtrW(panel, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 };
-        let after = if after == HWND_TOP && topmost {
+        let after = if after == HWND_TOP && is_topmost(panel) {
             HWND_NOTOPMOST
         } else {
             after
         };
-        move_panel_to_slot(panel, after)?;
+        move_panel_to_slot(panel, after, SWP_NOSENDCHANGING)?;
     }
     Ok(())
 }
@@ -605,7 +648,14 @@ pub fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), S
             let result = unsafe {
                 if foreground {
                     RemoveWindowSubclass(panel, Some(keep_panel_order), PANEL_ORDER_SUBCLASS);
-                    move_panel_to_slot(panel, HWND_TOPMOST)
+                    (|| {
+                        move_panel_to_slot(panel, HWND_TOPMOST, 0)?;
+                        if !is_topmost(panel) {
+                            // 窗口消息可能改写第一次请求。仅在实际仍未置顶时绕过该消息补一次。
+                            move_panel_to_slot(panel, HWND_TOPMOST, SWP_NOSENDCHANGING)?;
+                        }
+                        verify_attachment(panel, true)
+                    })()
                 } else if SetWindowSubclass(panel, Some(keep_panel_order), PANEL_ORDER_SUBCLASS, 0)
                     == 0
                 {
@@ -617,12 +667,13 @@ pub fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), S
             let _ = send.send(result);
         })
         .map_err(err)?;
-    receive
+    let result = receive
         .recv_timeout(std::time::Duration::from_secs(2))
-        .map_err(err)??;
+        .map_err(err)?;
     if foreground {
-        return check_attachment(window, true);
+        return result.map_err(|e| attachment_error(window, true, e));
     }
+    result?;
     check_panel_desktop_slot(window)
 }
 
@@ -636,9 +687,13 @@ pub fn check_panel_desktop_slot(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn maintain_panel_desktop_slot(window: &WebviewWindow) -> Result<(), String> {
+pub fn maintain_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), String> {
     let panel = handle(window)? as HWND;
-    if unsafe { IsWindowVisible(panel) } != 0 {
+    if foreground {
+        if !is_topmost(panel) {
+            set_panel_layer(window, true)?;
+        }
+    } else if unsafe { IsWindowVisible(panel) } != 0 {
         place_panel_above_desktop(panel)?;
     }
     Ok(())

@@ -1,6 +1,0 @@
-来源：https://github.com/rtugeek/utilities
-固定提交：3d733215bac3e9c1e58125518f100c1601650828
-原始标识：cn.widgetjs.widgets.note
-原文件：src/widgets/note/NoteWidgetView.vue，src/i18n/zh.json
-移植：保留横线纸、边线、直接编辑、Ctrl＋滚轮10～120字号；将网页存储改为SoulDesk实例存储，增加串行保存、失败状态和重试。
-差异：个人自用；来源树未附许可证，保留来源事实。单实例存储上限4 MiB，超限明确拒绝并保留当前输入；离开组件前需确认“已保存”。

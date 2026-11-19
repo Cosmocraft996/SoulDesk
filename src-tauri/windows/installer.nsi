@@ -47,6 +47,7 @@ ManifestDPIAwareness PerMonitorV2
 {{/if}}
 
 !include MUI2.nsh
+!include nsDialogs.nsh
 !include FileFunc.nsh
 !include x64.nsh
 !include WordFunc.nsh
@@ -102,6 +103,8 @@ Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
 Var OldMainBinaryName
+Var ResetDataRadio
+Var ResetUserData
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -189,7 +192,6 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_LANGDLL_REGISTRY_KEY "${MANUPRODUCTKEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
-; SoulDesk 安装直接进入进度页，完成后由用户决定是否启动。
 ; 仅在配置了许可证时显示许可页。
 !if "${LICENSE}" != ""
   !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
@@ -212,6 +214,7 @@ Var AppStartMenuFolder
 !endif
 !insertmacro MUI_PAGE_STARTMENU Application $AppStartMenuFolder
 
+Page custom ShowInstallMode LeaveInstallMode
 !insertmacro MUI_PAGE_INSTFILES
 
 !define MUI_FINISHPAGE_RUN
@@ -282,6 +285,101 @@ LangString launchSoulDesk ${LANG_SIMPCHINESE} "立即启动 ${PRODUCTNAME}"
 LangString launchSoulDesk ${LANG_ENGLISH} "Launch ${PRODUCTNAME} now"
 LangString downgradeBlocked ${LANG_SIMPCHINESE} "已安装较新的 ${PRODUCTNAME}，无法安装此版本。"
 LangString downgradeBlocked ${LANG_ENGLISH} "A newer version of ${PRODUCTNAME} is already installed."
+LangString installModeTitle ${LANG_SIMPCHINESE} "选择安装方式"
+LangString installModeTitle ${LANG_ENGLISH} "Choose an installation mode"
+LangString installModeSubtitle ${LANG_SIMPCHINESE} "选择如何处理当前 Windows 用户的 SoulDesk 数据。"
+LangString installModeSubtitle ${LANG_ENGLISH} "Choose what to do with the current Windows user's SoulDesk data."
+LangString keepUserData ${LANG_SIMPCHINESE} "保留用户数据安装（推荐）"
+LangString keepUserData ${LANG_ENGLISH} "Install and keep user data (recommended)"
+LangString keepUserDataDetail ${LANG_SIMPCHINESE} "覆盖程序文件，保留组件、布局、设置和历史记录。"
+LangString keepUserDataDetail ${LANG_ENGLISH} "Replace program files and keep widgets, layouts, settings, and history."
+LangString resetUserData ${LANG_SIMPCHINESE} "完全覆盖安装"
+LangString resetUserData ${LANG_ENGLISH} "Clean installation"
+LangString resetUserDataDetail ${LANG_SIMPCHINESE} "覆盖程序文件，将旧数据移到备份目录。再次启动时使用空白数据。"
+LangString resetUserDataDetail ${LANG_ENGLISH} "Replace program files and move old data to a backup. Start fresh next time."
+LangString confirmResetUserData ${LANG_SIMPCHINESE} "完全覆盖后，旧组件、布局、设置和历史记录会移到备份目录，新版将从空白数据启动。是否继续？"
+LangString confirmResetUserData ${LANG_ENGLISH} "Old widgets, layouts, settings, and history will be moved to a backup. SoulDesk will start fresh. Continue?"
+LangString confirmCloseApp ${LANG_SIMPCHINESE} "${PRODUCTNAME} 正在运行。点击「确定」自动关闭并继续，或点击「取消」停止本次安装。"
+LangString confirmCloseApp ${LANG_ENGLISH} "${PRODUCTNAME} is running. Click OK to close it and continue, or Cancel to stop this installation attempt."
+LangString closeAppFailed ${LANG_SIMPCHINESE} "无法确认 ${PRODUCTNAME} 已退出。请从系统托盘退出 ${PRODUCTNAME} 后重试。"
+LangString closeAppFailed ${LANG_ENGLISH} "Could not verify that ${PRODUCTNAME} closed. Exit it from the system tray and try again."
+LangString resetUserDataFailed ${LANG_SIMPCHINESE} "程序文件已写入，但无法移动旧数据。请确认 ${PRODUCTNAME} 已退出，且数据目录可写，再重试完全覆盖安装。"
+LangString resetUserDataFailed ${LANG_ENGLISH} "Program files were installed, but the old data could not be moved. Close ${PRODUCTNAME}, check that its data directory is writable, and try again."
+LangString userDataBackedUp ${LANG_SIMPCHINESE} "旧数据已备份到"
+LangString userDataBackedUp ${LANG_ENGLISH} "Old data backed up to"
+
+Function ShowInstallMode
+  ${If} $PassiveMode = 1
+  ${OrIf} $UpdateMode = 1
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "$(installModeTitle)" "$(installModeSubtitle)"
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+
+  ${NSD_CreateFirstRadioButton} 0 5u 100% 14u "$(keepUserData)"
+  Pop $0
+  ${NSD_Check} $0
+  ${NSD_CreateLabel} 14u 22u 94% 23u "$(keepUserDataDetail)"
+  Pop $0
+  ${NSD_CreateAdditionalRadioButton} 0 51u 100% 14u "$(resetUserData)"
+  Pop $ResetDataRadio
+  ${NSD_CreateLabel} 14u 68u 94% 23u "$(resetUserDataDetail)"
+  Pop $0
+
+  GetDlgItem $0 $HWNDPARENT 1
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^InstallBtn)"
+  nsDialogs::Show
+FunctionEnd
+
+Function LeaveInstallMode
+  ${NSD_GetState} $ResetDataRadio $ResetUserData
+  ${If} $ResetUserData = ${BST_CHECKED}
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "$(confirmResetUserData)" IDOK confirm_reset
+    Abort
+    confirm_reset:
+  ${EndIf}
+  Call CloseRunningAppForInstall
+FunctionEnd
+
+Function CloseRunningAppForInstall
+  IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 done
+  !insertmacro RestartManager_StartSession $R0
+  ${If} $R0 == ""
+    Goto failed
+  ${EndIf}
+
+  !insertmacro RestartManager_RegisterFile $R0 "$INSTDIR\${MAINBINARYNAME}.exe"
+  ${If} $0 = 0
+    System::Call 'RSTRTMGR::RmGetList(i R0, *i .r1, *i .r2, p 0, *i .r3) i .r0'
+    ${If} $0 = ${ERROR_MORE_DATA}
+      ${If} $PassiveMode <> 1
+        MessageBox MB_OKCANCEL|MB_ICONQUESTION|MB_DEFBUTTON2 "$(confirmCloseApp)" /SD IDOK IDCANCEL cancelled
+      ${EndIf}
+      System::Call 'RSTRTMGR::RmShutdown(i R0, i ${RmForceShutdown}, p 0) i .r0'
+    ${EndIf}
+  ${EndIf}
+  !insertmacro RestartManager_EndSession $R0
+  ${If} $0 = 0
+    Goto done
+  ${EndIf}
+
+  failed:
+  MessageBox MB_OK|MB_ICONEXCLAMATION "$(closeAppFailed)" /SD IDOK
+  Abort
+
+  cancelled:
+  !insertmacro RestartManager_EndSession $R0
+  ; 在离开选择页的回调中中止，用户仍可重试或退出。
+  Abort
+
+  done:
+FunctionEnd
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -342,6 +440,13 @@ Function .onInit
       ${EndIf}
     ${EndIf}
   !endif
+
+  ; 应用内更新及无人值守安装跳过安装方式选择，始终保留数据。
+  ${If} $PassiveMode = 1
+  ${OrIf} $UpdateMode = 1
+  ${OrIf} ${Silent}
+    Call CloseRunningAppForInstall
+  ${EndIf}
 FunctionEnd
 
 Section WebView2
@@ -437,15 +542,13 @@ Section WebView2
 SectionEnd
 
 Section Install
-  ; 用户确认后由 Windows 重启管理器关闭目标程序，取消则在写入前停止安装。
-  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-
   SetOutPath $INSTDIR
   !ifmacrodef NSIS_HOOK_PREINSTALL
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif
 
-  ; Copy main executable
+  ; 只有程序及资源都写入成功，才允许重置数据。
+  AllowSkipFiles off
   File "${MAINBINARYSRCPATH}"
 
   ; Copy resources
@@ -460,6 +563,7 @@ Section Install
   {{#each binaries}}
     File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
+  AllowSkipFiles on
 
   ; Create file associations
   {{#each file_associations as |association| ~}}
@@ -535,11 +639,49 @@ Section Install
     !insertmacro NSIS_HOOK_POSTINSTALL
   !endif
 
+  ${If} $ResetUserData = ${BST_CHECKED}
+    Call ArchiveUserData
+  ${EndIf}
+
   ; Auto close this page for passive mode
   ${If} $PassiveMode = 1
     SetAutoClose true
   ${EndIf}
 SectionEnd
+
+Function ArchiveUserData
+  ${If} $LOCALAPPDATA == ""
+    Goto failed
+  ${EndIf}
+  StrCpy $0 "$LOCALAPPDATA\${BUNDLEID}"
+  IfFileExists "$0" 0 done
+
+  ; 避免在自定义安装位置与数据目录重叠时移动程序文件。
+  GetFullPathName $1 "$INSTDIR"
+  ${StrCase} $1 "$1\" "L"
+  ${StrCase} $2 "$0\" "L"
+  ${StrLoc} $1 "$1" "$2" ">"
+  ${If} $1 == 0
+    Goto failed
+  ${EndIf}
+
+  ; 同卷重命名，失败时保留原目录，已有备份不会被覆盖。
+  ${GetTime} "" "L" $1 $2 $3 $4 $5 $6 $7
+  System::Call 'kernel32::GetCurrentProcessId() i .r8'
+  StrCpy $9 "$0.backup-$3$2$1-$5$6$7-$8"
+  ClearErrors
+  Rename "$0" "$9"
+  IfErrors failed
+  DetailPrint "$(userDataBackedUp) $9"
+  Goto done
+
+  failed:
+  MessageBox MB_OK|MB_ICONSTOP "$(resetUserDataFailed)"
+  SetErrorLevel 2
+  Quit
+
+  done:
+FunctionEnd
 
 Function .onInstSuccess
   ; Check for `/R` flag only in silent and passive installers because

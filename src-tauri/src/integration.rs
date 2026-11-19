@@ -28,7 +28,12 @@ impl Config {
     pub fn standalone_check(&self) -> bool {
         matches!(
             self.mode.as_str(),
-            "panel" | "panel-performance" | "widgetjs" | "widgetjs-resume" | "widgetjs-manual"
+            "panel"
+                | "panel-performance"
+                | "widgetjs"
+                | "widgetjs-resume"
+                | "widgetjs-manual"
+                | "official-gallery"
         )
     }
 }
@@ -90,6 +95,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
         "--desktop-integration-widgetjs" => "widgetjs",
         "--desktop-integration-widgetjs-resume" => "widgetjs-resume",
         "--desktop-integration-widgetjs-manual" => "widgetjs-manual",
+        "--desktop-integration-official-gallery" => "official-gallery",
         "--desktop-sandbox" => "manual",
         _ => return Err("未知桌面隔离参数".into()),
     };
@@ -116,7 +122,10 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
     {
         return Err("只接受desktop-integration-开头的独立测试目录".into());
     }
-    if matches!(mode, "first" | "panel" | "panel-performance" | "widgetjs") {
+    if matches!(
+        mode,
+        "first" | "panel" | "panel-performance" | "widgetjs" | "official-gallery"
+    ) {
         if root.exists() || path.exists() {
             return Err("不覆盖已存在的报告或测试目录".into());
         }
@@ -145,6 +154,15 @@ fn rule(name: &str) -> Rule {
     }
 }
 pub fn prepare(c: &Config) -> AppResult<()> {
+    if c.mode == "official-gallery" {
+        std::fs::create_dir(&c.root).map_err(err)?;
+        std::fs::write(
+            c.root.join("isolated-test-data.marker"),
+            b"SoulDesk isolated official gallery check",
+        )
+        .map_err(err)?;
+        return Ok(());
+    }
     if c.mode == "panel-performance" {
         std::fs::create_dir(&c.root).map_err(err)?;
         std::fs::write(
@@ -233,10 +251,7 @@ pub fn prepare(c: &Config) -> AppResult<()> {
         ("local.fixture.surface", "clock"),
         ("local.souldesk.market", "market"),
     ] {
-        let bytes = presets::find(name)?
-            .or(presets::verification_fixture(name)?)
-            .ok_or("缺少预置包")?
-            .archive()?;
+        let bytes = presets::find(name)?.ok_or("缺少隔离验收包")?.archive()?;
         let staged = widgets::stage_bytes(&store, bytes)?;
         widgets::activate(&store, &staged)?;
         let id = widgets::create_instance(&store, name)?;
@@ -301,7 +316,7 @@ pub fn prepare(c: &Config) -> AppResult<()> {
 fn save(c: &Config, value: &Value) -> AppResult<()> {
     std::fs::write(&c.report, serde_json::to_vec_pretty(value).map_err(err)?).map_err(err)
 }
-fn check(report: &mut Value, name: &str, passed: bool, details: Value) -> AppResult<()> {
+pub(crate) fn check(report: &mut Value, name: &str, passed: bool, details: Value) -> AppResult<()> {
     report["checks"]
         .as_array_mut()
         .unwrap()
@@ -315,10 +330,10 @@ fn check(report: &mut Value, name: &str, passed: bool, details: Value) -> AppRes
         Err(format!("集成检查失败：{name}"))
     }
 }
-async fn window(
+async fn window<T: Send + 'static>(
     app: &AppHandle,
-    action: impl FnOnce(&AppHandle) -> AppResult<()> + Send + 'static,
-) -> AppResult<()> {
+    action: impl FnOnce(&AppHandle) -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || windows::serialized(&handle, action))
         .await
@@ -355,6 +370,16 @@ fn events(app: &AppHandle, id: &str) -> AppResult<usize> {
     )
 }
 async fn execute(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<()> {
+    if c.mode == "official-gallery" {
+        let main = window(app, |app| {
+            windows::build(app, "main", "index.html".into(), 700., 520.)
+        })
+        .await?;
+        crate::official_gallery::acceptance::run(app, &main, report).await?;
+        report["status"] = json!("passed");
+        save(c, report)?;
+        return window(app, windows::quit).await;
+    }
     if c.mode == "panel-performance" {
         return execute_panel_performance(app, c, report).await;
     }
@@ -1111,13 +1136,14 @@ async fn execute_panel(
             && app.get_webview_window("panel").is_some(),
         json!({"configuredMs":150,"operationMs":in_ms,"layout":layout}),
     )?;
-    let scene = windows::panel_scene();
     let browser = app.get_webview_window("panel").ok_or("缺少面板窗口")?;
     #[cfg(windows)]
     let original_handle = crate::desktop_native::handle(&browser)?;
-    window(app, move |app| {
+    let scene = window(app, |app| {
         windows::set_panel_locked(app, true)?;
-        windows::dismiss_from_outside(app, scene)
+        let scene = windows::panel_scene();
+        windows::dismiss_from_outside(app, scene)?;
+        Ok(scene)
     })
     .await?;
     #[cfg(windows)]
@@ -1156,7 +1182,7 @@ async fn execute_panel(
         json!({"desktopSlotChecked": cfg!(windows),"realMouseVerified":false}),
     )?;
     let ignored_hover = window(app, |app| {
-        if windows::show_panel_from_edge(app, true)? {
+        if windows::show_panel_on_hover(app)? {
             return Err("悬停不应提起置底面板".into());
         }
         Ok(())
@@ -1171,11 +1197,7 @@ async fn execute_panel(
     .await?;
     #[cfg(windows)]
     crate::desktop_native::check_attachment(&browser, true)?;
-    window(app, move |app| {
-        windows::dismiss_from_outside(app, scene)?;
-        windows::set_panel_locked(app, false)
-    })
-    .await?;
+    window(app, move |app| windows::dismiss_from_outside(app, scene)).await?;
     #[cfg(windows)]
     check(
         report,
@@ -1183,6 +1205,24 @@ async fn execute_panel(
         crate::desktop_native::handle(&app.get_webview_window("panel").ok_or("面板被旧点击收起")?)?
             == original_handle
             && windows::scene_is_foreground(windows::panel_scene())
+            && session_count(app, &clock) == 1,
+        Value::Null,
+    )?;
+    panel_ui_event(app, "panel", ".edge", "node.click()").await?;
+    until(
+        || {
+            Ok(!windows::scene_is_foreground(windows::panel_scene())
+                && app.get_webview_window("panel").is_some())
+        },
+        10,
+    )
+    .await?;
+    window(app, |app| windows::set_panel_locked(app, false)).await?;
+    check(
+        report,
+        "unlock-raises-lowered-panel-without-unmounting",
+        windows::scene_is_foreground(windows::panel_scene())
+            && app.get_webview_window("panel").is_some()
             && session_count(app, &clock) == 1,
         Value::Null,
     )?;
@@ -1351,7 +1391,8 @@ async fn execute_panel(
         app.get_webview_window("panel").is_some(),
         Value::Null,
     )?;
-    window(app, windows::collapse).await?;
+    panel_ui_event(app, "panel", ".edge", "node.click()").await?;
+    until(|| Ok(app.get_webview_window("panel").is_none()), 10).await?;
     let store = &app.state::<Core>().store;
     let first = widgets::create_instance_at(store, "local.fixture.surface", "panel")?;
     let distant = widgets::create_instance_at(store, "local.fixture.surface", "panel")?;
@@ -1399,6 +1440,114 @@ async fn execute_panel(
         session_count(app, &first) == 0,
         Value::Null,
     )?;
+    window(app, |app| {
+        windows::set_panel_locked(app, true)?;
+        windows::collapse(app)?;
+        windows::toggle_locked_panel(app)
+    })
+    .await?;
+    check(
+        report,
+        "shortcut-unlocks-and-collapses-lowered-panel",
+        app.get_webview_window("panel").is_none()
+            && store.preference("panel_locked").as_deref() == Some("false")
+            && session_count(app, &distant) == 0,
+        Value::Null,
+    )?;
+    window(app, windows::toggle).await?;
+    check(
+        report,
+        "visibility-toggle-opens-and-keeps-panel-unlocked",
+        windows::scene_is_foreground(windows::panel_scene())
+            && app.get_webview_window("panel").is_some()
+            && store.preference("panel_locked").as_deref() == Some("false"),
+        Value::Null,
+    )?;
+    window(app, windows::toggle).await?;
+    check(
+        report,
+        "visibility-toggle-collapses-and-keeps-panel-unlocked",
+        app.get_webview_window("panel").is_none()
+            && store.preference("panel_locked").as_deref() == Some("false"),
+        Value::Null,
+    )?;
+    window(app, windows::toggle_locked_panel).await?;
+    check(
+        report,
+        "shortcut-opens-and-locks-collapsed-panel",
+        windows::scene_is_foreground(windows::panel_scene())
+            && app.get_webview_window("panel").is_some()
+            && store.preference("panel_locked").as_deref() == Some("true"),
+        Value::Null,
+    )?;
+    window(app, windows::toggle).await?;
+    check(
+        report,
+        "visibility-toggle-lowers-and-keeps-panel-locked",
+        !windows::scene_is_foreground(windows::panel_scene())
+            && app.get_webview_window("panel").is_some()
+            && store.preference("panel_locked").as_deref() == Some("true"),
+        Value::Null,
+    )?;
+    window(app, windows::toggle).await?;
+    check(
+        report,
+        "visibility-toggle-raises-and-keeps-panel-locked",
+        windows::scene_is_foreground(windows::panel_scene())
+            && app.get_webview_window("panel").is_some()
+            && store.preference("panel_locked").as_deref() == Some("true"),
+        Value::Null,
+    )?;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        let panel = app.get_webview_window("panel").ok_or("缺少面板窗口")?;
+        let handle = crate::desktop_native::handle(&panel)?;
+        let scene = windows::panel_scene();
+        let id = distant.clone();
+        until(|| Ok(session_count(app, &id) == 1), 10).await?;
+        window(app, move |app| {
+            // 模拟 Windows 取消原生置顶，但应用的面板展示意图仍为前台。
+            if unsafe {
+                SetWindowPos(
+                    handle as _,
+                    HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+                )
+            } == 0
+            {
+                return Err(format!(
+                    "无法模拟面板丢失置顶：{}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            let panel = app.get_webview_window("panel").ok_or("缺少面板窗口")?;
+            if crate::desktop_native::describe(&panel)["topmost"] != false {
+                return Err("测试未成功取消面板的原生置顶".into());
+            }
+            windows::monitor_changes(app)
+        })
+        .await?;
+        crate::desktop_native::check_attachment(&panel, true)?;
+        check(
+            report,
+            "foreground-panel-recovers-lost-native-topmost",
+            windows::panel_scene() == scene
+                && app
+                    .get_webview_window("panel")
+                    .and_then(|w| crate::desktop_native::handle(&w).ok())
+                    == Some(handle)
+                && session_count(app, &distant) == 1
+                && store.preference("panel_locked").as_deref() == Some("true"),
+            Value::Null,
+        )?;
+    }
     window(app, windows::destroy_views).await?;
     report["status"] = json!("passed");
     report["scope"] = json!("isolated-native-panel-lifecycle; no real mouse input, no installation, no updater installation");
@@ -1540,9 +1689,9 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
         }) {
             return Err("未提供该组件的受控表单检查".into());
         }
-        for package in presets::catalog(&[])?
+        for package in presets::catalog()?
             .iter()
-            .filter_map(|p| p["id"].as_str())
+            .filter_map(|(p, _)| p["id"].as_str())
             .filter(|id| id.starts_with("local.souldesk.widgetjs."))
             .filter(|id| {
                 selected_package.as_ref().is_none_or(|name| {
@@ -1613,7 +1762,8 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
             .map(str::to_owned)
         {
             let mut ids = Vec::new();
-            // 与管理界面的预置添加使用同一入口，包含真实隐藏WebView试加载。
+            install_external_fixture(app, &package).await?;
+            // 安装经真实隐藏 WebView 试加载，再创建业务实例。
             for _ in 0..2 {
                 let id = crate::create_instance(app.clone(), package.clone()).await?;
                 if package == "local.souldesk.widgetjs.photo" {
@@ -2328,10 +2478,9 @@ async fn verify_widgetjs_water_background(
 // 仅显式隔离验收使用项目生成图片及测试目录授权，不测试或替代文件夹选择。
 fn prepare_widgetjs_photo_fixture(store: &Store, c: &Config, id: &str) -> AppResult<()> {
     use base64::Engine;
-    let fixtures: Value = serde_json::from_str(include_str!(
-        "../../components/widgetjs/photo-common/fixture.json"
-    ))
-    .map_err(err)?;
+    let fixtures: Value =
+        serde_json::from_str(include_str!("../component-assets/photo-fixture.json"))
+            .map_err(err)?;
     let root = c.root.join("photo-fixtures").join(id);
     std::fs::create_dir_all(&root).map_err(err)?;
     for image in fixtures["images"].as_array().ok_or("图片夹具无效")? {
@@ -2574,7 +2723,7 @@ async fn execute_permission_upgrades(
                 )
                 .map_err(err)?;
             let before = windows::instance(app, &id)?;
-            crate::packages::update_preset(app, &package).await?;
+            install_external_fixture(app, &package).await?;
             let snapshot = core.store.snapshot()?;
             let new = snapshot["packages"]
                 .as_array()
@@ -2711,7 +2860,7 @@ async fn execute_asset_permissions(
             .iter()
             .filter(|id| id.starts_with("local.souldesk.widgetjs."))
         {
-            let result = crate::packages::ensure_preset(app, id).await;
+            let result = install_external_fixture(app, id).await;
             check(
                 report,
                 "asset-migrated-preset-hidden-ready",
@@ -2753,28 +2902,35 @@ async fn execute_asset_permissions(
 }
 
 // 只覆盖正式包管线和隐藏预览；不创建业务实例、不调用组件的交互验收脚本。
+async fn install_external_fixture(app: &AppHandle, id: &str) -> AppResult<()> {
+    let bytes = presets::find(id)?.ok_or("缺少隔离验收包")?.archive()?;
+    crate::packages::install_verified(app, bytes, |_| Ok(())).await?;
+    Ok(())
+}
+
 async fn execute_widgetjs_previews(
     app: &AppHandle,
     c: &Config,
     report: &mut Value,
 ) -> AppResult<()> {
     let core = app.state::<Core>();
-    let ids = presets::catalog(&[])?
+    let entries = presets::catalog()?;
+    let ids = entries
         .iter()
-        .filter_map(|item| item["id"].as_str().map(str::to_owned))
+        .filter_map(|(item, _)| item["id"].as_str().map(str::to_owned))
         .collect::<Vec<_>>();
     let mut failures = Vec::new();
     if c.mode == "widgetjs" {
         report["selectedPackages"] = json!(ids);
-        for id in &ids {
+        for (id, (_, path)) in ids.iter().zip(entries.iter()) {
             report["currentPackage"] = json!(id);
             save(c, report)?;
-            let result = crate::packages::ensure_preset(app, id).await;
+            let result = crate::packages::install(app, path).await;
             let details =
                 json!({"package":id,"error":result.as_ref().err(),"syntheticInteraction":false});
             if let Err(error) = check(
                 report,
-                "preset-hidden-preview-ready",
+                "external-package-hidden-preview-ready",
                 result.is_ok(),
                 details,
             ) {
@@ -2791,7 +2947,7 @@ async fn execute_widgetjs_previews(
         .collect::<std::collections::HashSet<_>>();
     check(
         report,
-        "all-presets-registered-and-retained",
+        "all-external-packages-registered-and-retained",
         actual.len() == ids.len() && ids.iter().all(|id| actual.contains(id.as_str())),
         json!({"expected":ids.len(),"actual":actual.len(),"failures":failures}),
     )?;
@@ -2814,7 +2970,7 @@ async fn execute_widgetjs_previews(
     } else {
         "passed"
     });
-    report["scope"] = json!("all-preset-hidden-preview-load-and-registry-restart; no-created-business-instances; no-functional-or-visual-acceptance");
+    report["scope"] = json!("external-package-hidden-preview-load-and-registry-restart; no-created-business-instances; no-functional-or-visual-acceptance");
     save(c, report)?;
     window(app, windows::quit).await?;
     Ok(())
@@ -2845,6 +3001,11 @@ pub fn start(app: &AppHandle) {
             handle.state::<Core>().report(e.clone());
             report["status"] = json!("failed");
             report["error"] = json!(e);
+            if c.mode == "official-gallery" {
+                if let Ok(views) = handle.state::<Core>().view_reports.lock() {
+                    report["trialDiagnostics"] = json!(*views);
+                }
+            }
             let _ = save(&c, &report);
             if c.standalone_check() {
                 handle
@@ -2869,7 +3030,13 @@ mod tests {
             };
             assert!(config.panel_shortcut_enabled(), "{mode}");
         }
-        for mode in ["panel", "panel-performance", "widgetjs", "widgetjs-resume"] {
+        for mode in [
+            "panel",
+            "panel-performance",
+            "widgetjs",
+            "widgetjs-resume",
+            "official-gallery",
+        ] {
             let config = Config {
                 root: PathBuf::new(),
                 report: PathBuf::new(),

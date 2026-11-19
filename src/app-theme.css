@@ -1,0 +1,190 @@
+[data-app-theme="ink"] {
+  --app-scheme: dark;
+  --app-bg: #101720;
+  --app-rail: #0b121b;
+  --app-card: #182432;
+  --app-control: #202f40;
+  --app-line: #334558;
+  --app-text: #eaf1f7;
+  --app-muted: #a6b5c6;
+  --app-accent: #a9c8ff;
+  --app-on-accent: #101a2b;
+}
+
+[data-app-theme="pine"] {
+  --app-scheme: dark;
+  --app-bg: #171b18;
+  --app-rail: #111613;
+  --app-card: #212923;
+  --app-control: #28342c;
+  --app-line: #39483e;
+  --app-text: #edf1e9;
+  --app-muted: #adbbae;
+  --app-accent: #c3dba6;
+  --app-on-accent: #192317;
+}
+
+[data-app-theme="oat"] {
+  --app-scheme: light;
+  --app-bg: #f2ece3;
+  --app-rail: #e9e0d3;
+  --app-card: #fff9f0;
+  --app-control: #f0e8dc;
+  --app-line: #d7cab9;
+  --app-text: #271f19;
+  --app-muted: #645449;
+  --app-accent: #93462f;
+  --app-on-accent: #fff9f3;
+}
+
+[data-app-theme="iris"] {
+  --app-scheme: light;
+  --app-bg: #eeedf6;
+  --app-rail: #e5e2f0;
+  --app-card: #faf9fe;
+  --app-control: #ebe7f6;
+  --app-line: #d6cfe4;
+  --app-text: #261f37;
+  --app-muted: #5d526e;
+  --app-accent: #5f4689;
+  --app-on-accent: #fff9ff;
+}
+
+:root[data-app-theme] {
+  color: var(--app-text);
+  --muted: var(--app-muted);
+  --line: var(--app-line);
+  --app-ok: #8dd2b2;
+  --app-danger: #f7aea6;
+  --app-hover: color-mix(in srgb, var(--app-control), var(--app-accent) 11%);
+  --app-selected: color-mix(in srgb, var(--app-rail), var(--app-accent) 14%);
+}
+
+:root:is([data-app-theme="oat"], [data-app-theme="iris"]) {
+  --app-ok: #27654d;
+  --app-danger: #8f332c;
+}
+
+/* 颜色方案只传给宿主控件，避免影响组件 iframe 的系统配色查询。 */
+:root[data-app-theme][data-surface="management"] { background: var(--app-bg); color-scheme: var(--app-scheme); }
+:where(:root[data-app-theme]) :is(button, input, select, progress) { color-scheme: var(--app-scheme); accent-color: var(--app-accent); }
+:where(:root[data-app-theme]) button { color: var(--app-text); background: var(--app-control); border-color: var(--app-line); }
+:where(:root[data-app-theme]) button:hover { background: var(--app-hover); border-color: var(--app-muted); }
+:where(:root[data-app-theme]) :is(button, input, select, summary):focus-visible { outline-color: var(--app-accent); }
+:where(:root[data-app-theme]) :is(input, select) { color: var(--app-text); background: var(--app-bg); border-color: var(--app-line); }
+:where(:root[data-app-theme]) :is(input[type="range"], input[type="checkbox"]) { accent-color: var(--app-accent); }
+:where(:root[data-app-theme]) button.primary { background: var(--app-accent); color: var(--app-on-accent); border-color: var(--app-accent); }
+:where(:root[data-app-theme]) button.primary:hover { filter: brightness(1.08); }
+
+:where(:root[data-app-theme]) .management-shell > aside { background: var(--app-rail); border-color: var(--app-line); }
+:where(:root[data-app-theme]) .management-shell nav button:hover { background: var(--app-card); }
+:where(:root[data-app-theme]) .management-shell nav button.selected {
+  background: var(--app-selected);
+  color: var(--app-text);
+  box-shadow: inset 2px 0 var(--app-accent);
+}
+:where(:root[data-app-theme]) :is(.topbar, .statusbar, .instance-row, .panel-group-list > li) { border-color: var(--app-line); }
+:where(:root[data-app-theme]) :is(.topbar, .topbar kbd, .local-status, .statusbar, .badge, .instance-row details, .empty-symbol, .network-state, .update-settings details) { color: var(--app-muted); }
+:where(:root[data-app-theme]) .topbar button { background: var(--app-control); border: 1px solid var(--app-line); }
+:where(:root[data-app-theme]) .topbar button:hover { background: var(--app-hover); }
+:where(:root[data-app-theme]) .dot:not(.offline) { background: var(--app-ok); }
+:where(:root[data-app-theme]) :is(.package, .settings-panel, .notice, .panel-notice .notice) {
+  background: var(--app-card);
+  border-color: var(--app-line);
+  color: var(--app-text);
+}
+:where(:root[data-app-theme]) .package-symbol { background: var(--app-control); color: var(--app-accent); }
+:where(:root[data-app-theme]) :is(.danger, .error, .update-settings .error, .frame-message.error, .widget-surface > .frame-wrap .frame-message.error) { color: var(--app-danger); }
+:where(:root[data-app-theme]) .notice.error { border-color: var(--app-danger); }
+:where(:root[data-app-theme]) :is(.release-notes, .panel-color-editor) { background: var(--app-bg); border-color: var(--app-line); }
+:where(:root[data-app-theme]) .update-progress progress { accent-color: var(--app-accent); }
+:where(:root[data-app-theme]) ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--app-muted) 45%, transparent); }
+
+:where(:root[data-app-theme]) .panel-shell {
+  background: color-mix(in srgb, var(--app-bg) calc(var(--panel-tint, .5) * 100%), transparent);
+  border-color: var(--app-line);
+}
+:where(:root[data-app-theme]) .panel-shell[data-edge-side="left"] { border-right-color: var(--app-line); }
+:where(:root[data-app-theme]) .panel-topbar { background: var(--app-rail); border-color: var(--app-line); }
+:where(:root[data-app-theme]) .panel-tools { background: var(--app-card); }
+:where(:root[data-app-theme]) :is(.panel-tools .icon-button[aria-pressed="true"], .panel-color-auto[aria-pressed="true"]) {
+  background: var(--app-selected);
+  border-color: var(--app-accent);
+  color: var(--app-text);
+}
+:where(:root[data-app-theme]) .panel-tools .icon-button[aria-pressed="true"] { color: var(--app-accent); }
+:where(:root[data-app-theme]) :is(.panel-preferences label, .panel-color-custom label) { color: var(--app-muted); }
+:where(:root[data-app-theme]) .edge-style-picker legend { color: var(--app-text); }
+:where(:root[data-app-theme]) .panel-preferences .edge-style-options label { background: var(--app-control); border-color: var(--app-line); }
+:where(:root[data-app-theme]) .panel-preferences .edge-style-options label:hover { background: var(--app-hover); }
+:where(:root[data-app-theme]) .panel-preferences .edge-style-options label:has(input:checked) { background: var(--app-selected); border-color: var(--app-accent); color: var(--app-text); }
+:where(:root[data-app-theme]) .edge-style-options label:has(input:focus-visible) { outline-color: var(--app-accent); }
+/* 挂件预览保留挂件自身配色，浅色主题也提供深色衬底。 */
+:where(:root[data-app-theme]) .edge-style-preview { background: #202329; border-radius: 6px; }
+:where(:root[data-app-theme]) :is(.panel-width-handle:hover, .panel-width-handle:focus-visible, .resizing-width > .panel-width-handle) { background: color-mix(in srgb, var(--app-accent) 55%, transparent); }
+:where(:root[data-app-theme]) :is(.panel-settings-popover, .panel-width-output, .panel-group-dialog, .remove-instance-dialog, .remove-instance-dialog .actions) {
+  background: var(--app-card);
+  color: var(--app-text);
+  border-color: var(--app-line);
+}
+:where(:root[data-app-theme]) .panel-empty :is(p, .icon-button) { background: var(--app-card); color: var(--app-muted); border-color: var(--app-line); }
+:where(:root[data-app-theme]) .panel-empty p { padding: 7px 12px; border-radius: 7px; }
+:where(:root[data-app-theme]) :is(.panel-group-tab, .panel-color-label) { color: var(--app-text); }
+:where(:root[data-app-theme]) .panel-group-remove { background: var(--app-control); }
+:where(:root[data-app-theme]) .panel-color-swatch { border-color: var(--app-bg); box-shadow: 0 0 0 1px var(--app-line); }
+:where(:root[data-app-theme]) .panel-color-swatch:hover { border-color: var(--app-bg); box-shadow: 0 0 0 2px var(--app-muted); }
+:where(:root[data-app-theme]) .panel-color-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--app-accent); }
+
+.panel-group-tab, .panel-color-preview {
+  --group-bg: color-mix(in srgb, var(--app-card, #222), var(--group-color) 14%);
+  --group-hover: color-mix(in srgb, var(--app-card, #222), var(--group-color) 21%);
+  --group-active: color-mix(in srgb, var(--app-card, #222), var(--group-color) 28%);
+  --group-border: color-mix(in srgb, var(--group-color), var(--app-text, #f5f5f7) 35%);
+}
+
+:where(:root[data-app-theme]) .icon-button { color: var(--app-muted); }
+:where(:root[data-app-theme]) .icon-button:hover { background: var(--app-hover); color: var(--app-text); }
+:where(:root[data-app-theme]) .widget-surface { --surface-control-bg: var(--app-card); }
+:where(:root[data-app-theme]) :is(.surface-menu, .surface-chrome .drag-handle, .surface-toolbar, .resize-handle.icon-button) { border: 1px solid var(--app-line); }
+:where(:root[data-app-theme]) :is(.surface-chrome .icon-button, .resize-handle.icon-button) { color: var(--app-text); }
+:where(:root[data-app-theme]) :is(.surface-chrome .drag-handle:hover, .resize-handle.icon-button:hover) { background: var(--app-hover); }
+:where(:root[data-app-theme]) [data-widget-backdrop] .widget-surface > .frame-wrap:not([data-transparent-shape]) {
+  background: color-mix(in srgb, var(--app-card) 84%, transparent);
+}
+:where(:root[data-app-theme]) :is(.frame-message, .widget-surface > .frame-wrap .frame-message) { background: var(--app-card); color: var(--app-muted); }
+
+.app-theme-picker { padding: 0; margin: 0; border: 0; min-width: 0; }
+.app-theme-picker legend { padding: 0; margin-bottom: 14px; font-size: 15px; font-weight: 600; }
+.app-theme-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr)); gap: 10px; }
+.app-theme-option {
+  display: grid;
+  gap: 9px;
+  padding: 6px;
+  border: 1px solid var(--app-line);
+  border-radius: 9px;
+  background: var(--app-bg);
+  cursor: pointer;
+}
+.app-theme-option:hover { border-color: var(--app-muted); }
+.app-theme-option:has(input:checked) { border-color: var(--app-accent); box-shadow: inset 0 0 0 1px var(--app-accent); }
+.app-theme-option:has(input:focus-visible) { outline: 2px solid var(--app-accent); outline-offset: 2px; }
+.app-theme-option:has(input:disabled) { cursor: default; opacity: .72; }
+.app-theme-caption { display: flex; align-items: center; gap: 5px; padding: 0 4px 3px; font-weight: 600; }
+.app-theme-caption input { margin: 0 2px 0 0; }
+.app-theme-caption small { margin-inline-start: auto; font-weight: 400; }
+.app-theme-sample {
+  display: grid;
+  grid-template-columns: 24% 1fr 1fr;
+  grid-template-rows: 1fr 6px;
+  gap: 4px;
+  height: 49px;
+  padding: 6px;
+  border: 1px solid var(--app-line);
+  border-radius: 5px;
+  background: var(--app-bg);
+  overflow: hidden;
+}
+.app-theme-sample::before { content: ""; grid-row: 1 / -1; border-radius: 3px; background: var(--app-rail); border: 1px solid var(--app-line); }
+.app-theme-sample i { border-radius: 3px; background: var(--app-card); border: 1px solid var(--app-line); }
+.app-theme-sample i:last-child { border: 0; background: var(--app-accent); width: 66%; }
+.settings-panel.app-theme-settings > p { margin: 10px 0 0; }

@@ -44,10 +44,8 @@ pub(crate) fn request_body(task: Task, model: &str, input: Value) -> AppResult<V
         }
         Ok(())
     }
-    let prompts: Value = serde_json::from_str(include_str!(
-        "../../components/widgetjs/ai-source/prompts.json"
-    ))
-    .map_err(|_| "AI原提示词资源无效")?;
+    let prompts: Value = serde_json::from_str(include_str!("../component-assets/ai-prompts.json"))
+        .map_err(|_| "AI原提示词资源无效")?;
     let (prompt, text) = match task {
         Task::Mindmap => {
             #[derive(Deserialize)]

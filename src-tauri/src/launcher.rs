@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn windows_shell_returns_real_thumbnail_and_folder_pixels_with_owned_resources() {
         let image = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../components/widgetjs/grid/image.png")
+            .join("component-assets/launcher-fixture.png")
             .canonicalize()
             .unwrap();
         let thumbnail = native_icon(&image).unwrap();

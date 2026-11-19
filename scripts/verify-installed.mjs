@@ -13,10 +13,9 @@ const g1 = args.includes('--g1');
 const g3 = args.includes('--g3');
 const g2 = args.includes('--g2') || g3;
 const exampleVersion = JSON.parse(readFileSync(new URL('../tests/fixtures/surface/manifest.json', import.meta.url), 'utf8')).version;
-const marketVersion = JSON.parse(readFileSync(new URL('../examples/market/manifest.json', import.meta.url), 'utf8')).version;
-const [executable, packagePath = g2 ? `artifacts/local.souldesk.market-${marketVersion}.zip` : `artifacts/local.fixture.surface-${exampleVersion}.zip`] = args.filter(arg => !['--auto', '--g1', '--g2', '--g3'].includes(arg));
-if (!executable || !existsSync(executable) || !existsSync(packagePath)) {
-  console.error('用法：pnpm g0:verify <已安装的 SoulDesk.exe> [外部组件包.zip]');
+const [executable, packagePath = g2 ? undefined : `artifacts/local.fixture.surface-${exampleVersion}.zip`] = args.filter(arg => !['--auto', '--g1', '--g2', '--g3'].includes(arg));
+if (!executable || !existsSync(executable) || !packagePath || !existsSync(packagePath)) {
+  console.error('用法：pnpm g0:verify <已安装的 SoulDesk.exe> [外部组件包.zip]；G2/G3 须传广场生成的行情 ZIP');
   process.exit(1);
 }
 let launchContext = { platform: process.platform, packageFamily: null };

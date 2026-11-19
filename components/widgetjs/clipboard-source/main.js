@@ -1,2 +1,0 @@
-import{createApp}from'vue';import ElementPlus from'element-plus';import'element-plus/dist/index.css';import App from'./App.vue';import'./original-theme.scss';import'./style.css';
-export async function mountClipboard(host,kind){const page=new URLSearchParams(location.search).get('page')??'',app=createApp(App,{host,kind,popup:page.startsWith('clipboard-'),settings:page==='clipboard-settings'});app.use(ElementPlus);app.mount('#app');await host.ready();window.addEventListener('pagehide',()=>app.unmount(),{once:true});return app;}

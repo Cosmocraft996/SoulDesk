@@ -330,12 +330,17 @@ impl Store {
     pub fn snapshot(&self) -> AppResult<Value> {
         let db = self.db.lock().map_err(err)?;
         let mut packages = db
-            .prepare("SELECT manifest FROM widget_packages ORDER BY id")
+            .prepare("SELECT manifest,digest FROM widget_packages ORDER BY id")
             .map_err(err)?;
         let packages = packages
-            .query_map([], |r| r.get::<_, String>(0))
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
             .map_err(err)?
-            .map(|r| serde_json::from_str::<Value>(&r.map_err(err)?).map_err(err))
+            .map(|r| {
+                let (manifest, digest) = r.map_err(err)?;
+                let mut package: Value = serde_json::from_str(&manifest).map_err(err)?;
+                package["digest"] = json!(digest);
+                Ok(package)
+            })
             .collect::<AppResult<Vec<_>>>()?;
         let mut instances = db
             .prepare("SELECT id,package_id,settings,floating,width,height,location,visible,pinned FROM widget_instances ORDER BY position,rowid")
@@ -541,6 +546,24 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_theme_persists_and_uses_default_for_unknown_values() {
+        use crate::AppTheme;
+
+        let root = std::env::temp_dir().join(format!("souldesk-theme-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        assert_eq!(AppTheme::stored(&store).id(), "ink");
+        store.save_preference(AppTheme::KEY, "oat").unwrap();
+        drop(store);
+
+        let store = Store::open(root).unwrap();
+        assert_eq!(AppTheme::stored(&store).id(), "oat");
+        store.save_preference(AppTheme::KEY, "unknown").unwrap();
+        assert_eq!(AppTheme::stored(&store).id(), "ink");
+        assert!(serde_json::from_value::<AppTheme>(json!("unknown")).is_err());
+    }
+
     fn panel_test_area() -> PlacementArea {
         PlacementArea {
             work_area: crate::desktop_geometry::WorkArea {
@@ -551,7 +574,6 @@ mod tests {
                 scale_factor: 1.0,
             },
             ratio: 0.5,
-            edge_width: 12.0,
         }
     }
 

@@ -297,9 +297,9 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             ratio: 0.4,
-            tint: 0.12,
-            slide_in_ms: 250,
-            slide_out_ms: 250,
+            tint: 0.5,
+            slide_in_ms: 100,
+            slide_out_ms: 100,
             desktop_double_click: true,
             edge: EdgePosition::default(),
             edge_style: EdgeStyle::default(),
@@ -336,28 +336,27 @@ pub struct Layout {
 }
 
 pub(crate) const WIDGET_GAP: f64 = 12.0;
+// 与前端画布一致：两侧内边距共 24，预留滚动条 7，边框 1。
+const PANEL_CANVAS_INSET: f64 = 32.0;
 
-pub(crate) fn minimum_panel_width(edge_width: f64, widget_min_width: f64) -> f64 {
-    widget_min_width.max(280.0) + (20.0 + edge_width).max(32.0)
+pub(crate) fn minimum_panel_width(widget_min_width: f64) -> f64 {
+    widget_min_width.max(280.0) + PANEL_CANVAS_INSET
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct PlacementArea {
     pub work_area: crate::desktop_geometry::WorkArea,
     pub ratio: f64,
-    pub edge_width: f64,
 }
 
 impl PlacementArea {
     pub fn canvas_width(self, widget_min_width: f64) -> Result<f64, String> {
-        let minimum = minimum_panel_width(self.edge_width, widget_min_width);
+        let minimum = minimum_panel_width(widget_min_width);
         let geometry =
             crate::desktop_geometry::panel_geometry(self.work_area, self.ratio, minimum)?;
-        // 与前端画布一致：两侧内边距共 24，预留滚动条 7，边框 1。
         Ok(
             ((f64::from(geometry.width) / self.work_area.scale_factor).floor()
-                - self.edge_width
-                - 32.0)
+                - PANEL_CANVAS_INSET)
                 .max(0.0),
         )
     }
@@ -635,18 +634,21 @@ mod tests {
     }
     #[test]
     fn old_preferences_get_defaults_and_animation_accepts_zero_through_one_second() {
+        assert_eq!(Preferences::default().tint, 0.5);
         let mut p: Preferences = serde_json::from_str(r#"{"ratio":0.5,"tint":0.2}"#).unwrap();
+        assert_eq!(p.tint, 0.2);
         assert!(p.desktop_double_click);
         assert_eq!(p.edge_style, EdgeStyle::Classic);
         assert_eq!(p.edge, EdgePosition::default());
         assert_eq!(p.edge_monitor, None);
-        assert_eq!(p.slide_in_ms, 250);
+        assert_eq!(p.slide_in_ms, 100);
+        assert_eq!(p.slide_out_ms, 100);
         p.slide_in_ms = 0;
         p.slide_out_ms = 1000;
         assert!(p.validate().is_ok());
         p.slide_out_ms = 1001;
         assert!(p.validate().is_err());
-        p.slide_out_ms = 250;
+        p.slide_out_ms = 100;
         p.ratio = f64::NAN;
         assert!(p.validate().is_err());
     }
@@ -721,6 +723,37 @@ mod tests {
         .validate()
         .is_err());
     }
+    #[test]
+    fn panel_placement_can_use_the_full_canvas_width() {
+        let area = PlacementArea {
+            work_area: crate::desktop_geometry::WorkArea {
+                left: 0,
+                top: 0,
+                width: 1500,
+                height: 900,
+                scale_factor: 1.25,
+            },
+            ratio: 0.4,
+        };
+        let mut peers = [Layout {
+            x: 0.0,
+            y: 0.0,
+            width: 210.0,
+            height: 120.0,
+        }];
+        let available = area.canvas_width(210.0).unwrap();
+        assert_eq!(available, 448.0);
+        assert_eq!(
+            first_panel_slot(215.0, 120.0, available, &mut peers).unwrap(),
+            (222.0, 0.0)
+        );
+        let narrow = PlacementArea {
+            ratio: 0.01,
+            ..area
+        };
+        assert_eq!(narrow.canvas_width(360.0).unwrap(), 360.0);
+    }
+
     #[test]
     fn panel_slots_try_horizontal_gaps_before_dropping_to_the_next_edge() {
         let left = Layout {

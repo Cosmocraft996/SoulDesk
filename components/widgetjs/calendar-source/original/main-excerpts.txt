@@ -1,6 +1,0 @@
-原入口：https://itime.fun/web/assets/index-BJrdQu13.js
-以下为主题默认值及日历定义的原文本截取，并非完整入口。
-
-x_=new dEe({backgroundColor:"rgba(0,0,0,0.5)",color:"#fff",fontSize:"14px",borderColor:"rgba(255,255,255,0.4)",dividerColor:"rgba(255,255,255,0.4)",primaryColor:"rgb(0, 149, 255)",borderRadius:"22px",backgroundBorderColor:"hsla(0,0%,100%,.06)",backgroundBoxShadowColor:"hsla(0, 0%, 100%, 0.1)"});Object.freeze(x_);
-
-name:"itime.fun.calendar",title:{"zh-CN":"日历","en-US":"Calendar"},description:{"zh-CN":"简单的日历，支持节假日显示","en-US":"Simple calendar with holiday display"},keywords:[rl.RECOMMEND],lang:"zh-CN",width:4,height:4,categories:["calendar"],minWidth:4,maxWidth:6,minHeight:4,maxHeight:6,previewImage:"/images/preview_calendar.png",path:"/widget/calendar",configPagePath:"/widget/config/calendar?frame=true&transparent=false&width=900&height=700",configPage:{path:"/widget/config/calendar",frame:!0,transparent:!1,width:900,height:700}})

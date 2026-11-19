@@ -1,4 +1,0 @@
-来源：https://github.com/widget-js/widgets/tree/714802e66336133396ab55463eb5a26d08fc0788/src/widgets/dynamic-island
-许可：随包GPL-2.0，原文件散列见components/widgetjs/reminder-source/SOURCE_FILES.json。
-目录cn.widgetjs.widgets.dynamic_island误标“久坐提醒”，实际为灵动通知显示容器。
-保留原胶囊、信息/双按钮/提前倒计时/倒计时/来电Vue与SCSS及原图片/录音。Electron/Motion/通用广播替换为SoulDesk固定提醒后台、专用角色与CSS动画；不注入WidgetJS运行时，不接管行情警报。控制卡默认关闭；原通知源改为固定演示及已批准移植业务。示例来电静音；预览不调度、不采集、不播放。

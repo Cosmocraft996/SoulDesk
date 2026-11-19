@@ -47,9 +47,3 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 Desktop.ini
-# 画板包含大量原字体；源码和依赖锁保留，原始构建目录只提交实际嵌入的标准包。
-components/widgetjs/excalidraw-bundle/*
-!components/widgetjs/excalidraw-bundle/preset.zip
-
-# 构建记录的原子写入临时文件，不作为有效记录使用。
-components/widgetjs/build-state.json.pending

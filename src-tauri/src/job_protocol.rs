@@ -6,9 +6,8 @@ use std::collections::HashSet;
 
 pub(crate) const PACKAGE: &str = "local.souldesk.widgetjs.ai-job";
 pub(crate) const CAPABILITY: &str = "jobs.manage";
-pub(crate) const CAPTURE_SCRIPT: &str =
-    include_str!("../../components/widgetjs/job-source/capture.js");
-pub(crate) const LOGIN_SCRIPT: &str = include_str!("../../components/widgetjs/job-source/login.js");
+pub(crate) const CAPTURE_SCRIPT: &str = include_str!("../component-assets/job-capture.js");
+pub(crate) const LOGIN_SCRIPT: &str = include_str!("../component-assets/job-login.js");
 /// 原组件已有的教程及模型申请文档；前端只传固定主题，不传任意网址。
 pub(crate) fn help_url(topic: &str) -> AppResult<url::Url> {
     let value = match topic {
@@ -354,10 +353,8 @@ pub(crate) fn rating_body(model: &str, search: &Search, jobs: &[Job]) -> AppResu
     {
         return Err("INVALID_ARGUMENT: 待分析职位标识无效或重复".into());
     }
-    let prompts: Value = serde_json::from_str(include_str!(
-        "../../components/widgetjs/job-source/prompts.json"
-    ))
-    .map_err(|_| "AI直聘原提示词资源无效")?;
+    let prompts: Value = serde_json::from_str(include_str!("../component-assets/job-prompts.json"))
+        .map_err(|_| "AI直聘原提示词资源无效")?;
     let mut profile = vec!["我的个人信息如下：".to_owned()];
     if !search.self_introduction.is_empty() {
         profile.push(format!("我的简介标签：{}", search.self_introduction));
@@ -617,10 +614,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["assistant", "user", "user", "user"]
         );
-        let prompts: Value = serde_json::from_str(include_str!(
-            "../../components/widgetjs/job-source/prompts.json"
-        ))
-        .unwrap();
+        let prompts: Value =
+            serde_json::from_str(include_str!("../component-assets/job-prompts.json")).unwrap();
         assert_eq!(messages[0]["content"], prompts["jobAnalysis"]);
         assert!(messages[1]["content"].as_str().unwrap().contains("杭州"));
         let jobs: Value = serde_json::from_str(messages[2]["content"].as_str().unwrap()).unwrap();

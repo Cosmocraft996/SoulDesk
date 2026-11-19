@@ -1,0 +1,3 @@
+[submodule ".agents/skills/souldesk-widget"]
+	path = .agents/skills/souldesk-widget
+	url = https://github.com/Cosmocraft996/Souldesk-Widget-Skill.git

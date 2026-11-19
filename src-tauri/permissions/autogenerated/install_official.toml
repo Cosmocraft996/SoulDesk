@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-install-official"
+description = "Enables the install_official command without any pre-configured scope."
+commands.allow = ["install_official"]
+
+[[permission]]
+identifier = "deny-install-official"
+description = "Denies the install_official command without any pre-configured scope."
+commands.deny = ["install_official"]

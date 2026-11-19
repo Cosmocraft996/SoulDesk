@@ -278,14 +278,18 @@ fn parse_metals(bytes: &[u8]) -> AppResult<Value> {
     Ok(json!(result))
 }
 
-fn external_url(value: &str) -> AppResult<url::Url> {
+fn parse_browser_url(value: &str) -> AppResult<url::Url> {
     if value.len() > 4096
         || value.chars().any(char::is_whitespace)
         || value.chars().any(char::is_control)
     {
         return Err("INVALID_ARGUMENT: 网页地址无效".into());
     }
-    let parsed = url::Url::parse(value).map_err(err)?;
+    url::Url::parse(value).map_err(err)
+}
+
+fn external_url(value: &str) -> AppResult<url::Url> {
+    let parsed = parse_browser_url(value)?;
     let domain = parsed
         .domain()
         .ok_or("INVALID_ARGUMENT: 只允许公开网页域名")?;
@@ -303,7 +307,50 @@ fn external_url(value: &str) -> AppResult<url::Url> {
     Ok(parsed)
 }
 
+fn web_url(value: &str) -> AppResult<url::Url> {
+    let invalid = "INVALID_ARGUMENT: 只允许无凭证的 HTTP 或 HTTPS 网页地址";
+    let (_, rest) = value.split_once("://").ok_or(invalid)?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.is_empty()
+        || authority.contains('@')
+        || authority.ends_with(':')
+        || value.contains('\\')
+    {
+        return Err(invalid.into());
+    }
+    let parsed = parse_browser_url(value)?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port() == Some(0)
+        || parsed.as_str().len() > 4096
+    {
+        return Err(invalid.into());
+    }
+    Ok(parsed)
+}
+
 use widgets::require_capability as authorize;
+
+fn browser_link(
+    store: &crate::store::Store,
+    sessions: &widgets::Sessions,
+    window: &str,
+    token: &str,
+    method: &str,
+    args: &Value,
+) -> AppResult<url::Url> {
+    authorize(store, sessions, window, token, method)?;
+    let value = args["url"]
+        .as_str()
+        .ok_or("INVALID_ARGUMENT: 缺少网页地址")?;
+    match method {
+        "links.open" => external_url(value),
+        crate::component_registry::OPEN_WEB_LINK => web_url(value),
+        _ => Err("CAPABILITY_DENIED: 未开放的方法".into()),
+    }
+}
 
 // 在缓存、网络和快照读取前核对来源。币价快照与指数请求共用同一个来源许可。
 fn authorize_content(
@@ -373,13 +420,11 @@ pub async fn gateway(
     args: Value,
 ) -> AppResult<Value> {
     let core = app.state::<Core>();
-    if method == "links.open" {
-        authorize(&core.store, &core.sessions, window, token, "links.open")?;
-        let url = external_url(
-            args["url"]
-                .as_str()
-                .ok_or("INVALID_ARGUMENT: 缺少网页地址")?,
-        )?;
+    if matches!(
+        method,
+        "links.open" | crate::component_registry::OPEN_WEB_LINK
+    ) {
+        let url = browser_link(&core.store, &core.sessions, window, token, method, &args)?;
         return open_external(&url);
     }
     if !matches!(method, "content.get" | "content.peek") {
@@ -971,6 +1016,14 @@ mod tests {
             .unwrap();
         assert!(authorize(&store, &sessions, "main", token, "content.read").is_ok());
         assert!(authorize(&store, &sessions, "other-window", token, "content.read").is_err());
+        let address = json!({"url":"http://127.0.0.1:8080/"});
+        assert!(browser_link(&store, &sessions, "main", token, "links.open", &address).is_err());
+        let web_links = crate::component_registry::OPEN_WEB_LINK;
+        assert!(
+            browser_link(&store, &sessions, "main", token, web_links, &address)
+                .unwrap_err()
+                .contains("未声明")
+        );
         let preview = Arc::new(Mutex::new(widgets::Preview {
             package: staged,
             settings: json!({}),
@@ -1127,5 +1180,84 @@ mod tests {
         ] {
             assert!(external_url(value).is_err(), "{value}");
         }
+    }
+
+    #[test]
+    fn web_browser_links_accept_http_https_ports_and_reject_other_schemes() {
+        for value in [
+            "http://192.168.1.10:8080/",
+            "https://127.0.0.1:8443/dashboard?view=network#top",
+            "http://[::1]:3000/",
+            "https://[2001:db8::25]:8443/",
+            "http://localhost:3000/",
+            "https://service.internal:8443/",
+            "https://www.example.com/",
+        ] {
+            assert_eq!(web_url(value).unwrap().as_str(), value);
+        }
+        for value in [
+            "127.0.0.1:8080",
+            "http:///127.0.0.1:8080",
+            "http://127.0.0.1:0",
+            "http://127.0.0.1:65536",
+            "http://127.0.0.1:",
+            "http://user:pass@localhost:8080/",
+            "http://@localhost:8080/",
+            "http://localhost:8080/\npath",
+            "http://localhost:8080\\somewhere",
+            "file:///C:/test",
+            "ftp://localhost:8080/",
+            "javascript:alert(1)",
+        ] {
+            assert!(web_url(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn web_browser_links_require_the_new_capability_and_a_formal_window() {
+        use std::sync::{Arc, Mutex};
+        let store = Store::open(
+            std::env::temp_dir().join(format!("souldesk-web-link-{}", uuid::Uuid::new_v4())),
+        )
+        .unwrap();
+        let preset = crate::presets::find("local.souldesk.widgetjs.note")
+            .unwrap()
+            .unwrap();
+        let mut staged = widgets::stage_bytes(&store, preset.archive().unwrap()).unwrap();
+        let method = crate::component_registry::OPEN_WEB_LINK;
+        staged.manifest.capabilities.push(method.into());
+        widgets::activate(&store, &staged).unwrap();
+        let id = widgets::create_instance(&store, &staged.manifest.id).unwrap();
+        let sessions = widgets::Sessions::default();
+        let session = widgets::open_session(&store, &sessions, "main", &id).unwrap();
+        let token = session["token"].as_str().unwrap();
+        let input = json!({"url":"http://127.0.0.1:8080/"});
+        assert_eq!(
+            browser_link(&store, &sessions, "main", token, method, &input)
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:8080/"
+        );
+        assert!(browser_link(&store, &sessions, "other", token, method, &input).is_err());
+        let preview = Arc::new(Mutex::new(widgets::Preview {
+            package: staged,
+            settings: json!({}),
+            storage: json!({}),
+            ready_since: None,
+            failure: None,
+        }));
+        let trial =
+            widgets::open_preview(&sessions, "trial-web-link", "trial-web-link", preview).unwrap();
+        let trial_token = trial["token"].as_str().unwrap();
+        assert!(browser_link(
+            &store,
+            &sessions,
+            "trial-web-link",
+            trial_token,
+            method,
+            &input
+        )
+        .unwrap_err()
+        .contains("试加载"));
     }
 }

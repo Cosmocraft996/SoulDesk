@@ -1,8 +1,0 @@
-来源：iTime，目录登记作者LYP，目录条目itime.fun.deadline。
-公开部署入口：https://itime.fun/web/ （index-BJrdQu13.js）
-固定展示脚本：https://itime.fun/web/assets/DeadlineWidgetView-IuZHNBhI.js
-SHA-256：f78274d47300d5c235347fb5efd9adbe496daad26946a7eca385cd8747ec7280
-原脚本、设置、日期输入与动画样式及其散列保存在deadline-source/original和SOURCE_FILES.json。
-移植保留原SVG几何、剪切区域、配色、20秒火焰循环、手臂动画与3秒缓动；使用SoulDesk实例配置替代WidgetJS存储与全局主题。
-修正原当前时间非响应缓存、无效区间和进度越界；默认期限按每实例首次正式加载时初始化为昨天到明天并持久保存。
-公开部署未附许可声明；按用户明确的自用范围保留来源，不推定为GPL。不引入上游登录、分析脚本或WidgetJS运行时。

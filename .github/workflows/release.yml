@@ -39,8 +39,6 @@ jobs:
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY -or -not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) { throw '请先配置签名 Secrets，详见 docs/12-面板交互与自动更新.md' }
           $source = gh api "repos/$env:GITHUB_REPOSITORY" --jq '.visibility'
           if ($LASTEXITCODE -ne 0 -or $source -ne 'public') { throw '当前仓库必须为公开仓库' }
-      - name: 校验组件源码、产物和包版本
-        run: node scripts/prepare-widgetjs.mjs
       - run: pnpm check
       - run: pnpm test:web
       - run: node scripts/desktop.mjs test --locked --lib

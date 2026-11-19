@@ -211,21 +211,17 @@ fn same_pair(
         && current.1.abs_diff(previous.1) <= (height.max(0) / 2) as u32
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum ClickAction {
-    Dismiss,
-    Open,
-    Ignore,
+struct BlankClick {
+    click: Click,
+    scene_after: u64,
+    collapsed: bool,
 }
 
-fn click_action(scene: u64, first_blank_scene: Option<u64>) -> ClickAction {
-    if coordinator::scene_is_foreground(scene) {
-        ClickAction::Dismiss
-    // 前台面板已由第一下点击收起或置底，第二下不重新打开。
-    } else if first_blank_scene == Some(scene) {
-        ClickAction::Open
-    } else {
-        ClickAction::Ignore
+impl BlankClick {
+    fn matches_scene(&self, second_scene: u64, current_scene: u64) -> bool {
+        // 第二下可能在窗口动作处理前入队，或在第一下改变层级后入队。
+        current_scene == self.scene_after
+            && [self.click.scene, self.scene_after].contains(&second_scene)
     }
 }
 
@@ -242,7 +238,7 @@ pub fn start(app: &AppHandle, enabled: bool) -> Result<Listener, String> {
                 app.state::<Core>()
                     .report("桌面双击可访问性初始化失败".into());
             }
-            let mut previous: Option<Click> = None;
+            let mut previous: Option<BlankClick> = None;
             while !STOPPED.load(Ordering::Acquire) {
                 let click = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
                     Ok(click) => click,
@@ -252,10 +248,10 @@ pub fn start(app: &AppHandle, enabled: bool) -> Result<Listener, String> {
                 let blank = initialized && ENABLED.load(Ordering::Acquire) && desktop_blank(click);
                 let first = previous.take().filter(|last| {
                     blank
-                        && last.window == click.window
+                        && last.click.window == click.window
                         && unsafe {
                             same_pair(
-                                (last.x, last.y, last.time),
+                                (last.click.x, last.click.y, last.click.time),
                                 (click.x, click.y, click.time),
                                 GetDoubleClickTime(),
                                 GetSystemMetrics(SM_CXDOUBLECLK),
@@ -263,29 +259,38 @@ pub fn start(app: &AppHandle, enabled: bool) -> Result<Listener, String> {
                             )
                         }
                 });
-                if blank && first.is_none() {
-                    previous = Some(click);
+                let foreground = coordinator::scene_is_foreground(click.scene);
+                if !blank && !(foreground && outside_panel(&app, click)) {
+                    continue;
                 }
-                let result = match click_action(click.scene, first.map(|last| last.scene)) {
-                    ClickAction::Dismiss
-                        if click.scene == coordinator::panel_scene()
-                            && (blank || outside_panel(&app, click)) =>
+                let result = coordinator::serialized(&app, |app| {
+                    let current_scene = coordinator::panel_scene();
+                    if let Some(first) =
+                        first.filter(|first| first.matches_scene(click.scene, current_scene))
                     {
-                        coordinator::serialized(&app, |app| {
-                            coordinator::dismiss_from_outside(app, click.scene)
-                        })
-                    }
-                    ClickAction::Open => coordinator::serialized(&app, |app| {
-                        if click.scene == coordinator::panel_scene()
+                        // 第一击已立即收起未锁定的面板时，双击的目标状态已经达成。
+                        if !first.collapsed
                             && ENABLED.load(Ordering::Acquire)
                             && !coordinator::hidden(app)?
                         {
-                            coordinator::toggle(app)?;
+                            coordinator::toggle_locked_panel(app)?;
                         }
-                        Ok(())
-                    }),
-                    _ => Ok(()),
-                };
+                        return Ok(());
+                    }
+                    if click.scene == current_scene {
+                        if foreground {
+                            coordinator::dismiss_from_outside(app, click.scene)?;
+                        }
+                        if blank {
+                            previous = Some(BlankClick {
+                                click,
+                                scene_after: coordinator::panel_scene(),
+                                collapsed: foreground && app.get_webview_window("panel").is_none(),
+                            });
+                        }
+                    }
+                    Ok(())
+                });
                 if let Err(error) = result {
                     app.state::<Core>().report(error);
                 }
@@ -337,12 +342,24 @@ mod tests {
     }
 
     #[test]
-    fn only_double_click_from_the_same_background_scene_opens_panel() {
-        assert_eq!(click_action(3, None), ClickAction::Dismiss);
-        assert_eq!(click_action(3, Some(3)), ClickAction::Dismiss);
-        assert_eq!(click_action(4, Some(3)), ClickAction::Ignore);
-        assert_eq!(click_action(4, None), ClickAction::Ignore);
-        assert_eq!(click_action(4, Some(4)), ClickAction::Open);
-        assert_eq!(click_action(7, Some(4)), ClickAction::Dismiss);
+    fn desktop_double_click_accepts_its_own_layer_change_but_rejects_other_scenes() {
+        let mut first = BlankClick {
+            click: Click {
+                x: 0,
+                y: 0,
+                time: 0,
+                window: 1,
+                scene: 3,
+                unmodified: true,
+            },
+            scene_after: 4,
+            collapsed: false,
+        };
+        assert!(first.matches_scene(3, 4));
+        assert!(first.matches_scene(4, 4));
+        assert!(!first.matches_scene(3, 7));
+        assert!(!first.matches_scene(7, 4));
+        first.click.scene = 4;
+        assert!(first.matches_scene(4, 4));
     }
 }

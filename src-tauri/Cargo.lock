@@ -3981,7 +3981,7 @@ dependencies = [
 
 [[package]]
 name = "souldesk"
-version = "0.5.2"
+version = "0.5.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3991,6 +3991,7 @@ dependencies = [
  "percent-encoding",
  "reqwest 0.12.28",
  "reqwest 0.13.5",
+ "ring",
  "rusqlite",
  "rust_decimal",
  "serde",

@@ -1,0 +1,6 @@
+.gallery-revision { margin: -10px 0 18px; }
+.gallery-package > p { margin-bottom: 16px; }
+.gallery-package > small + small { margin-top: 5px; }
+.gallery-actions { margin-top: 14px; }
+.gallery-actions > button { font-size: 12px; }
+.gallery-release-notes { white-space: pre-wrap; }

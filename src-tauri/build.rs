@@ -2,10 +2,11 @@ fn main() {
     let attributes =
         tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
             "snapshot",
-            "update_preset",
             "save_panel_layout",
             "panel_view",
             "manage_panel_group",
+            "official_catalog",
+            "install_official",
             "app_update",
             "set_panel",
             "drag_panel_edge",
