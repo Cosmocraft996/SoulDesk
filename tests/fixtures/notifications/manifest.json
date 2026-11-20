@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "local.fixture.notifications",
+  "name": "灵动通知 SDK 验收",
+  "version": "0.1.1",
+  "hostApiMajor": 1,
+  "loadCheck": 1,
+  "entry": "dist/index.html",
+  "defaultSize": { "width": 392, "height": 358 },
+  "minSize": { "width": 300, "height": 332 },
+  "capabilities": ["notifications.send", "notifications.call"],
+  "settingsSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

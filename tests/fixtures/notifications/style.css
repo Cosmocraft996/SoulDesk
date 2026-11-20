@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+  font: 13px/1.45 "Microsoft YaHei UI", sans-serif;
+  color: #eef3ff;
+  background: #131e2a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { min-height: 100vh; padding: 15px 13px 12px; }
+h1 { font-size: 16px; margin: 0 0 6px; }
+p { margin: 0 0 12px; color: #b6c6d9; }
+.channel { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+select {
+  color: inherit;
+  font: inherit;
+  background: #24374b;
+  border: 1px solid #455b73;
+  border-radius: 8px;
+  padding: 4px 7px;
+}
+fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-inline-size: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+button {
+  min-height: 32px;
+  padding: 5px 7px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid #455b73;
+  border-radius: 8px;
+  background: #24374b;
+}
+button:hover:enabled { background: #304b63; }
+button:focus-visible { outline: 2px solid #a5e3fd; outline-offset: 1px; }
+button:disabled { opacity: .56; cursor: default; }
+output {
+  display: block;
+  margin-top: 10px;
+  min-height: 38px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #c1d9ee;
+  background: #0b1723;
+  overflow-wrap: anywhere;
+}
+output[data-state="warning"] { color: #ffe29e; }
+output[data-state="error"] { color: #ffbbbb; }

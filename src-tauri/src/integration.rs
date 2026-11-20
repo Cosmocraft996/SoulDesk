@@ -2904,7 +2904,7 @@ async fn execute_asset_permissions(
 // 只覆盖正式包管线和隐藏预览；不创建业务实例、不调用组件的交互验收脚本。
 async fn install_external_fixture(app: &AppHandle, id: &str) -> AppResult<()> {
     let bytes = presets::find(id)?.ok_or("缺少隔离验收包")?.archive()?;
-    crate::packages::install_verified(app, bytes, |_| Ok(())).await?;
+    crate::packages::install_verified(app, bytes, None, |_| Ok(())).await?;
     Ok(())
 }
 

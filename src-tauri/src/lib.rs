@@ -50,6 +50,7 @@ mod launcher;
 pub mod market;
 mod media;
 pub mod network;
+mod notification_sdk;
 mod official_gallery;
 mod packages;
 mod panel;
@@ -74,6 +75,8 @@ mod verification;
 mod view_probe;
 mod water;
 mod weather;
+mod website_metadata;
+mod website_verification;
 mod widgets;
 mod windows;
 
@@ -99,6 +102,7 @@ use std::{
 };
 use store::{err, now_ms, AppResult, Store};
 use tauri::{
+    ipc::{InvokeBody, Request},
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle, Emitter, Manager, State,
 };
@@ -163,6 +167,7 @@ pub struct Core {
     coin_live: coin_live::Service,
     coin_index: coin::IndexCache,
     content_cache: content_cache::Service,
+    website_verification: website_verification::State,
     hardware: hardware::Service,
     keyboard: keyboard_host::Service,
     reminders: reminder_host::Service,
@@ -260,27 +265,31 @@ async fn set_autostart(enabled: bool) -> AppResult<()> {
 }
 
 #[tauri::command]
-async fn import_package(app: AppHandle) -> AppResult<Value> {
+async fn import_package(app: AppHandle, request: Request<'_>) -> AppResult<Value> {
     use tauri_plugin_dialog::DialogExt;
-    {
+    let result = if let InvokeBody::Raw(bytes) = request.body() {
+        packages::install_bytes(&app, bytes).await?
+    } else {
         let core = app.state::<Core>();
-        let mut v = core.visibility.lock().map_err(err)?;
-        if v.dialog {
-            return Err("BUSY: 请先完成当前文件对话框".into());
+        {
+            let mut visibility = core.visibility.lock().map_err(err)?;
+            if visibility.dialog {
+                return Err("BUSY: 请先完成当前文件对话框".into());
+            }
+            visibility.dialog = true;
         }
-        v.dialog = true;
-    }
-    let picker = app
-        .dialog()
-        .file()
-        .add_filter("SoulDesk 组件包", &["zip"])
-        .blocking_pick_file();
-    app.state::<Core>().visibility.lock().map_err(err)?.dialog = false;
-    let Some(path) = picker else {
-        return Ok(Value::Null);
+        let picker = app
+            .dialog()
+            .file()
+            .add_filter("SoulDesk 组件包", &["zip"])
+            .blocking_pick_file();
+        core.visibility.lock().map_err(err)?.dialog = false;
+        let Some(path) = picker else {
+            return Ok(Value::Null);
+        };
+        let path = path.into_path().map_err(err)?;
+        packages::install(&app, &path).await?
     };
-    let path = path.into_path().map_err(err)?;
-    let result = packages::install(&app, &path).await?;
     app.emit("host:changed", ()).map_err(err)?;
     serde_json::to_value(result).map_err(err)
 }
@@ -1322,6 +1331,9 @@ fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) ->
     let same_key = old
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
         .is_ok_and(|old| old == key);
+    if !same_key && key.mods.is_empty() {
+        return Err("请按住 Ctrl、Alt、Shift 或 Win，再按一个主键".into());
+    }
     let register = available && was_enabled && (!registered || !same_key);
     if register {
         register_panel_shortcut(&app, &value).map_err(|error| {
@@ -1376,6 +1388,9 @@ fn independent_sound() -> AppResult<()> {
 
 #[cfg(windows)]
 fn deliver_notification(app: &AppHandle) -> AppResult<&'static str> {
+    if !reminder_store::Channel::Windows.enabled_in(&app.state::<Core>().store)? {
+        return Ok("suppressed");
+    }
     // 复用 Tauri 维护的同一 WinRT 实现，等待系统调用返回，避免插件吞掉发送错误。
     tauri_winrt_notification::Toast::new(&app.config().identifier)
         .title("SoulDesk · 后台测试")
@@ -1388,6 +1403,7 @@ fn deliver_notification(app: &AppHandle) -> AppResult<&'static str> {
 
 #[cfg(windows)]
 fn alert_notification(app: &AppHandle, event: &alerts::AlertEvent) -> AppResult<()> {
+    reminder_store::ensure_windows_enabled(&app.state::<Core>().store)?;
     let kind = if event.key.price_kind == alerts::PriceKind::Last {
         "最新成交价 Last"
     } else {
@@ -1415,6 +1431,9 @@ fn alert_notification(_app: &AppHandle, _event: &alerts::AlertEvent) -> AppResul
 }
 #[cfg(not(windows))]
 fn deliver_notification(app: &AppHandle) -> AppResult<&'static str> {
+    if !reminder_store::Channel::Windows.enabled_in(&app.state::<Core>().store)? {
+        return Ok("suppressed");
+    }
     app.notification()
         .builder()
         .title("SoulDesk · 后台测试")
@@ -1562,6 +1581,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let store = Store::open(root)?;
+    reminder_store::migrate_notification_channel(&store)?;
     let config = store
         .preference("network")
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -1617,6 +1637,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         coin_live: Default::default(),
         coin_index: Default::default(),
         content_cache: Default::default(),
+        website_verification: Default::default(),
         hardware: Default::default(),
         keyboard: Default::default(),
         reminders: Default::default(),
@@ -2010,6 +2031,8 @@ pub fn run() {
                 surface_activate,
                 surface_pointer,
                 surface_failed,
+                reminder_host::island_surface,
+                reminder_host::notification_settings,
                 verification::report_view,
                 packages::trial_failed
             ];

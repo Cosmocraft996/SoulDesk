@@ -17,13 +17,22 @@ pub async fn install(app: &AppHandle, path: &Path) -> AppResult<widgets::Manifes
     install_with(app, move |store| widgets::stage(store, &path)).await
 }
 
+pub async fn install_bytes(app: &AppHandle, bytes: &[u8]) -> AppResult<widgets::Manifest> {
+    if bytes.len() > widgets::MAX_PACKAGE_BYTES {
+        return Err("INVALID_ARGUMENT: 压缩包超过 20 MiB".into());
+    }
+    let bytes = bytes.to_vec();
+    install_with(app, move |store| widgets::stage_bytes(store, bytes)).await
+}
+
 pub async fn install_verified(
     app: &AppHandle,
     bytes: Vec<u8>,
+    expected_local_digest: Option<String>,
     check: impl FnOnce(&widgets::Manifest) -> AppResult<()> + Send + 'static,
 ) -> AppResult<widgets::Manifest> {
     install_with(app, move |store| {
-        widgets::stage_bytes_checked(store, bytes, check)
+        widgets::stage_bytes_checked(store, bytes, expected_local_digest.as_deref(), check)
     })
     .await
 }

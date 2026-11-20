@@ -9,7 +9,6 @@ export function framePermissions(capabilities: readonly string[] = [], preview =
   }
   if (granted.has('clipboard.read')) allow.push('clipboard-read');
   if (granted.has('clipboard.write')) allow.push('clipboard-write');
-  if (granted.has('notifications.island')) allow.push('autoplay');
   if (granted.has('ai.generate') || granted.has('jobs.manage')) allow.push('fullscreen');
   return { sandbox: sandbox.join(' '), allow: allow.length ? [...new Set(allow)].join('; ') : undefined, allowFullScreen: granted.has('web.embed') || granted.has('ai.generate') || granted.has('jobs.manage') };
 }

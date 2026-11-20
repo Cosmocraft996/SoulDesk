@@ -126,6 +126,8 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `images.https`独立允许浏览器加载HTTPS图片，继续使用原域名范围。策略按资源对应的固定包版本计算，图片由WebView使用系统网络加载，当前不保证跟随应用内自定义代理。读取JSON仍走声明来源对应的宿主接口。浏览器同源和data图片及其他基础策略保持。
 
+新版汇率组件用 `content.get({source:"forex-rates",cache:true,forceRefresh?})` 获取公开参考汇率，沿用 `content.source.forex`。宿主使用 Frankfurter v2 固定的美元汇率表和币种目录，取两者均支持的货币，返回 `{data:{base:"USD",quotes:{[code]:{rate,date}}},source,fetchedAt}`。汇率以十进制字符串返回，日期为对应观察值的 `YYYY-MM-DD`，基准美元固定为 `{rate:"1",date:null}`。缓存按网络设置隔离，共享 30 分钟，手动刷新可绕过已完成的缓存。旧包仍可调用原 `forex` 币种对接口。
+
 旧`content.read`继续包含原固定来源及HTTPS图片许可。旧权限不能与`content.source.*`或`images.https`混用。使用细分权限的新包须先更新宿主，再独立导入或显式更新预置组件。见[18-公开内容来源与图片权限](../docs/18-公开内容来源与图片权限.md)。
 
 黄金另有固定来源`gold`和`gold-trends`，均只读118.AU9999，不接收合约或URL参数。前者返回精确价格字符串、统计值或null、原报价毫秒时间戳，后者返回原分时时间及精确价格数组。宿主保留这两个请求的原x-custom-referer固定头，不接收组件传入的请求头；其他内容来源沿用无自定义头的请求。报价/图源错误分别处理，不把缺失统计值显示为0，也不把图源失败当成无有效报价。
@@ -144,7 +146,13 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `links.open` 开放同名方法，参数为 `{url}`，用于用户点击后打开系统默认浏览器；仅接收无凭证、无自定义端口的HTTPS公开域名，拒绝本地地址、文件及脚本协议。当前Windows使用参数数组交给系统URL处理器，不通过命令解释器。内容与链接能力均核对当前实例会话和声明权限，隐藏试加载拒绝调用，试加载页面应明确显示“不联网”。这些能力仅完成源码/核心检查，真实联网与桌面交互以13的证据为准。
 
-`links.openWeb` 需单独在清单声明，参数为 `{url}`，接受完整的 HTTP 或 HTTPS 网址，支持主机名、IPv4、方括号中的 IPv6 和自定义端口。用户点击后由 Windows 默认浏览器打开，试加载不调用。宿主拒绝带凭证、控制字符及其他协议的地址。网站收藏夹将未写协议的 IP 或带端口地址按 HTTP 保存，显式填写的 HTTPS 保留；HTTP、IP、常见内网域名与自定义端口地址使用本地图标占位。使用该能力的组件包需要含 `links.openWeb` 的宿主版本。
+`links.openWeb` 需单独在清单声明，参数为 `{url}`，接受完整的 HTTP 或 HTTPS 网址，支持主机名、IPv4、方括号中的 IPv6 和自定义端口。用户点击后由 Windows 默认浏览器打开，试加载不调用。宿主拒绝带凭证、控制字符及其他协议的地址。网站收藏夹将未写协议的 IP 或带端口地址按 HTTP 保存，显式填写的 HTTPS 保留。
+
+网站收藏夹使用 `links.metadata`，清单需独立声明此权限。参数为 `{url}`，返回 `{title, icon}`，其中 `icon` 为图片数据地址，两项缺失时分别返回 `null`。宿主直接访问公网 HTTP/HTTPS，支持用户填写的端口。跳转或网页声明的图标使用自定义端口时，必须与当前请求或网页同源。每次连接使用核验通过的解析地址。请求仅采用 GET，无 Cookie 或代理。网页读取上限 512 KiB、超时 4 秒，图标上限 128 KiB、超时 2 秒。试加载禁用此能力。组件将图标缩为 32 像素后随收藏保存，获取失败时仍可使用域名、手填名称和占位图标。
+
+元数据响应可包含 `status`，取 `complete`、`partial`、`unavailable` 或 `verification`。Cloudflare 的 `cf-mitigated: challenge` 响应进入验证状态，即使 HTTP 状态为 200 也忽略其网页标题。
+
+`links.verify` 是 Windows 网站收藏夹专用权限。用户点击后，`links.verify.start({id,url})` 打开临时窗口，`id` 是本次尝试的 UUID。`links.verify.status({id})` 仅对同一实例返回 `pending`、`ready` 或 `closed`，`ready` 附 `{title,icon}`。用户完成验证后点击窗口菜单，宿主从当前同源、加载成功的文档读取标题及 WebView2 图标，随后关闭窗口。网页在独立无痕视图内运行，宿主消息桥只由本机组件使用。`links.verify.close({id})` 关闭并清理当前尝试。窗口在十分钟后自动关闭。其他站点跳转或验证失败时，可用系统浏览器打开并手动保存。隐藏试加载不触发这些操作。
 
 
 ## 原生实时内容（当前0.5.0移植源码）
@@ -273,9 +281,40 @@ details.network为`{downloadBytesPerSecond,uploadBytesPerSecond,receivedBytes,se
 
 宿主固定创建`keyboard-{instanceId}`透明、无焦点、置顶、鼠标穿透的450×240底部叠加层。该视图经相同SDK桥接获得`keyboard-overlay`角色，只允许`runtime.ready/keyboard.status/keyboard.peek`；不允许设置、存储、配置或其他原生能力。`keyboard.peek()`只返回当前快照`{visible,modifierKeys,normalKey,capsLock,isCapsLockOn}`；键含`keyCode/name/isKeyUp`，普通无修饰文字不形成快照，也不生成键名。无输入历史、持久化、日志或上传。全局钩子仅在用户显式开启且显示层初始化成功后安装，多个消费者共用一份；真实Windows事件、穿透和焦点仍单列手动验收。
 
-## 灵动通知、久坐和来电提醒
+## 组件通知（`notifications.send`）
 
-固定标准包`dynamic-island`、`sit-reminder`、`phone-reminder`分别声明`notifications.island`、`reminders.sit`、`reminders.phone`。包ID均带`local.souldesk.widgetjs.`前缀。三者默认关闭，试加载拒绝原生请求；仅正式灵动通知角色获得浏览器音频自动播放许可，播放仍可能被系统拦截，失败显示接听重试。
+在 `manifest.json` 的 `capabilities` 声明 `notifications.send`。组件通过 `channel: 'windows'` 请求 Windows 系统通知，通过 `channel: 'island'` 请求灵动胶囊。「应用设置 → 通知」分别控制两个渠道，默认都开启。关闭所选渠道时返回 `suppressed`。每次请求对应单个渠道，同一业务事件确需同时使用两种渠道时，每路使用各自的请求 UUID。旧调用省略 `channel` 时沿用旧的 Windows 或灵动渠道偏好，缺少偏好时选择 Windows。
+
+Windows 系统通知以文字呈现。需要胶囊内按钮、实时倒计时或来电交互时选择灵动通知。模拟来电同时声明 `notifications.call`，并由用户开启「允许小组件触发模拟来电」。发布到组件广场时，最低宿主版本填写实际验收过且支持相应参数的正式版本。
+
+```javascript
+// 页面初始化并报告 host.ready() 后，从实际业务事件触发。
+if (!host.preview) {
+  const result = await host.request('notifications.send', {
+    requestId: crypto.randomUUID(),
+    channel: 'island',
+    kind: 'advance-countdown',
+    title: '会议即将开始',
+    body: '还有一分钟',
+    targetAt: Date.now() + 60_000,
+  });
+  // result.status === 'accepted' 表示宿主或系统已受理，实际显示由宿主处理。
+}
+```
+
+| `kind` | 参数 | 灵动通知行为 |
+| --- | --- | --- |
+| `info` / `success` / `warning` / `error` | `title`、可选 `body` | 短消息胶囊，省略 `kind` 时为 `info` |
+| `reminder` | `title`、可选 `body` | 「关闭」或「打开组件」，宿主回到来源实例 |
+| `advance-countdown` | `title`、可选 `body`、`targetAt` | 先显示预告，点击后显示实时倒计时 |
+| `countdown` | `title`、可选 `body`、`targetAt` | 立即显示剩余时间，到期收起 |
+| `call` | `preset` 为 `squidward\|tea\|pill\|study` | 使用内置头像与音频，支持接听重试或挂断 |
+
+每种类型都需要 UUID `requestId`，同一事件重试应复用原 ID 与完整参数。标题不超过 80 字符，正文不超过 200 字符。`targetAt` 是未来一小时内的 Unix 毫秒时间，仅用于倒计时显示。`accepted` 返回 `id/channel`，关闭渠道、隐藏全部或来电开关关闭时返回 `suppressed`。试加载、缺少权限、错误参数或达到限额时返回错误。宿主在当前进程保留最多 5 分钟的回执，同一实例每 30 秒最多受理 5 个新请求。胶囊队列最多等候 16 条，排队满 45 秒或目标时间已过会跳过。已受理的即时通知由宿主处理，定时业务仍通过已有的专用后台接口注册。
+
+## 旧灵动通知、久坐和来电提醒
+
+固定标准包`dynamic-island`、`sit-reminder`、`phone-reminder`分别声明`notifications.island`、`reminders.sit`、`reminders.phone`。包 ID 均带`local.souldesk.widgetjs.`前缀。原实例配置与开关保留，试加载拒绝原生请求。久坐、计划来电和试听走宿主灵动渠道，关闭该渠道会抑制胶囊和来电音频。
 
 控制卡调用`island.get()`、`sit.get()`、`phone.get()`，返回`{revision,config,runtime}`。对应`.configure({requestId,expectedRevision,config})`接受UUID请求标识和完整配置，保存先检查版本，未知结果必须用原请求重试。`runtime`包含`providerAvailable/usedMilliseconds/breakActive/delivery/lastError`，启用配置和实际递送状态分别显示。配置为：
 
@@ -283,11 +322,11 @@ details.network为`{downloadBytesPerSecond,uploadBytesPerSecond,receivedBytes,se
 - 久坐：`{enabled,sitInterval,breakInterval,mouseCheckInterval}`，三个整数以分钟计，默认30/5/5，范围1..120/1..60/1..120。
 - 来电：`{enabled,rules:[{preset,enabled,minuteOfDay,workdays}]}`，四种固定`preset=squidward|tea|pill|study`各一项。时刻0..1439，工作日0=周日、不重复；章鱼哥提前7秒，其他0秒。不接收音频地址、脚本、外部通知或URL。
 
-灵动通知控制卡可调用`island.demo({sample})`，仅支持`info/success/error/warning/reminder/advance-countdown/countdown/call`固定演示，call静音。来电卡`phone.preview({preset})`显式试听原录音，需已有启用的灵动通知容器；不自动启用计划规则。原录音可能包含粗话。
+旧灵动通知控制卡继续调用`island.demo({sample})`，八种固定演示由宿主显示，call 静音。来电卡`phone.preview({preset})`直接试听原录音，计划规则仍以实例配置为准。原录音可能包含粗话。
 
-专用窗口标签含实例与代次，经同一SDK分别获得`notification-overlay`和`break-overlay`角色。通知层只允许`runtime.ready`、`island.peek()`、`island.action({id,action})`、`island.hover({id,entered})`、`island.audio({id,state})`；动作只允许当前事件对应的`dismiss/confirm/countdown/hangup/answer`，音频状态仅`playing/blocked/failed/ended`。`peek`返回`notification/sampledAt/generation/displayed`，前端等原生`displayed=true`再尝试播放，歌词跟随真实音频时刻。专用层无设置、存储和任意窗口能力。
+顶部胶囊使用独立的宿主页，挂载就绪后直接显示。窗口代次和事件标识共同约束按钮、悬停及声音状态。宿主在窗口显示后向对应页面发送事件，页面随后尝试播放。歌词跟随实际音频时刻，播放受阻可点击接听重试。
 
-休息层仅`runtime.ready`、`sit.break.peek()`、`sit.break.close({id})`；peek含`id/remainingSeconds/sampledAt`。只有当前久坐提醒的确认动作才创建全屏置顶休息层并聚焦；Esc和结束休息仅清当前内存事件，即使数据库读取失败仍可关闭，旧事件/旧窗口不能关闭新休息。被动通知无焦点置顶，多个通知容器共用一份显示。隐藏控制卡不停止显式后台；删除/停用只取消相关来源。全局隐藏时不弹出/播放专用层，退出停止；计划槽先SQLite预留，重启不补播旧来电。久坐每10秒仅在内存读取当前鼠标坐标，长间隔/读取失败不算连续活动；不存轨迹、不上传。真实焦点、音频、鼠标与多屏仍须手动验收。
+休息层仅`runtime.ready`、`sit.break.peek()`、`sit.break.close({id})`；peek含`id/remainingSeconds/sampledAt`。当前久坐提醒的确认动作创建全屏置顶休息层并聚焦。Esc 和结束休息只关闭当前休息，即使数据库读取失败也有效。被动胶囊无焦点置顶。隐藏控制卡后已启用的后台继续运行，停用或移除影响对应来源。全局隐藏期间暂停弹出及播放，退出时停止。计划槽先在 SQLite 预留，按日去重。久坐每 10 秒在内存读取一次当前鼠标坐标，长间隔或读取失败不计连续活动。真实焦点、音频、鼠标与多屏须在 Windows 验收。
 
 ## AI生成工具
 

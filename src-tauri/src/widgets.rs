@@ -114,6 +114,13 @@ fn validate_manifest(m: &Manifest) -> AppResult<()> {
     }
     crate::asset_permissions::validate(&m.capabilities)?;
     crate::clipboard_host::validate_permissions(&m.id, &m.capabilities)?;
+    if m.id != "local.souldesk.website-favorites"
+        && m.capabilities
+            .iter()
+            .any(|cap| cap == crate::component_registry::WEBSITE_VERIFY)
+    {
+        return Err("CAPABILITY_DENIED: 验证窗口权限仅供网站收藏夹使用".into());
+    }
     if m.capabilities.iter().any(|name| name == "documents.user")
         && m.capabilities.iter().any(|name| {
             matches!(
@@ -385,8 +392,10 @@ fn monitor_html(bytes: Vec<u8>, source: &str) -> AppResult<Vec<u8>> {
     Ok(html.into_bytes())
 }
 
+pub(crate) const MAX_PACKAGE_BYTES: usize = 20 * 1024 * 1024;
+
 pub fn stage(store: &Store, path: &Path) -> AppResult<StagedPackage> {
-    if std::fs::metadata(path).map_err(err)?.len() > 20 * 1024 * 1024 {
+    if std::fs::metadata(path).map_err(err)?.len() > MAX_PACKAGE_BYTES as u64 {
         return Err("INVALID_ARGUMENT: 压缩包超过 20 MiB".into());
     }
     let bytes = std::fs::read(path).map_err(err)?;
@@ -394,15 +403,16 @@ pub fn stage(store: &Store, path: &Path) -> AppResult<StagedPackage> {
 }
 
 pub fn stage_bytes(store: &Store, bytes: Vec<u8>) -> AppResult<StagedPackage> {
-    stage_bytes_checked(store, bytes, |_| Ok(()))
+    stage_bytes_checked(store, bytes, None, |_| Ok(()))
 }
 
 pub(crate) fn stage_bytes_checked(
     store: &Store,
     bytes: Vec<u8>,
+    expected_local_digest: Option<&str>,
     check: impl FnOnce(&Manifest) -> AppResult<()>,
 ) -> AppResult<StagedPackage> {
-    if bytes.len() > 20 * 1024 * 1024 {
+    if bytes.len() > MAX_PACKAGE_BYTES {
         return Err("INVALID_ARGUMENT: 压缩包超过 20 MiB".into());
     }
     let digest = format!("{:x}", Sha256::digest(&bytes));
@@ -464,6 +474,11 @@ pub(crate) fn stage_bytes_checked(
         )
         .optional()
         .map_err(err)?;
+    if expected_local_digest.is_some_and(|expected| {
+        previous.as_ref().map(|(digest, _, _)| digest.as_str()) != Some(expected)
+    }) {
+        return Err("CONFLICT: 已安装组件发生变化，请重新检查更新".into());
+    }
     if let Some((old_digest, old_manifest, old_directory)) = &previous {
         if old_digest == &digest {
             return Ok(StagedPackage {
@@ -1034,9 +1049,7 @@ fn display_role(window: &str) -> &'static str {
     if window.starts_with("clipboard-") {
         return "clipboard-popup";
     }
-    if window.starts_with("island-") {
-        return "notification-overlay";
-    } else if window.starts_with("break-") {
+    if window.starts_with("break-") {
         return "break-overlay";
     }
     if window.starts_with("keyboard-") {
@@ -1722,6 +1735,32 @@ mod tests {
         store.save_preference("hidden_all", "true").unwrap();
         assert!(open_display_session(&store, &sessions, "panel", &id, None).is_err());
     }
+    #[test]
+    fn confirmed_update_requires_the_same_installed_digest() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-confirmed-update-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
+        let original = fixture(&root, &manifest, None);
+        let original_digest = format!("{:x}", Sha256::digest(std::fs::read(&original).unwrap()));
+        manifest["version"] = json!("0.2.0");
+        let update = std::fs::read(fixture(&root, &manifest, None)).unwrap();
+        let stage_update =
+            || stage_bytes_checked(&store, update.clone(), Some(&original_digest), |_| Ok(()));
+        assert!(stage_update().err().unwrap().starts_with("CONFLICT:"));
+
+        import(&store, &original).unwrap();
+        let staged = stage_update().unwrap();
+        assert_eq!(activate(&store, &staged).unwrap().version, "0.2.0");
+        assert!(stage_update().err().unwrap().starts_with("CONFLICT:"));
+        assert_eq!(
+            store.snapshot().unwrap()["packages"][0]["digest"],
+            staged.digest
+        );
+    }
+
     #[test]
     fn upgrade_rejects_old_page_handshake_and_concurrent_configuration_changes() {
         let root = std::env::temp_dir().join(format!("souldesk-upgrade-race-{}", Uuid::new_v4()));

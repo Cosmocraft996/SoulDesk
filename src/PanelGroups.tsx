@@ -58,6 +58,28 @@ function dropIndex(strip: HTMLDivElement, drag: GroupDrag, x: number, y: number)
   return index;
 }
 
+export function panelGroupDropAt(x: number, y: number) {
+  // 指针捕获会把事件发给拖动手柄，按实际位置查找可见的分组标签。
+  const hit = document.elementFromPoint(x, y);
+  const strip = hit?.closest<HTMLDivElement>('.panel-group-tabs');
+  if (!strip) return;
+  const tab = hit?.closest<HTMLButtonElement>('button.panel-group-tab');
+  const group = tab && !tab.disabled && !strip.hasAttribute('data-reordering')
+    ? tab.dataset.panelGroupId ?? null
+    : undefined;
+  return { strip, group };
+}
+
+export function scrollGroupTabs(strip: HTMLDivElement, x: number) {
+  const { left, right, width } = strip.getBoundingClientRect();
+  const edge = Math.min(24, width / 3);
+  const step = x < left + edge ? -6 : x > right - edge ? 6 : 0;
+  if (!step) return false;
+  const before = strip.scrollLeft;
+  strip.scrollLeft += step;
+  return strip.scrollLeft !== before;
+}
+
 const validColor = (color: string | null | undefined): color is string => !!color && /^#[0-9a-f]{6}$/i.test(color);
 function colorStyle(color: string): CSSProperties {
   const safe = validColor(color) ? color.toUpperCase() : palette.neutral;
@@ -97,8 +119,9 @@ function GroupDialog({ title, busy, message, onClose, children }: {
   </dialog>;
 }
 
-export function PanelGroups({ state, instances, busy, message, onChange }: {
+export function PanelGroups({ state, instances, busy, message, onChange, dropGroup }: {
   state: PanelGroupsState; instances: { id: string; location: string }[]; busy: boolean; message: string; onChange: Change;
+  dropGroup?: string | null;
 }) {
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState('');
@@ -147,14 +170,9 @@ export function PanelGroups({ state, instances, busy, message, onChange }: {
     if (!strip || drag.current !== current) return;
     const index = dropIndex(strip, current, current.x, current.y);
     setPreview({ id: current.id, index, left: current.x - current.grabX, top: current.y - current.grabY, width: current.width, distance: current.distance });
-    if (index === undefined) return;
-    const { left, right, width } = strip.getBoundingClientRect();
-    const edge = Math.min(24, width / 3);
-    const step = current.x < left + edge ? -6 : current.x > right - edge ? 6 : 0;
-    if (!step) return;
-    const before = strip.scrollLeft;
-    strip.scrollLeft += step;
-    if (strip.scrollLeft !== before) current.frame = window.requestAnimationFrame(() => updatePreview(current));
+    if (index !== undefined && scrollGroupTabs(strip, current.x)) {
+      current.frame = window.requestAnimationFrame(() => updatePreview(current));
+    }
   };
   const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
     const current = drag.current;
@@ -209,7 +227,7 @@ export function PanelGroups({ state, instances, busy, message, onChange }: {
           const shift = fromIndex < rank && rank <= toIndex ? -distance : toIndex <= rank && rank < fromIndex ? distance : 0;
           return <button key={group.id ?? 'ungrouped'} className="panel-group-tab" role="tab" style={{ ...colorStyle(group.color ?? group.autoColor), transform: shift ? `translateX(${shift}px)` : undefined }} aria-selected={state.active === group.id} aria-controls="panel-group-content" title={group.name} disabled={busy}
             data-panel-group-id={group.id ?? undefined} data-sortable={(group.id !== null && state.groups.length > 1 && !busy) || undefined}
-            data-dragging={preview?.id === group.id || undefined}
+            data-dragging={preview?.id === group.id || undefined} data-drop-target={(!busy && !preview && dropGroup === group.id) || undefined}
             onPointerDown={e => startDrag(e, group.id)} onClick={() => { if (state.active !== group.id) void onChange({ action: 'select', group: group.id }); }}>
             <span>{group.name}</span><small>{count(group.id)}</small>
           </button>;

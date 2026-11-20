@@ -6,11 +6,11 @@ test('AI图形正式实例仅允许用户手势全屏，预览不授予额外权
   assert.equal(imported.framePermissions(['jobs.manage'],false).allow,'fullscreen');assert.equal(imported.framePermissions(['jobs.manage'],false).allowFullScreen,true);assert.deepEqual(imported.framePermissions(['jobs.manage'],true),imported.framePermissions([],false));
 });
 
-test('专用灵动通知仅在正式实例声明后允许音频自动播放，预览继续禁用',()=>{
+test('组件通知权限只影响消息桥，音频由宿主胶囊负责',()=>{
   assert.ok(imported);
-  assert.equal(imported.framePermissions(['notifications.island'],false).allow,'autoplay');
-  assert.equal(imported.framePermissions(['notifications.island'],true).allow,undefined);
-  assert.equal(imported.framePermissions(['reminders.phone'],false).allow,undefined);
+  const notifications = ['notifications.send','notifications.call','notifications.island','reminders.phone'];
+  assert.deepEqual(imported.framePermissions(notifications), imported.framePermissions());
+  assert.deepEqual(imported.framePermissions(notifications, true), imported.framePermissions());
 });
 
 test('普通组件保留基础沙箱，网页嵌入和剪贴板按声明分别开放',()=>{

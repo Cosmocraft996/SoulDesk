@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>灵动通知 SDK 验收</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main>
+    <h1>灵动通知 SDK 验收</h1>
+    <p>在宿主的「应用设置 → 通知」分别开关渠道。模拟来电需单独允许。</p>
+    <label class="channel">发送渠道
+      <select id="channel">
+        <option value="island">灵动通知</option>
+        <option value="windows">Windows 系统通知</option>
+      </select>
+    </label>
+    <fieldset id="samples" disabled aria-label="选择通知样式">
+      <button type="button" data-kind="info">普通信息</button>
+      <button type="button" data-kind="success">成功</button>
+      <button type="button" data-kind="warning">警告</button>
+      <button type="button" data-kind="error">错误</button>
+      <button type="button" data-kind="reminder">双按钮提醒</button>
+      <button type="button" data-kind="advance-countdown">倒计时预告</button>
+      <button type="button" data-kind="countdown">实时倒计时</button>
+      <button type="button" data-kind="call">模拟来电</button>
+    </fieldset>
+    <output id="status" role="status" aria-live="polite">正在连接宿主…</output>
+  </main>
+</body>
+</html>

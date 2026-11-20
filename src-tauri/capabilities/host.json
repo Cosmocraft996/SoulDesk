@@ -19,6 +19,7 @@
     "allow-window-action",
     "allow-set-shortcut",
     "allow-schedule-test",
+    "allow-notification-settings",
     "allow-report-view",
     "allow-business-settings",
     "allow-set-panel",

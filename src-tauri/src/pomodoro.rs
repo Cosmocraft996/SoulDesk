@@ -988,31 +988,33 @@ fn notify(app: &AppHandle, id: &str, p: &Pending) -> AppResult<Delivery> {
     let errors = std::sync::Arc::downgrade(&core.last_error);
     let id = id.to_owned();
     let pending = p.clone();
-    let notification = Toast::new(&app.config().identifier)
-        .title("专注已结束")
-        .text1(&p.title)
-        .duration(Duration::Long)
-        .sound(None)
-        .add_button("知道了", "close")
-        .add_button("结束专注", "finish")
-        .on_activated(move |action| {
-            if let (Some(store), Some(action)) = (store.upgrade(), action) {
-                if ["close", "finish"].contains(&action.as_str()) {
-                    if let Err(error) =
-                        acknowledge(&store, &id, &pending, action == "finish", now_ms())
-                    {
-                        if let Some(slot) = errors.upgrade() {
-                            if let Ok(mut value) = slot.lock() {
-                                *value = Some(format!("番茄钟回执失败：{error}"));
+    let notification = crate::reminder_store::ensure_windows_enabled(&core.store).and_then(|()| {
+        Toast::new(&app.config().identifier)
+            .title("专注已结束")
+            .text1(&p.title)
+            .duration(Duration::Long)
+            .sound(None)
+            .add_button("知道了", "close")
+            .add_button("结束专注", "finish")
+            .on_activated(move |action| {
+                if let (Some(store), Some(action)) = (store.upgrade(), action) {
+                    if ["close", "finish"].contains(&action.as_str()) {
+                        if let Err(error) =
+                            acknowledge(&store, &id, &pending, action == "finish", now_ms())
+                        {
+                            if let Some(slot) = errors.upgrade() {
+                                if let Ok(mut value) = slot.lock() {
+                                    *value = Some(format!("番茄钟回执失败：{error}"));
+                                }
                             }
                         }
                     }
                 }
-            }
-            Ok(())
-        })
-        .show()
-        .map_err(err);
+                Ok(())
+            })
+            .show()
+            .map_err(err)
+    });
     let sound = if p.sound {
         play_completion_sound()
     } else {
@@ -1020,16 +1022,18 @@ fn notify(app: &AppHandle, id: &str, p: &Pending) -> AppResult<Delivery> {
     };
     let mut errors = Vec::new();
     if let Err(error) = &notification {
-        errors.push(error.clone());
+        if error != crate::reminder_store::WINDOWS_DISABLED {
+            errors.push(error.clone());
+        }
     }
     if let Err(error) = &sound {
         errors.push(error.clone());
     }
     Ok(Delivery {
-        notification: if notification.is_ok() {
-            "accepted"
-        } else {
-            "failed"
+        notification: match notification.as_ref().err().map(String::as_str) {
+            None => "accepted",
+            Some(crate::reminder_store::WINDOWS_DISABLED) => "suppressed",
+            Some(_) => "failed",
         }
         .into(),
         sound: if !p.sound {

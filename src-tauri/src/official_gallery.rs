@@ -355,6 +355,7 @@ pub async fn install_official(
     state: State<'_, Gallery>,
     package_id: String,
     expected_sha256: String,
+    expected_local_digest: Option<String>,
 ) -> AppResult<()> {
     management(&window)?;
     let _guard = state.0.lock().await;
@@ -374,11 +375,13 @@ pub async fn install_official(
         .ok_or("选中的版本已变化、撤回或不兼容，请刷新目录后重新确认")?;
     let bytes = download(&network, release).await?;
     let release = release.clone();
-    crate::packages::install_verified(&app, bytes, move |manifest| {
+    crate::packages::install_verified(&app, bytes, expected_local_digest, move |manifest| {
         check_manifest(manifest, &package_id, &release)
     })
     .await?;
-    app.emit("host:changed", ()).map_err(err)
+    // 登记成功后仍返回真实结果；管理页也会在安装结束时主动刷新。
+    let _ = app.emit("host:changed", ());
+    Ok(())
 }
 
 #[cfg(test)]

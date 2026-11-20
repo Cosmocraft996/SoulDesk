@@ -354,6 +354,76 @@ test('组件库默认添加到面板，只有宿主成功后才提示成功，�
   } finally { await f.close(); }
 });
 
+test('组件库允许网页文件拖放，仅将导入区内的单个 ZIP 字节送给宿主', async () => {
+  const f = await fixture({ query: '' });
+  const zone = button('导入组件');
+  const picker = textButton(zone, '导入本地 ZIP');
+  const zip = new File(['测试 ZIP 内容'], '计时器.ZIP');
+  const drag = async (node, type, files = [zip], relatedTarget = null) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, relatedTarget });
+    const transfer = { types: ['Files'], files, dropEffect: 'none' };
+    Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    await act(async () => node.dispatchEvent(event));
+    return { prevented: event.defaultPrevented, effect: transfer.dropEffect };
+  };
+  const imports = () => f.calls.filter(([command]) => command === 'import_package');
+  const originalInvoke = f.invoke;
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  f.invoke = async (command, args) => {
+    if (command !== 'import_package') return originalInvoke(command, args);
+    f.calls.push([command, args]);
+    if (!args) return null;
+    if (f.fail) throw Error('测试 ZIP 校验失败');
+    await pending;
+    const pkg = { ...f.state.packages[0], id: 'timer', name: '计时器' };
+    f.state.packages.push(pkg);
+    return pkg;
+  };
+  try {
+    assert.deepEqual(await drag(zone, 'dragover'), { prevented: true, effect: 'copy' });
+    assert.equal(zone.hasAttribute('data-drag-over'), true);
+    await drag(zone, 'dragleave', [zip], picker);
+    assert.equal(zone.hasAttribute('data-drag-over'), true);
+    await drag(zone, 'dragleave');
+    assert.equal(zone.hasAttribute('data-drag-over'), false);
+    const outside = document.querySelector('.topbar');
+    assert.deepEqual(await drag(outside, 'dragover'), { prevented: true, effect: 'none' });
+    assert.equal((await drag(outside, 'drop')).prevented, true);
+    assert.equal(imports().length, 0);
+
+    for (const files of [[new File([], '说明.txt')], [zip, zip]]) {
+      await drag(zone, 'drop', files);
+      assert.match(document.querySelector('.notice').textContent, /一次拖入一个组件 ZIP 文件/);
+    }
+    await drag(zone, 'drop', [{ name: '过大.zip', size: 20 * 1024 * 1024 + 1 }]);
+    assert.match(document.querySelector('.notice').textContent, /超过 20 MiB/);
+    assert.equal(imports().length, 0);
+
+    await drag(picker, 'drop');
+    assert.equal(picker.disabled, true);
+    assert.deepEqual(await drag(zone, 'dragover'), { prevented: true, effect: 'none' });
+    await drag(zone, 'drop');
+    assert.equal(imports().length, 1);
+    assert.equal(new TextDecoder().decode(imports()[0][1]), '测试 ZIP 内容');
+    assert.equal(zone.hasAttribute('data-drag-over'), false);
+    await act(async () => finish());
+    assert.equal(document.querySelector('.notice').textContent, '已导入“计时器”');
+    assert.ok([...document.querySelectorAll('.package h2')].some(title => title.textContent === '计时器'));
+
+    f.fail = true;
+    await drag(zone, 'drop');
+    assert.match(document.querySelector('.notice').textContent, /测试 ZIP 校验失败/);
+    await click(picker);
+    assert.deepEqual(imports().at(-1), ['import_package', undefined]);
+    assert.equal(document.querySelector('.notice'), null);
+
+    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('设置')));
+    assert.equal((await drag(document.querySelector('.topbar'), 'drop')).prevented, true);
+    assert.equal(imports().length, 3);
+  } finally { await f.close(); }
+});
+
 test('左边沿主键拖动等待宿主保存，失败撤掉拖动反馈，成功更新比例且不重建组件', async () => {
   const f = await fixture();
   const pointer = (node, which) => act(async () => node.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: which })));
@@ -523,6 +593,67 @@ test('面板快捷键未注册时可从管理页打开设置并重试原键', as
     ]);
     assert.equal(document.querySelector('[role="alert"]'), null);
     assert.equal(toggle.querySelector('kbd').textContent, 'Ctrl+Alt+Space');
+  } finally { await f.close(); }
+});
+
+test('面板快捷键录入完整组合，取消还原已保存的键位，冲突后仍可修改', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  const field = document.querySelector('#shortcut');
+  const save = textButton(field.closest('.setting-row'), '保存');
+  const shortcutCalls = () => f.calls.filter(([name]) => name === 'set_shortcut').map(([, args]) => args);
+  const press = async (key, code, options = {}, type = 'keydown') => {
+    const event = new dom.window.KeyboardEvent(type, { key, code, bubbles: true, cancelable: true, ...options });
+    await act(async () => field.dispatchEvent(event));
+    return event.defaultPrevented;
+  };
+  try {
+    assert.equal(field.readOnly, true);
+    await act(async () => field.focus());
+    await press('u', 'KeyU');
+    await press('F10', 'F10');
+    assert.equal(field.value, 'Ctrl+Alt+Space');
+    assert.equal(save.disabled, true);
+    await press('Control', 'ControlLeft', { ctrlKey: true });
+    assert.equal(field.value, 'Ctrl+…');
+    assert.equal(save.disabled, true);
+    await press('Alt', 'AltLeft', { ctrlKey: true, altKey: true });
+    assert.equal(field.value, 'Ctrl+Alt+…');
+    await press('Alt', 'AltLeft', { ctrlKey: true }, 'keyup');
+    assert.equal(field.value, 'Ctrl+…');
+    await press('Control', 'ControlLeft', {}, 'keyup');
+    await press('Process', 'KeyU', { isComposing: true });
+    assert.equal(field.value, 'Ctrl+Alt+Space');
+    // 键盘布局返回的字母与物理键位不同时，使用用户实际输入的字母。
+    assert.equal(await press('A', 'KeyQ', { ctrlKey: true, shiftKey: true }), true);
+    assert.equal(field.value, 'Ctrl+Shift+A');
+    assert.equal(save.disabled, false);
+    assert.deepEqual(shortcutCalls(), []);
+    assert.equal(await press('Tab', 'Tab', { shiftKey: true }), false);
+    await press('Escape', 'Escape');
+    assert.equal(field.value, 'Ctrl+Alt+Space');
+    assert.equal(save.disabled, true);
+    assert.notEqual(document.activeElement, field);
+
+    await act(async () => field.focus());
+    await press('1', 'Numpad1', { altKey: true });
+    assert.equal(field.value, 'Alt+Numpad1');
+    f.fail = true;
+    await click(save);
+    assert.equal(f.state.diagnostics.shortcut, 'Ctrl+Alt+Space');
+    assert.equal(field.value, 'Alt+Numpad1');
+    assert.match(document.querySelector('.notice').textContent, /快捷键已被占用/);
+
+    f.fail = false;
+    await act(async () => field.focus());
+    await press('Delete', 'NumpadDecimal', { ctrlKey: true });
+    assert.equal(field.value, 'Ctrl+Delete');
+    await press('ArrowUp', 'Numpad8', { ctrlKey: true, altKey: true });
+    await press('F10', 'F10', { repeat: true });
+    assert.equal(field.value, 'Ctrl+Alt+ArrowUp');
+    await click(save);
+    assert.deepEqual(shortcutCalls(), [{ value: 'Alt+Numpad1' }, { value: 'Ctrl+Alt+ArrowUp' }]);
+    assert.equal(f.state.diagnostics.shortcut, 'Ctrl+Alt+ArrowUp');
+    assert.equal(document.querySelector('[data-panel-toggle] kbd').textContent, 'Ctrl+Alt+ArrowUp');
   } finally { await f.close(); }
 });
 
@@ -755,6 +886,10 @@ test('面板缩放保存吸附尺寸；取消或保存失败恢复布局', async
     await f.pointer(handle, 'pointerup', 104, 49);
     assert.deepEqual(f.calls.filter(([name]) => name === 'save_panel_layout').at(-1)[1].layout, { x: 30, y: 75, width: 300, height: 225 });
     assert.equal(f.article.style.width, '300px'); assert.equal(f.article.style.height, '225px');
+    await f.pointer(handle, 'pointerdown', 10, 10);
+    await f.pointer(handle, 'pointermove', 180, 95);
+    await f.pointer(handle, 'pointercancel', 180, 95);
+    assert.equal(f.article.style.width, '300px', '下一次取消拖动时恢复刚保存的尺寸');
   } finally { await f.close(); }
 });
 
@@ -821,6 +956,138 @@ const groupPointer = (node, type, x, y = 15) => act(async () => node.dispatchEve
 const pointerClick = node => act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
 const tabOrder = () => [...document.querySelector('.panel-group-tabs').children].map(node => node.title);
 const floatingTab = () => document.querySelector('.panel-group-floating');
+
+function mockGroupHitTest(t, strip) {
+  const previous = document.elementFromPoint;
+  const contains = (element, x, y) => {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    return x >= left && x < right && y >= top && y < bottom;
+  };
+  document.elementFromPoint = (x, y) => {
+    if (!contains(strip, x, y)) return document.body;
+    const group = [...strip.children].find(node => contains(node, x, y));
+    return group?.firstElementChild ?? strip;
+  };
+  t.after(() => {
+    if (previous) document.elementFromPoint = previous;
+    else delete document.elementFromPoint;
+  });
+}
+
+test('拖动组件到顶部标签移动分组，保留当前组，保存失败时回到原位置', async t => {
+  const f = await fixture({ active: 'work' });
+  try {
+    mockGroupHitTest(t, groupStrip());
+    const card = () => document.querySelector('[data-panel-instance="a"]');
+    const handle = card().querySelector('.drag-handle');
+    handle.setPointerCapture = () => {};
+    const start = () => groupPointer(handle, 'pointerdown', 44, 145);
+    const move = (x, y) => groupPointer(handle, 'pointermove', x, y);
+    const drop = (x, y) => groupPointer(handle, 'pointerup', x, y);
+    const target = () => document.querySelector('[data-drop-target]');
+    const changes = () => f.calls.filter(([name]) => name === 'manage_panel_group').map(([, args]) => args.change);
+    const life = tab('生活');
+
+    await start();
+    await move(90, 230);
+    assert.notEqual(card().style.top, '75px');
+    await move(195, 15);
+    assert.equal(target(), life);
+    await move(78, 15);
+    assert.equal(target(), null, '标签之间的空隙不构成目标');
+    await drop(110, 15);
+    assert.equal(card().style.top, '75px');
+    assert.deepEqual(changes(), []);
+
+    for (const cancel of ['pointercancel', 'lostpointercapture', 'Escape']) {
+      await start();
+      await move(195, 15);
+      assert.equal(target(), life);
+      if (cancel === 'Escape') {
+        await act(async () => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: cancel })));
+      } else {
+        await groupPointer(handle, cancel, 195);
+      }
+      await drop(195, 15);
+      assert.equal(target(), null);
+      assert.deepEqual(changes(), []);
+    }
+
+    f.fail = true;
+    await start();
+    await move(90, 230);
+    await move(195, 15);
+    await drop(195, 15);
+    assert.equal(f.state.panelGroups.membership.a, 'work');
+    assert.equal(card().style.top, '75px');
+    assert.match(document.querySelector('.panel-notice').textContent, /测试保存失败/);
+
+    f.fail = false;
+    await start();
+    await move(195, 15);
+    await drop(195, 15);
+    assert.equal(target(), null);
+    assert.equal(f.state.panelGroups.membership.a, 'life');
+    assert.equal(tab('工作').getAttribute('aria-selected'), 'true');
+    assert.equal(tab('生活').querySelector('small').textContent, '1');
+    assert.equal(card(), null);
+    assert.match(document.querySelector('.panel-notice').textContent, /已移到“生活”/);
+
+    await click(life);
+    const newHandle = card().querySelector('.drag-handle');
+    newHandle.setPointerCapture = () => {};
+    await groupPointer(newHandle, 'pointerdown', 44, 145);
+    await groupPointer(newHandle, 'pointermove', 50);
+    assert.equal(target(), tab('未分组'));
+    await groupPointer(newHandle, 'pointerup', 50);
+    assert.equal(f.state.panelGroups.membership.a, undefined);
+    assert.equal(tab('生活').getAttribute('aria-selected'), 'true');
+    assert.equal(f.calls.some(([name]) => name === 'save_panel_layout'), false);
+    assert.deepEqual(changes(), [
+      { action: 'move', instance: 'a', group: 'life' },
+      { action: 'move', instance: 'a', group: 'life' },
+      { action: 'select', group: 'life' },
+      { action: 'move', instance: 'a', group: null },
+    ]);
+  } finally { await f.close(); }
+});
+
+test('组件拖到分组栏边缘可滚动到隐藏的标签，缩放不触发移动分组', async t => {
+  const request = window.requestAnimationFrame, cancel = window.cancelAnimationFrame;
+  const frames = new Map();
+  let nextFrame = 0;
+  window.requestAnimationFrame = callback => { frames.set(++nextFrame, callback); return nextFrame; };
+  window.cancelAnimationFrame = id => { frames.delete(id); };
+  t.after(() => Object.assign(window, { requestAnimationFrame: request, cancelAnimationFrame: cancel }));
+  const f = await fixture({ active: 'work' });
+  try {
+    const strip = groupStrip(160);
+    mockGroupHitTest(t, strip);
+    const resize = document.querySelector('.resize-handle');
+    resize.setPointerCapture = () => {};
+    await groupPointer(resize, 'pointerdown', 125, 280);
+    await groupPointer(resize, 'pointermove', 65, 15);
+    assert.equal(document.querySelector('[data-drop-target]'), null);
+    await groupPointer(resize, 'pointerup', 65, 15);
+    assert.equal(f.calls.some(([name]) => name === 'save_panel_layout'), true);
+    assert.equal(f.calls.some(([name]) => name === 'manage_panel_group'), false);
+
+    const handle = document.querySelector('.drag-handle');
+    handle.setPointerCapture = () => {};
+    await groupPointer(handle, 'pointerdown', 44, 145);
+    await groupPointer(handle, 'pointermove', 154);
+    for (let i = 0; i < 20 && frames.size; i++) {
+      const [id, draw] = frames.entries().next().value;
+      frames.delete(id);
+      await act(async () => draw());
+    }
+    assert.equal(strip.scrollLeft, 80);
+    assert.equal(document.querySelector('[data-drop-target]'), tab('生活'));
+    await groupPointer(handle, 'pointerup', 154);
+    assert.equal(f.state.panelGroups.membership.a, 'life');
+    assert.equal(frames.size, 0);
+  } finally { await f.close(); }
+});
 
 test('分组标签浮起跟随指针，邻居滑开让位，保存失败退回原顺序，成功后保留当前组与组件', async () => {
   const f = await fixture({ active: 'work' });
@@ -968,11 +1235,14 @@ test('从组件工具栏移动分组，失败保留选择，成功后可在目�
   } finally { await f.close(); }
 });
 
-test('组件库离线分类，官方广场和组件库均能组合分类与搜索', async () => {
+test('官方广场、组件库和已添加实例都能组合分类与搜索', async () => {
   const f = await fixture({ query: '?management=1' });
   const clock = { ...f.state.packages[0], id: 'local.souldesk.widgetjs.clock', name: '时钟' };
   const imported = { ...clock, id: 'local.fixture.note', name: '本地便签' };
   f.state.packages = [clock, imported];
+  f.state.instances = f.state.instances.map(instance => ({
+    ...instance, packageId: instance.id === 'desktop' ? imported.id : clock.id,
+  }));
   const entries = [
     { id: clock.id, name: clock.name, category: '桌面组件', summary: '显示当地时间', versions: [] },
     { id: imported.id, name: imported.name, category: '效率', summary: '记录临时内容', versions: [] },
@@ -1009,6 +1279,82 @@ test('组件库离线分类，官方广场和组件库均能组合分类与搜�
     await select('效率');
     await input(button('搜索组件'), '临时内容');
     assert.deepEqual(names(), ['本地便签']);
+    const instanceNames = () => [...document.querySelectorAll('.instance-row h2')].map(node => node.textContent);
+    await click(textButton(document, '管理实例'));
+    assert.deepEqual(instanceNames(), ['本地便签']);
+    await click(textButton(document, '显示全部'));
+    await select('时间');
+    assert.deepEqual(instanceNames(), ['时钟', '时钟', '时钟']);
+    assert.match(document.querySelector('.widget-result-count').textContent, /3 个实例/);
+    await input(button('搜索组件'), clock.id);
+    assert.equal(instanceNames().length, 3);
+    await input(button('搜索组件'), '临时内容');
+    assert.deepEqual(instanceNames(), []);
+    await select('效率');
+    assert.deepEqual(instanceNames(), ['本地便签']);
+    assert.ok(textButton(document.querySelector('.instance-row'), '移入面板'));
+  } finally { await f.close(); }
+});
+
+test('组件库全部更新先确认兼容版本和新增权限，逐项更新并报告部分失败', async () => {
+  const f = await fixture({ query: '?management=1' });
+  const installed = ['便签', '时钟', '已是新版', '需升级宿主', '私有组件'].map((name, i) => ({
+    ...f.state.packages[0], name, id: `local.fixture.widget-${i}`, digest: String(i).repeat(64),
+    version: i === 2 ? '2.0.0' : '1.0.0', capabilities: [],
+  }));
+  f.state.packages = installed;
+  const published = { version: '2.0.0', minHostVersion: '0.5.0', capabilities: ['storage.instance'],
+    releaseNotes: '更新', status: 'published', sha256: 'b'.repeat(64) };
+  const widgets = [...installed.slice(0, 4), { id: 'local.fixture.uninstalled', name: '未安装' }]
+    .map(({ id, name }, i) => ({ id, name, category: i === 1 ? '时间' : '效率', summary: '说明',
+      versions: i === 3 ? [{ ...published, minHostVersion: '99.0.0' }]
+        : [{ ...published, version: '3.0.0', status: 'withdrawn' }, published] }));
+  let online = false;
+  let rejectFirst;
+  const base = f.invoke;
+  f.invoke = async (command, args) => {
+    if (command === 'official_catalog') {
+      return { online: online && !args?.cachedOnly, catalog: { revision: 6, widgets }, error: online ? null : '网络失败' };
+    }
+    if (command === 'install_official') {
+      f.calls.push([command, args]);
+      if (args.packageId === installed[0].id) return new Promise((_, reject) => { rejectFirst = reject; });
+      installed[1].version = published.version;
+      return;
+    }
+    return base(command, args);
+  };
+  const open = () => click(textButton(document, '全部更新'));
+  const dialog = () => button('全部更新组件');
+  const calls = () => f.calls.filter(([command]) => command === 'install_official').map(([, args]) => args);
+  try {
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
+    await open();
+    assert.match(dialog().textContent, /无法在线检查组件更新/);
+    assert.equal(textButton(dialog(), '确认全部更新'), undefined);
+    await click(textButton(dialog(), '关闭'));
+
+    // 即使组件库正在筛选，批量范围仍覆盖全部符合条件的已安装组件。
+    await input(button('搜索组件'), '便签');
+    online = true;
+    await open();
+    assert.deepEqual([...dialog().querySelectorAll('li h3')].map(node => node.textContent), ['便签', '时钟']);
+    assert.match(dialog().textContent, /v1\.0\.0 → v2\.0\.0 · 新增权限 · 读取和保存/);
+    assert.deepEqual(calls(), []);
+    await submit(dialog().querySelector('form'));
+    assert.equal(calls().length, 1);
+    assert.match(dialog().textContent, /正在下载和试加载/);
+    await act(async () => rejectFirst(Error('试加载失败，原版已保留')));
+    assert.deepEqual(calls(), installed.slice(0, 2).map(pkg => ({
+      packageId: pkg.id, expectedSha256: published.sha256, expectedLocalDigest: pkg.digest,
+    })));
+    assert.match(dialog().textContent, /已更新 1 个，失败 1 个/);
+    assert.match(dialog().textContent, /试加载失败，原版已保留/);
+    assert.equal(installed[0].version, '1.0.0');
+    assert.equal(installed[1].version, '2.0.0');
+    await click(textButton(dialog(), '关闭'));
+    await open();
+    assert.deepEqual([...dialog().querySelectorAll('li h3')].map(node => node.textContent), ['便签']);
   } finally { await f.close(); }
 });
 
@@ -1044,7 +1390,7 @@ test('官方广场选兼容版本，更新确认显示新增权限，试加载�
     assert.match(dialog.textContent, /新增权限 · 读取和保存当前实例的设置与存储/);
     await submit(dialog.querySelector('form'));
     assert.deepEqual(f.calls.find(([name]) => name === 'install_official')[1],
-      { packageId: id, expectedSha256: digest });
+      { packageId: id, expectedSha256: digest, expectedLocalDigest: local.digest });
     assert.match(dialog.querySelector('[role=alert]').textContent, /试加载超时/);
     assert.equal(local.version, '0.1.0');
   } finally { await f.close(); }

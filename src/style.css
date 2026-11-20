@@ -171,6 +171,7 @@
 .panel-group-tabs .panel-group-tab:hover{background:var(--group-hover)}
 .panel-group-tabs .panel-group-tab[aria-selected=true],.panel-group-floating[data-active=true]{background:var(--group-active);border-color:var(--group-border);box-shadow:inset 0 -2px var(--group-border);font-weight:600}
 .panel-group-tab[data-sortable]{cursor:grab;touch-action:none;user-select:none}
+.panel-group-tabs .panel-group-tab[data-drop-target]{background:var(--group-active);border-color:var(--app-accent,#cedcf7);box-shadow:inset 0 0 0 1px var(--app-accent,#cedcf7);cursor:grabbing}
 .panel-group-tabs[data-reordering] .panel-group-tab{transition:transform 155ms cubic-bezier(.2,.75,.25,1),background .12s}
 .panel-group-tabs[data-reordering] .panel-group-tab:disabled:not([data-dragging]){opacity:1}
 .panel-group-tabs .panel-group-tab[data-dragging]{opacity:0;cursor:grabbing}

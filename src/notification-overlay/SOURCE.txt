@@ -1,0 +1,3 @@
+来源：https://github.com/widget-js/widgets/tree/714802e66336133396ab55463eb5a26d08fc0788/src/widgets/dynamic-island
+许可：原移植包附 GPL-2.0，本文目录保留同一 LICENSE.txt。上游文件散列记录在 SoulDesk-Widgets 的 source/widgetjs-port/components/widgetjs/reminder-source/SOURCE_FILES.json。
+从 SoulDesk-Widgets 的 reminder-source 复用顶部胶囊视图及四套来电素材。宿主通过专用窗口调用显示接口，浏览器组件通过 SDK 提交受限通知。

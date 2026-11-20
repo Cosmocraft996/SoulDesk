@@ -1,12 +1,33 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from './host';
+import { panelGroupDropAt, scrollGroupTabs } from './PanelGroups';
 import { WidgetFrame } from './WidgetFrame';
 import { WidgetSurface, type SurfaceAction } from './WidgetSurface';
 import { changeLayout, initialLayouts, type PanelLayout, type PanelWidget, type PanelPackage, type SnapEdge, type SnapMatch } from './panel-layout';
 
 export interface PanelScroll { left: number; top: number }
 
-export function PanelCanvas({ group, instances, packages, saved, version, items, onError, position, onScrollPosition, enabled = true, target }: {
+interface PanelDrag {
+  id: string;
+  pointer: number;
+  x: number;
+  y: number;
+  scroll: number;
+  resize: boolean;
+  start: PanelLayout;
+  current: PanelLayout;
+  previousDraft?: PanelLayout;
+  groupScrollFrame?: number;
+}
+
+function stopGroupScroll(drag: PanelDrag) {
+  if (drag.groupScrollFrame === undefined) return;
+  window.cancelAnimationFrame(drag.groupScrollFrame);
+  drag.groupScrollFrame = undefined;
+}
+
+export function PanelCanvas({ group, instances, packages, saved, version, items, onError, position, onScrollPosition, enabled = true, target, onGroupDropChange, onMoveToGroup }: {
   group: string | null;
   instances: PanelWidget[]; packages: PanelPackage[]; saved: Record<string, PanelLayout>;
   version: (id: string) => string | undefined;
@@ -16,6 +37,8 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
   onScrollPosition?: (group: string | null, position: PanelScroll) => void;
   enabled?: boolean;
   target?: string | null;
+  onGroupDropChange?: (group: string | null | undefined) => void;
+  onMoveToGroup?: (instance: string, group: string | null) => Promise<boolean>;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState<number>();
@@ -28,7 +51,7 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
   const [saving, setSaving] = useState<string>();
   const [front, setFront] = useState<string>();
   const [snapEdges, setSnapEdges] = useState<Record<string, SnapEdge[]>>({});
-  const drag = useRef<{ id: string; pointer: number; x: number; y: number; scroll: number; resize: boolean; start: PanelLayout; current: PanelLayout } | null>(null);
+  const drag = useRef<PanelDrag | null>(null);
   const layouts = initialLayouts(instances, packages, { ...saved, ...draft }, available);
   useLayoutEffect(() => {
     const node = viewport.current;
@@ -72,6 +95,17 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
     if (enabled && target) setLoaded(current => current.has(target) ? current : new Set([...current, target]));
   }, [enabled, target]);
   useEffect(() => {
+    const subscription = listen<string>('host:reveal-instance', ({ payload }) => {
+      const cards = viewport.current?.querySelectorAll<HTMLElement>('[data-panel-instance]');
+      const card = cards && Array.from(cards).find(node => node.dataset.panelInstance === payload);
+      if (card) {
+        setFront(payload);
+        card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    });
+    return () => { void subscription.then(unlisten => unlisten()); };
+  }, []);
+  useEffect(() => {
     if (drag.current || saving) return;
     // 等待后台快照确认，避免松手后短暂跳回旧位置；失败时由保存分支撤销临时布局。
     setDraft(current => {
@@ -79,6 +113,43 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
       return Object.keys(pending).length === Object.keys(current).length ? current : pending;
     });
   }, [saved, instances, saving]);
+  const endDrag = (state: PanelDrag) => {
+    stopGroupScroll(state);
+    drag.current = null;
+    setActive(undefined);
+    setSnapEdges({});
+    onGroupDropChange?.(undefined);
+  };
+  const restoreDraft = ({ id, previousDraft }: PanelDrag) => setDraft(current => {
+    if (previousDraft) return { ...current, [id]: previousDraft };
+    if (!(id in current)) return current;
+    const next = { ...current };
+    delete next[id];
+    return next;
+  });
+  const cancelDrag = useEffectEvent(() => {
+    const state = drag.current;
+    if (!state) return;
+    endDrag(state);
+    restoreDraft(state);
+  });
+  useEffect(() => {
+    const onBlur = () => cancelDrag();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && drag.current) {
+        event.preventDefault();
+        cancelDrag();
+      }
+    };
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('keydown', onKeyDown, true);
+      if (drag.current) stopGroupScroll(drag.current);
+      onGroupDropChange?.(undefined);
+    };
+  }, [onGroupDropChange]);
   const begin = (event: PointerEvent<HTMLButtonElement>, id: string, resize: boolean) => {
     if (event.button !== 0 || drag.current || saving) return;
     event.preventDefault();
@@ -86,13 +157,32 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
     const start = layouts[id];
     if (!start) return;
     target.setPointerCapture(pointer);
-    drag.current = { id, pointer, x: event.clientX, y: event.clientY, scroll: viewport.current?.scrollTop ?? 0, resize, start, current: start };
+    drag.current = {
+      id, pointer, x: event.clientX, y: event.clientY, scroll: viewport.current?.scrollTop ?? 0,
+      resize, start, current: start, previousDraft: draft[id],
+    };
     setFront(id);
     setActive(id);
+  };
+  const updateGroupDrop = (state: PanelDrag, x: number, y: number) => {
+    const hit = panelGroupDropAt(x, y);
+    onGroupDropChange?.(hit?.group === group ? undefined : hit?.group);
+    if (hit && scrollGroupTabs(hit.strip, x)) {
+      state.groupScrollFrame = window.requestAnimationFrame(() => {
+        state.groupScrollFrame = undefined;
+        if (drag.current === state) updateGroupDrop(state, x, y);
+      });
+    }
+    return hit;
   };
   const move = (event: PointerEvent) => {
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
+    stopGroupScroll(state);
+    if (onMoveToGroup && !state.resize && updateGroupDrop(state, event.clientX, event.clientY)) {
+      setSnapEdges(current => Object.keys(current).length ? {} : current);
+      return;
+    }
     const pack = packages.find(p => p.id === instances.find(i => i.id === state.id)?.packageId);
     if (!pack) return;
     const dy = event.clientY - state.y + (viewport.current?.scrollTop ?? 0) - state.scroll;
@@ -113,17 +203,28 @@ export function PanelCanvas({ group, instances, packages, saved, version, items,
   const finish = async (event: PointerEvent, canceled = false) => {
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
-    drag.current = null; setActive(undefined); setSnapEdges({}); setSaving(state.id);
+    endDrag(state);
+    if (canceled) {
+      restoreDraft(state);
+      return;
+    }
+    const drop = onMoveToGroup && !state.resize ? panelGroupDropAt(event.clientX, event.clientY) : undefined;
+    if (drop) {
+      restoreDraft(state);
+      if (drop.group === undefined || drop.group === group) return;
+    }
+    setSaving(state.id);
     try {
-      if (!canceled) {
+      if (drop?.group !== undefined) {
+        await onMoveToGroup?.(state.id, drop.group);
+      } else {
         setDraft(current => ({ ...current, [state.id]: state.current }));
         await invoke('save_panel_layout', { instance: state.id, layout: state.current });
       }
-    } catch (error) { canceled = true; onError(`布局保存失败：${String(error)}`); }
-    finally {
-      if (canceled) setDraft(current => Object.fromEntries(Object.entries(current).filter(([id]) => id !== state.id)));
-      setSaving(undefined);
-    }
+    } catch (error) {
+      restoreDraft(state);
+      onError(`${drop ? '移动组件失败' : '布局保存失败'}：${String(error)}`);
+    } finally { setSaving(undefined); }
   };
   const values = Object.values(layouts);
   const height = Math.max(180, ...values.map(g => g.y + g.height + 12)) + viewportHeight * 0.5;

@@ -3,6 +3,8 @@
 pub(crate) const LEGACY_CONTENT_READ: &str = "content.read";
 pub(crate) const HTTPS_IMAGES: &str = "images.https";
 pub(crate) const OPEN_WEB_LINK: &str = "links.openWeb";
+pub(crate) const WEBSITE_METADATA: &str = "links.metadata";
+pub(crate) const WEBSITE_VERIFY: &str = "links.verify";
 
 const CONTENT_SOURCE_CAPABILITIES: &[(&str, &str)] = &[
     ("bangumi", "content.source.bangumi"),
@@ -15,6 +17,7 @@ const CONTENT_SOURCE_CAPABILITIES: &[(&str, &str)] = &[
     ("zhihu", "content.source.zhihu"),
     ("itime-calendar", "content.source.itime-calendar"),
     ("forex", "content.source.forex"),
+    ("forex-rates", "content.source.forex"),
     ("metal", "content.source.metal"),
     ("gold", "content.source.gold"),
     ("gold-trends", "content.source.gold-trends"),
@@ -85,6 +88,8 @@ pub(crate) const CAPABILITIES: &[&str] = &[
     "reminders.sit",
     "reminders.phone",
     "notifications.island",
+    crate::notification_sdk::SEND,
+    crate::notification_sdk::CALL,
     "todos.manage",
     "focus.pomodoro",
     "focus.pomodoro.window",
@@ -92,6 +97,8 @@ pub(crate) const CAPABILITIES: &[&str] = &[
     "servers.monitor",
     "links.open",
     OPEN_WEB_LINK,
+    WEBSITE_METADATA,
+    WEBSITE_VERIFY,
 ];
 
 pub(crate) fn known_capability(name: &str) -> bool {
@@ -133,6 +140,7 @@ pub(crate) fn gateway(method: &str) -> Gateway {
         ("system.metrics", Metrics),
         ("server.request", Server),
         ("labor.get", Labor),
+        ("notifications.send", Reminders),
     ] {
         if method == name {
             return owner;
@@ -174,21 +182,30 @@ mod tests {
 
     #[test]
     fn capability_catalog_is_unique_and_unknown_names_remain_denied() {
+        let scopes: std::collections::HashSet<_> = CONTENT_SOURCE_CAPABILITIES
+            .iter()
+            .map(|&(_, cap)| cap)
+            .collect();
+        let sources: std::collections::HashSet<_> = CONTENT_SOURCE_CAPABILITIES
+            .iter()
+            .map(|&(source, _)| source)
+            .collect();
+        // 多个内容入口可以有意共享同一权限，来源名称必须唯一。
+        assert_eq!(sources.len(), CONTENT_SOURCE_CAPABILITIES.len());
         let names: std::collections::HashSet<_> = CAPABILITIES
             .iter()
             .copied()
-            .chain(CONTENT_SOURCE_CAPABILITIES.iter().map(|&(_, cap)| cap))
+            .chain(scopes.iter().copied())
             .chain([HTTPS_IMAGES])
             .collect();
-        assert_eq!(
-            names.len(),
-            CAPABILITIES.len() + CONTENT_SOURCE_CAPABILITIES.len() + 1
-        );
+        assert_eq!(names.len(), CAPABILITIES.len() + scopes.len() + 1);
         assert!(known_capability("storage.instance"));
         assert!(!known_capability("shell.execute"));
         assert!(!known_capability("storage.*"));
         assert!(!known_capability("content.source.*"));
         assert!(known_capability("content.source.coin-index"));
+        assert!(known_capability("notifications.send"));
+        assert!(known_capability("notifications.call"));
     }
 
     #[test]
@@ -205,6 +222,7 @@ mod tests {
         assert_eq!(gateway("clipboard.status"), Gateway::Clipboard);
         assert_eq!(gateway("jobs.search"), Gateway::Jobs);
         assert_eq!(gateway("island.configure"), Gateway::Reminders);
+        assert_eq!(gateway("notifications.send"), Gateway::Reminders);
         assert_eq!(gateway("phone.configure"), Gateway::Reminders);
         assert_eq!(gateway("watchlist.get"), Gateway::Market);
         assert_eq!(gateway("alerts.save"), Gateway::Market);

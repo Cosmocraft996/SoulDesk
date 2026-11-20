@@ -25,6 +25,7 @@ pub(crate) fn lifetime(source: &str) -> Option<Duration> {
         "cls-telegraph" => 10,
         "bangumi" => 60,
         "itime-calendar" => 3600,
+        "forex-rates" => 1800,
         "bilibili-rcmd" => 0, // 只合并在途请求，不缓存已完成推荐。
         _ => return None,
     }))
@@ -214,6 +215,7 @@ mod tests {
             ("cls-telegraph", 10),
             ("bangumi", 60),
             ("itime-calendar", 3600),
+            ("forex-rates", 1800),
             ("bilibili-rcmd", 0),
         ] {
             assert_eq!(lifetime(name), Some(Duration::from_secs(seconds)));

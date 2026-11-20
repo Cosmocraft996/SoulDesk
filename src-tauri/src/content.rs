@@ -7,11 +7,20 @@ use crate::{
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+const FOREX_RATES_URL: &str = "https://api.frankfurter.dev/v2/rates?base=USD";
+const FOREX_CURRENCIES_URL: &str = "https://api.frankfurter.dev/v2/currencies";
+
 fn source_url(source: &str, args: &Value) -> AppResult<String> {
     if let Some(url) = crate::equity::source_url(source, args)? {
         return Ok(url);
     }
     let value = match source {
+        "forex-rates" => {
+            if !args.as_object().is_some_and(|fields| fields.len() == 1 && args["source"] == source) {
+                return Err("INVALID_ARGUMENT: 汇率表不接受额外查询参数".into());
+            }
+            FOREX_RATES_URL
+        }
         "forex" => {
             const CURRENCIES: &[&str] = &["CNY", "USD", "JPY", "EUR", "KRW", "AUD", "HKD", "PHP", "MYR", "SGD", "THB", "VND", "IDR", "RUB"];
             let from = args["from"].as_str().filter(|v| CURRENCIES.contains(v)).ok_or("INVALID_ARGUMENT: 来源币种无效")?;
@@ -65,6 +74,69 @@ pub(crate) fn source_decimal(
         rust_decimal::Decimal::from_str_exact(text)
     })
     .map_err(|_| "DATA_UNAVAILABLE: 源数值无效或超出十进制范围".into())
+}
+
+fn parse_forex_rates(rates: &[u8], currencies: &[u8]) -> AppResult<Value> {
+    #[derive(serde::Deserialize)]
+    struct Currency {
+        iso_code: String,
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Rate {
+        base: String,
+        quote: String,
+        date: String,
+        rate: Box<serde_json::value::RawValue>,
+    }
+    let currencies: Vec<Currency> =
+        serde_json::from_slice(currencies).map_err(|_| "DATA_UNAVAILABLE: 币种目录格式无效")?;
+    let rates: Vec<Rate> =
+        serde_json::from_slice(rates).map_err(|_| "DATA_UNAVAILABLE: 汇率表格式无效")?;
+    if currencies.len() > 1024 || rates.len() > 1024 {
+        return Err("DATA_UNAVAILABLE: 汇率表或币种目录超出容量".into());
+    }
+    let codes: std::collections::HashSet<_> = currencies
+        .iter()
+        .filter(|item| {
+            item.kind == "currency"
+                && item.iso_code.len() == 3
+                && item.iso_code.bytes().all(|byte| byte.is_ascii_uppercase())
+        })
+        .map(|item| item.iso_code.as_str())
+        .collect();
+    let mut quotes = serde_json::Map::new();
+    for item in rates {
+        if !codes.contains(item.quote.as_str()) {
+            continue;
+        }
+        let value = source_decimal(&item.rate)?.normalize();
+        if item.base != "USD"
+            || value <= rust_decimal::Decimal::ZERO
+            || item.date.len() != 10
+            || chrono::NaiveDate::parse_from_str(&item.date, "%Y-%m-%d").is_err()
+        {
+            return Err("DATA_UNAVAILABLE: 汇率身份、数值或日期无效".into());
+        }
+        if item.quote == "USD" && value != rust_decimal::Decimal::ONE {
+            return Err("DATA_UNAVAILABLE: 美元基准汇率无效".into());
+        }
+        if quotes
+            .insert(
+                item.quote,
+                json!({"rate":value.to_string(),"date":item.date}),
+            )
+            .is_some()
+        {
+            return Err("DATA_UNAVAILABLE: 汇率表存在重复币种".into());
+        }
+    }
+    if !codes.contains("USD") || !quotes.keys().any(|code| code != "USD") {
+        return Err("DATA_UNAVAILABLE: 未找到可换算的美元参考汇率".into());
+    }
+    quotes.insert("USD".into(), json!({"rate":"1","date":null}));
+    Ok(json!({"base":"USD","quotes":quotes}))
 }
 
 fn parse_baidu_index(bytes: &[u8], code: &str) -> AppResult<Value> {
@@ -307,7 +379,7 @@ fn external_url(value: &str) -> AppResult<url::Url> {
     Ok(parsed)
 }
 
-fn web_url(value: &str) -> AppResult<url::Url> {
+pub(crate) fn web_url(value: &str) -> AppResult<url::Url> {
     let invalid = "INVALID_ARGUMENT: 只允许无凭证的 HTTP 或 HTTPS 网页地址";
     let (_, rest) = value.split_once("://").ok_or(invalid)?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
@@ -422,6 +494,26 @@ pub async fn gateway(
     let core = app.state::<Core>();
     if matches!(
         method,
+        "links.verify.start" | "links.verify.status" | "links.verify.close"
+    ) {
+        let instance = authorize(
+            &core.store,
+            &core.sessions,
+            window,
+            token,
+            crate::component_registry::WEBSITE_VERIFY,
+        )?;
+        return crate::website_verification::request(app, &instance, method, args).await;
+    }
+    if method == crate::component_registry::WEBSITE_METADATA {
+        let auth = || authorize(&core.store, &core.sessions, window, token, method);
+        auth()?;
+        let result = crate::website_metadata::lookup(args).await?;
+        auth()?;
+        return Ok(result);
+    }
+    if matches!(
+        method,
         "links.open" | crate::component_registry::OPEN_WEB_LINK
     ) {
         let url = browser_link(&core.store, &core.sessions, window, token, method, &args)?;
@@ -456,6 +548,9 @@ pub async fn gateway(
             return Err("DATA_UNAVAILABLE: 网络设置已变化，请重新刷新".into());
         }
         return Ok(response);
+    }
+    if source == "forex-rates" {
+        return Err("INVALID_ARGUMENT: 汇率表须使用公开内容缓存读取".into());
     }
     let url = source_url(source, &args)?;
     let config = content_network(&core, &instance, source)?;
@@ -557,6 +652,14 @@ async fn fetch_public(
     url: String,
     config: network::NetworkConfig,
 ) -> AppResult<Value> {
+    if source == "forex-rates" {
+        let (rates, currencies) = tokio::try_join!(
+            network::http_get_bounded(&config, &url, 2 * 1024 * 1024),
+            network::http_get_bounded(&config, FOREX_CURRENCIES_URL, 2 * 1024 * 1024),
+        )?;
+        let data = parse_forex_rates(&rates, &currencies)?;
+        return Ok(json!({"data":data,"source":url,"fetchedAt":now_ms()}));
+    }
     let bytes = network::http_get_bounded(&config, &url, 2 * 1024 * 1024).await?;
     let data: Value = serde_json::from_slice(&bytes)
         .map_err(|_| "DATA_UNAVAILABLE: 内容源未返回有效JSON".to_owned())?;
@@ -859,6 +962,57 @@ mod tests {
     }
 
     #[test]
+    fn forex_snapshot_intersects_live_rates_with_currency_catalog_and_keeps_decimal_text() {
+        let catalog = br#"[{"iso_code":"USD","type":"currency"},{"iso_code":"CNY","type":"currency"},{"iso_code":"TWD","type":"currency"},{"iso_code":"JPY","type":"currency"},{"iso_code":"BTC","type":"crypto"},{"iso_code":"XAU","type":"metal"}]"#;
+        let rates = br#"[
+            {"date":"2026-11-19","base":"USD","quote":"CNY","rate":7.0123456789012345678},
+            {"date":"2026-11-18","base":"USD","quote":"TWD","rate":3.18e1},
+            {"date":"2026-11-19","base":"USD","quote":"BTC","rate":0.00001},
+            {"date":"2026-11-19","base":"USD","quote":"XAU","rate":0.0004}
+        ]"#;
+        assert_eq!(
+            parse_forex_rates(rates, catalog).unwrap(),
+            json!({"base":"USD","quotes":{
+                "USD":{"rate":"1","date":null},
+                "CNY":{"rate":"7.0123456789012345678","date":"2026-11-19"},
+                "TWD":{"rate":"31.8","date":"2026-11-18"}
+            }})
+        );
+        for (base, date, price) in [
+            ("EUR", "2026-11-19", "7"),
+            ("USD", "2026-11-31", "7"),
+            ("USD", "2026-11-19", "0"),
+            ("USD", "2026-11-19", "-7"),
+        ] {
+            let input =
+                format!(r#"[{{"date":"{date}","base":"{base}","quote":"CNY","rate":{price}}}]"#);
+            assert!(parse_forex_rates(input.as_bytes(), catalog).is_err());
+        }
+        let duplicate = br#"[
+            {"date":"2026-11-19","base":"USD","quote":"CNY","rate":7},
+            {"date":"2026-11-19","base":"USD","quote":"CNY","rate":8}
+        ]"#;
+        assert!(parse_forex_rates(duplicate, catalog).is_err());
+        assert!(parse_forex_rates(b"[]", catalog).is_err());
+    }
+
+    #[test]
+    fn forex_snapshot_has_a_fixed_url_and_does_not_accept_query_parameters() {
+        let args = json!({"source":"forex-rates","cache":true,"forceRefresh":true});
+        let (parameters, force) = cache_parameters(&args).unwrap();
+        assert!(force);
+        assert_eq!(
+            source_url("forex-rates", &parameters).unwrap(),
+            FOREX_RATES_URL
+        );
+        assert!(source_url(
+            "forex-rates",
+            &json!({"source":"forex-rates","url":"https://example.com"})
+        )
+        .is_err());
+    }
+
+    #[test]
     fn baidu_index_requires_exact_index_market_and_keeps_original_decimal_text() {
         let payload=br#"{"ResultCode":"0","Result":{"stock":[{"code":"000001","type":"stock","market":"ab","exchange":"SZ","name":"other","price":"9.9","ratio":"1.1%"},{"code":"000001","type":"index","market":"ab","exchange":"SH","name":"index","price":"12345678901234567890.125","ratio":"+0.005%","stockStatusInfo":"TRADE","stockStatus":"2"}],"refresh_time":""}}"#;
         let value = parse_baidu_index(payload, "000001").unwrap();
@@ -1064,7 +1218,7 @@ mod tests {
             ("calendar", &["itime-calendar"], false),
             ("calendar-large", &["itime-calendar"], false),
             ("sticker", &[], true),
-            ("forex", &["forex"], true),
+            ("forex", &["forex", "forex-rates"], true),
             ("metal", &["metal"], false),
             ("gold", &["gold", "gold-trends"], false),
             ("stock-medium", &["a-index"], false),

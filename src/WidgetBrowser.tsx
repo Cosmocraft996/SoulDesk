@@ -19,10 +19,12 @@ interface BrowseItem {
   name: string;
   category: string;
   summary?: string;
+  packageId?: string;
 }
 
-export function WidgetBrowser<T extends BrowseItem>({ items, children }: {
+export function WidgetBrowser<T extends BrowseItem>({ items, layout = 'grid', children }: {
   items: T[];
+  layout?: 'grid' | 'list';
   children: (item: T) => ReactNode;
 }) {
   const [category, setCategory] = useState('');
@@ -36,9 +38,10 @@ export function WidgetBrowser<T extends BrowseItem>({ items, children }: {
   ];
   const selected = categories.includes(category) ? category : '';
   const keyword = query.trim().toLowerCase();
+  const noun = layout === 'list' ? '实例' : '组件';
   const visible = items.filter(item =>
     (!selected || item.category === selected)
-    && (!keyword || [item.name, item.summary, item.category, item.id]
+    && (!keyword || [item.name, item.summary, item.category, item.id, item.packageId]
       .some(value => value?.toLowerCase().includes(keyword))),
   );
 
@@ -56,10 +59,10 @@ export function WidgetBrowser<T extends BrowseItem>({ items, children }: {
           onClick={() => setCategory(label)}>{label}</button>)}
       </div>
     </div>
-    <p className="widget-result-count muted" role="status">{visible.length} 个组件</p>
-    {visible.length ? <div className="library-grid">{visible.map(children)}</div>
+    <p className="widget-result-count muted" role="status">{visible.length} 个{noun}</p>
+    {visible.length ? <div className={layout === 'grid' ? 'library-grid' : undefined}>{visible.map(children)}</div>
       : <div className="empty widget-empty">
-        <p>没有符合条件的组件</p>
+        <p>没有符合条件的{noun}</p>
         <button onClick={() => { setQuery(''); setCategory(''); search.current?.focus(); }}>清除筛选</button>
       </div>}
   </>;

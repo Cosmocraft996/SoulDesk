@@ -134,6 +134,7 @@ fn tick(
             .saturating_sub(now)
             .div_ceil(1000)
             .min(u32::MAX as u64) as u32;
+        let channel_enabled = crate::reminder_store::Channel::Windows.enabled(&tx)?;
         let action = if state.delivery == "sending" {
             state.delivery = "unknown".into();
             state.error = Some("上次下班通知递送结果未确定".into());
@@ -141,7 +142,11 @@ fn tick(
                 tag: state.tag.clone(),
             })
         } else if state.delivery == "accepted" {
-            if state.target != cycle.end || now >= cycle.end || now < state.started {
+            if !channel_enabled
+                || state.target != cycle.end
+                || now >= cycle.end
+                || now < state.started
+            {
                 state.delivery = "stopped".into();
                 Some(Action::Remove {
                     tag: state.tag.clone(),
@@ -168,13 +173,18 @@ fn tick(
             state.started = now;
             state.last_sequence = 1;
             state.tag = Uuid::new_v4().simple().to_string()[..16].to_owned();
-            state.delivery = "sending".into();
+            state.delivery = if channel_enabled {
+                "sending"
+            } else {
+                "suppressed"
+            }
+            .into();
             state.error = None;
             state.sent.push(cycle.end);
             if state.sent.len() > 32 {
                 state.sent.remove(0);
             }
-            Some(Action::Show {
+            channel_enabled.then(|| Action::Show {
                 tag: state.tag.clone(),
                 remaining,
             })

@@ -663,7 +663,12 @@ fn tick_with_clock(
             .iter_mut()
             .find(|r| r.todo_id == p.todo_id && r.nonce == p.nonce && r.delivery == "sending")
         {
-            r.delivery = if result.is_ok() { "accepted" } else { "failed" }.into();
+            r.delivery = match result.as_ref().err().map(String::as_str) {
+                None => "accepted",
+                Some(crate::reminder_store::WINDOWS_DISABLED) => "suppressed",
+                Some(_) => "failed",
+            }
+            .into();
             r.error = result.err();
             persist(&tx, id, &d)?;
         }
@@ -793,6 +798,7 @@ impl Service {
 }
 #[cfg(windows)]
 fn notify(app: &AppHandle, id: &str, pending: &Pending) -> AppResult<()> {
+    crate::reminder_store::ensure_windows_enabled(&app.state::<Core>().store)?;
     use tauri_winrt_notification::{Duration, Toast};
     let core = app.state::<Core>();
     let store = std::sync::Arc::downgrade(&core.store);

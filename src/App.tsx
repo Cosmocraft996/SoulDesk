@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import appPackage from '../package.json' with { type: 'json' };
 import { invoke } from './host';
-import { OfficialGallery, type CatalogResponse } from './OfficialGallery';
+import { OfficialGallery, UpdateAllWidgets, type CatalogResponse } from './OfficialGallery';
 import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
 import { WidgetFrame } from './WidgetFrame';
 import { NetworkSettings } from './NetworkSettings';
+import { NotificationSettings } from './NotificationSettings';
 import { PanelCanvas, type PanelScroll } from './PanelCanvas';
 import { defaultEdge, edgeStyles, EdgeStylePicker, PanelEdge, readEdgeStyle, type EdgeStyle, type EdgeVisual } from './PanelEdge';
 import { PanelGroups, MovePanelGroupDialog, ungrouped, type PanelGroupsState, type GroupChange } from './PanelGroups';
@@ -35,6 +36,78 @@ interface Snapshot {
   diagnostics: { ticks: number; tasks: number; sessions: number; views: number; error: string | null; dataRoot: string; shortcut: string };
 }
 const action = (action: string, instance?: string) => invoke('window_action', { action, instance });
+
+// 与宿主的 Windows 快捷键解析器使用相同的键名。
+const shortcutKeyCodes = new Set([
+  'Backquote', 'Backslash', 'BracketLeft', 'BracketRight', 'Comma', 'Equal', 'Minus',
+  'Period', 'Quote', 'Semicolon', 'Slash', 'Backspace', 'CapsLock', 'Enter', 'Space',
+  'Tab', 'Escape', 'Delete', 'End', 'Home', 'Insert', 'PageDown', 'PageUp', 'PrintScreen',
+  'ScrollLock', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Pause', 'NumLock',
+  'NumpadAdd', 'NumpadDecimal', 'NumpadDivide', 'NumpadEnter', 'NumpadEqual', 'NumpadMultiply', 'NumpadSubtract',
+  'AudioVolumeDown', 'AudioVolumeUp', 'AudioVolumeMute', 'MediaPlay', 'MediaPause',
+  'MediaPlayPause', 'MediaStop', 'MediaTrackNext', 'MediaTrackPrevious',
+]);
+
+function shortcutMainKey({ code, key }: KeyboardEvent<HTMLInputElement>) {
+  if (/^Key[A-Z]$/.test(code)) return /^[a-z]$/i.test(key) ? key.toUpperCase() : code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code) || code === 'NumpadDecimal') {
+    // 数字锁关闭时，小键盘发送方向、删除和导航键。
+    return shortcutKeyCodes.has(key) ? key : code;
+  }
+  if (/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(code) || shortcutKeyCodes.has(code)) return code;
+}
+
+function heldShortcutModifiers({ ctrlKey, altKey, shiftKey, metaKey }: KeyboardEvent<HTMLInputElement>) {
+  return [ctrlKey && 'Ctrl', altKey && 'Alt', shiftKey && 'Shift', metaKey && 'Super'].filter(Boolean).join('+');
+}
+
+function WidgetPackageImport({ disabled, onImport, onError }: {
+  disabled: boolean;
+  onImport: (file?: File) => Promise<boolean>;
+  onError: (message: string) => void;
+}) {
+  const importing = useRef(false);
+  const [dragOver, setDragOver] = useState(false);
+  const importOnce = async (file?: File) => {
+    if (disabled || importing.current) return;
+    importing.current = true;
+    try { await onImport(file); }
+    finally { importing.current = false; }
+  };
+  const acceptDrag = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    const available = !disabled && !importing.current;
+    event.dataTransfer.dropEffect = available ? 'copy' : 'none';
+    setDragOver(available);
+  };
+  const drop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    if (disabled || importing.current) return;
+    const files = event.dataTransfer.files;
+    if (files.length !== 1 || !/\.zip$/i.test(files[0].name)) {
+      onError('请一次拖入一个组件 ZIP 文件。');
+      return;
+    }
+    const file = files[0];
+    if (file.size > 20 * 1024 * 1024) {
+      onError('组件 ZIP 超过 20 MiB。');
+      return;
+    }
+    void importOnce(file);
+  };
+  return <div className="widget-import" role="group" aria-label="导入组件" data-drag-over={dragOver && !disabled || undefined}
+    onDragEnter={acceptDrag} onDragOver={acceptDrag} onDrop={drop}
+    onDragLeave={event => {
+      if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setDragOver(false);
+    }}>
+    <span><Icon name="download" />把组件 ZIP 拖到这里</span>
+    <button type="button" disabled={disabled} onClick={() => void importOnce()}>导入本地 ZIP</button>
+  </div>;
+}
+
 function RemoveInstanceDialog({ name, busy, message, onCancel, onConfirm }: { name: string; busy: boolean; message: string; onCancel: () => void; onConfirm: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const node = dialog.current!; node.showModal(); return () => node.close(); }, []);
@@ -58,20 +131,28 @@ export function App() {
   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<string>();
   const [movingGroup, setMovingGroup] = useState<string>();
+  const [dropGroup, setDropGroup] = useState<string | null>();
   const [focusedPackage, setFocusedPackage] = useState<string>();
   const [tab, setTab] = useState<'gallery' | 'library' | 'instances' | 'checks'>(query.get('tab') === 'checks' ? 'checks' : 'library');
-  const [libraryCatalog, setLibraryCatalog] = useState<CatalogResponse['catalog']>(null);
-  const libraryOpen = tab === 'library' && !panel && !edge && !desktop && !detail && !trial;
+  const [localCatalog, setLocalCatalog] = useState<CatalogResponse['catalog']>(null);
+  const [updatingAll, setUpdatingAll] = useState(false);
+  const browsingLocal = (tab === 'library' || tab === 'instances') && !panel && !edge && !desktop && !detail && !trial;
   useEffect(() => {
-    if (!libraryOpen || !isTauri()) return;
+    if (!browsingLocal || !isTauri()) return;
     let current = true;
     void invoke<CatalogResponse>('official_catalog', { cachedOnly: true }).then(
-      result => { if (current) setLibraryCatalog(result?.catalog ?? null); },
-      () => { if (current) setLibraryCatalog(null); },
+      result => {
+        const catalog = result?.catalog;
+        if (current && catalog) {
+          setLocalCatalog(previous => !previous || catalog.revision >= previous.revision ? catalog : previous);
+        }
+      },
+      () => {},
     );
     return () => { current = false; };
-  }, [libraryOpen]);
+  }, [browsingLocal]);
   const [shortcut, setShortcut] = useState<string>();
+  const [shortcutModifiers, setShortcutModifiers] = useState('');
   const [menu, setMenu] = useState(false);
   const [resizingPanel, setResizingPanel] = useState(false);
   const [panelDraft, setPanelDraft] = useState<PanelChanges>({});
@@ -85,6 +166,24 @@ export function App() {
   const configuredShortcut = data?.diagnostics.shortcut;
   const shortcutInput = shortcut ?? configuredShortcut ?? '';
   const shortcutUnavailable = shortcutEnabled && data?.panelShortcutRegistered === false;
+  const canSaveShortcut = !!shortcutInput && !shortcutModifiers && (!!shortcut || shortcutUnavailable);
+  const captureShortcut = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.code === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) return;
+    if (event.nativeEvent.isComposing || event.key === 'Process') return;
+    event.preventDefault();
+    if (event.repeat) return;
+    const modifiers = heldShortcutModifiers(event);
+    if (!modifiers) {
+      if (event.code === 'Escape') {
+        setShortcut(undefined);
+        event.currentTarget.blur();
+      }
+      return;
+    }
+    const key = shortcutMainKey(event);
+    setShortcutModifiers(key ? '' : modifiers);
+    if (key) setShortcut(modifiers + '+' + key);
+  };
   const refresh = useCallback(async () => {
     const request = ++snapshotRequest.current;
     try {
@@ -128,10 +227,19 @@ export function App() {
     const off = listen<EdgeVisual>('host:panel-edge', e => setEdgeVisual(e.payload));
     return () => { void off.then(unlisten => unlisten()); };
   }, [edge, panel]);
-  const run = async (task: () => Promise<unknown>, success = '') => {
+  const run = async <T,>(task: () => Promise<T>, success: string | ((result: T) => string) = '') => {
     setBusy(true); setMessage('');
-    try { await task(); setMessage(success); await refresh(); return true; } catch (e) { setMessage(`操作失败：${String(e)}`); return false; } finally { setBusy(false); }
+    try {
+      const result = await task();
+      setMessage(typeof success === 'function' ? success(result) : success);
+      await refresh();
+      return true;
+    } catch (e) { setMessage(`操作失败：${String(e)}`); return false; } finally { setBusy(false); }
   };
+  const importPackage = (file?: File) => run(
+    async () => invoke<Package | null>('import_package', file ? await file.arrayBuffer() : undefined),
+    result => result ? `已导入“${result.name}”` : '',
+  );
   const managePackageInstances = (packageId: string) => {
     setFocusedPackage(packageId);
     setTab('instances');
@@ -141,7 +249,10 @@ export function App() {
   const version = (id: string) => data?.packages.find(p => p.id === data.instances.find(i => i.id === id)?.packageId)?.version;
   const groups = data?.panelGroups ?? ungrouped;
   const panelInstances = data?.instances.filter(i => i.visible && i.location === 'panel' && (groups.membership[i.id] ?? null) === groups.active) ?? [];
-  const changeGroup = (change: GroupChange) => run(() => invoke('manage_panel_group', { change }));
+  const changeGroup = (change: GroupChange, success = '') => run(() => invoke('manage_panel_group', { change }), success);
+  const groupName = (id: string | null) => groups.groups.find(group => group.id === id)?.name ?? '未分组';
+  const dropIntoGroup = (instance: string, group: string | null) =>
+    changeGroup({ action: 'move', instance, group }, `已移到“${groupName(group)}”`);
   const moveGroupDialog = movingGroup && <MovePanelGroupDialog key={movingGroup} instance={movingGroup} name={data?.packages.find(p => p.id === data.instances.find(i => i.id === movingGroup)?.packageId)?.name ?? '组件'} state={groups} busy={busy} message={message.startsWith('操作失败：') ? message : ''} onChange={changeGroup} onClose={() => setMovingGroup(undefined)} />;
   useEffect(() => { if (data?.panelGeometry) setEffective(data.panelGeometry.effective_ratio); }, [data?.panelGeometry?.effective_ratio]);
   const widthRatio = (data?.panelOpen ? effective : undefined) ?? data?.panel.ratio ?? .4;
@@ -219,7 +330,7 @@ export function App() {
     <button className="panel-width-handle" role="separator" aria-orientation="vertical" aria-label="调整面板宽度" aria-valuemin={1} aria-valuemax={100} aria-valuenow={Math.round(widthRatio * 100)} title="拖动调整面板宽度；左右方向键微调" disabled={busy || !data} onPointerDown={e => { if (e.button === 0) { e.preventDefault(); void resizePanel(); } }} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); if (!busy) void run(() => invoke('set_panel', { ratio: Math.max(.01, Math.min(1, widthRatio + ((e.key === 'ArrowLeft') !== edgeOnLeft ? .02 : -.02))) })); } }} />
     {resizingPanel && <output className="panel-width-output">{(widthRatio * 100).toFixed(0)}%</output>}
     <header className="panel-topbar">
-      {data && <PanelGroups state={groups} instances={data.instances} busy={busy} message={message.startsWith('操作失败：') ? message : ''} onChange={changeGroup} />}
+      {data && <PanelGroups state={groups} instances={data.instances} busy={busy} message={message.startsWith('操作失败：') ? message : ''} onChange={changeGroup} dropGroup={dropGroup} />}
       <nav className="panel-tools" aria-label="面板操作">
         <button className="icon-button" title="管理组件" aria-label="管理组件" onClick={() => void run(() => action('show'))}><Icon name="grid" /></button>
         <button className="icon-button" title="面板设置" aria-label="面板设置" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="sliders" /></button>
@@ -231,15 +342,36 @@ export function App() {
     {!data?.panelLowered && panelToggle(true)}{removeDialog}{moveGroupDialog}
     {menu && <aside className="panel-settings-popover">{panelControls}<button className="icon-button" title="关闭设置" aria-label="关闭设置" onClick={() => setMenu(false)}><Icon name="close" /></button></aside>}
     {notice && <div className="panel-notice">{notice}</div>}
-    <section id="panel-group-content" className="panel-group-content" role="tabpanel" aria-label={groups.groups.find(g => g.id === groups.active)?.name ?? '未分组'}>
-      {!data ? <div className="empty panel-empty" role="status">正在加载面板…</div> : panelInstances.length ? <PanelCanvas key={groups.active ?? 'ungrouped'} group={groups.active} instances={panelInstances} packages={data.packages} saved={data.panelLayouts} version={version} items={id => controls(id, true)} onError={setMessage} position={data.panelScroll} onScrollPosition={savePanelScroll} enabled={!panelView || panelReady} target={data.panelTarget} /> : <div className="empty panel-empty"><button className="icon-button" title="添加组件" aria-label="添加组件" onClick={() => void action('show')}><Icon name="plus" width="28" height="28" /></button><p>{groups.active ? '这个分组还没有可见组件' : '从组件库添加到面板'}<br />可用组件工具栏的“移动到分组”按钮调整归属</p></div>}
+    <section id="panel-group-content" className="panel-group-content" role="tabpanel" aria-label={groupName(groups.active)}>
+      {!data ? <div className="empty panel-empty" role="status">正在加载面板…</div> : panelInstances.length ? <PanelCanvas key={groups.active ?? 'ungrouped'} group={groups.active} instances={panelInstances} packages={data.packages} saved={data.panelLayouts} version={version} items={id => controls(id, true)} onError={setMessage} position={data.panelScroll} onScrollPosition={savePanelScroll} enabled={!panelView || panelReady} target={data.panelTarget} onGroupDropChange={setDropGroup} onMoveToGroup={dropIntoGroup} /> : <div className="empty panel-empty"><button className="icon-button" title="添加组件" aria-label="添加组件" onClick={() => void action('show')}><Icon name="plus" width="28" height="28" /></button><p>{groups.active ? '这个分组还没有可见组件' : '从组件库添加到面板'}<br />可用组件工具栏的“移动到分组”按钮调整归属</p></div>}
     </section>
   </main>;
-  return <main className="management-shell" onPointerDownCapture={e => {
-    if (isTauri() && e.isPrimary && e.button === 0 && !(e.target instanceof Element && e.target.closest('[data-panel-toggle]'))) {
-      void action('outside-panel').catch(error => setMessage(String(error)));
-    }
-  }}>
+  const catalogById = new Map(localCatalog?.widgets.map(entry => [entry.id, entry]));
+  const localPackages = data?.packages.map(pkg => {
+    const official = catalogById.get(pkg.id);
+    return { ...pkg, category: widgetCategory(pkg.id, official?.category), summary: official?.summary };
+  }) ?? [];
+  const localById = new Map(localPackages.map(pkg => [pkg.id, pkg]));
+  const managedInstances = data?.instances.filter(i => !focusedPackage || i.packageId === focusedPackage).map(instance => {
+    const pkg = localById.get(instance.packageId);
+    return { ...instance, pkg, name: pkg?.name ?? instance.packageId,
+      category: pkg?.category ?? widgetCategory(instance.packageId, catalogById.get(instance.packageId)?.category),
+      summary: pkg?.summary };
+  }) ?? [];
+
+  return <main className="management-shell"
+    onDragOver={event => {
+      if (!event.defaultPrevented) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'none';
+      }
+    }}
+    onDrop={event => event.preventDefault()}
+    onPointerDownCapture={e => {
+      if (isTauri() && e.isPrimary && e.button === 0 && !(e.target instanceof Element && e.target.closest('[data-panel-toggle]'))) {
+        void action('outside-panel').catch(error => setMessage(String(error)));
+      }
+    }}>
     <aside><div className="brand">SoulDesk<small>桌面组件</small></div><nav aria-label="管理导航">{([['gallery', '官方广场', '◇'], ['library', '组件库', '＋'], ['instances', '已添加', '▦'], ['checks', '设置', '⚙']] as const).map(([id, label, icon]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => { setFocusedPackage(undefined); setTab(id); }}><span>{icon}</span>{label}{id === 'instances' && <small>{data?.instances.length ?? 0}</small>}</button>)}</nav><div className="aside-note">公开行情 · 本地提醒<br /><span className="muted">关闭管理窗口后，组件与后台继续运行。</span></div><span className="local-status"><i className={data ? 'dot' : 'dot offline'} />{data ? '核心后台在线' : '等待桌面宿主'}</span></aside>
     <section className="management-content"><header className="topbar"><span>{tab === 'gallery' ? '官方广场' : tab === 'library' ? '组件库' : tab === 'instances' ? '已添加的组件' : '应用设置'}</span><div><button data-panel-toggle onClick={() => void run(() => action('toggle'))}>组件面板{shortcutEnabled && data?.panelShortcutRegistered && <kbd>{configuredShortcut}</kbd>}</button><button onClick={() => void run(() => action(data?.hiddenAll ? 'restore-all' : 'hide-all'))}>{data?.hiddenAll ? '恢复组件显示' : '隐藏全部'}</button></div></header>
     <div className="content">{!isTauri() && <p className="notice">网页仅供布局预览，桌面操作需在 SoulDesk 中运行。</p>}{notice}{data?.diagnostics.error && <p role="alert" className="notice error">{data.diagnostics.error}</p>}
@@ -249,11 +381,13 @@ export function App() {
         instances={data?.instances ?? []} unavailable={busy || !data} canAdd={!data?.hiddenAll}
         onAdd={packageId => void run(() => invoke('create_instance', { packageId }), '已添加到侧边面板')}
         onUninstall={unregister} onManage={managePackageInstances} onRefresh={refresh} />
-      : tab === 'library' ? <><div className="heading"><div><small>添加到面板，按需摆到桌面</small><h1>从一个组件开始</h1><p>添加后出现在侧边面板当前分组，可从组件标题栏放到桌面。同一种组件可添加多份，各自保存配置。</p></div><button disabled={busy || !data} onClick={() => void run(() => invoke('import_package'), '导入操作结束；已登记的兼容版本可在已添加中恢复。')}>导入本地 ZIP</button></div>
-      {data && <WidgetBrowser items={data.packages.map(pkg => {
-        const official = libraryCatalog?.widgets.find(entry => entry.id === pkg.id);
-        return { ...pkg, category: widgetCategory(pkg.id, official?.category), summary: official?.summary };
-      })}>
+      : tab === 'library' ? <><div className="heading"><div><small>添加到面板，按需摆到桌面</small><h1>从一个组件开始</h1><p>添加后出现在侧边面板当前分组，可从组件标题栏放到桌面。同一种组件可添加多份，各自保存配置。</p></div>
+        <div className="actions library-heading-actions">
+          <button disabled={busy || !localPackages.length} onClick={() => setUpdatingAll(true)}>全部更新</button>
+        </div>
+      </div>
+      <WidgetPackageImport disabled={busy || !data || updatingAll} onImport={importPackage} onError={setMessage} />
+      {data && <WidgetBrowser items={localPackages}>
         {pkg => {
           const count = data.instances.filter(instance => instance.packageId === pkg.id).length;
           return <article className="package" key={pkg.id}>
@@ -277,9 +411,56 @@ export function App() {
       <p className="muted">本地组件按你信任的代码运行，组件包可独立导入。部分联网组件需自行配置服务或登录。</p></> : tab === 'instances' ? <><div className="heading"><div><small>桌面与面板，互不牵连</small><h1>已添加的组件</h1><p>眼睛按钮仅隐藏视图，垃圾桶按钮需确认后删除实例及其配置与自选，价格警报独立保留。</p></div></div>
       {focusedPackage && <p className="notice">正在管理 {data?.packages.find(p => p.id === focusedPackage)?.name ?? '组件'} 的实例。
         <button onClick={() => setFocusedPackage(undefined)}>显示全部</button></p>}
-      {!data?.instances.some(i => !focusedPackage || i.packageId === focusedPackage) && <div className="empty"><h2>桌面还很安静</h2><p>到组件库添加第一个组件。</p><button onClick={() => setTab('library')}>浏览组件库</button></div>}
-      {data?.instances.filter(i => !focusedPackage || i.packageId === focusedPackage).map(i => { const p = data.packages.find(p => p.id === i.packageId); return <article className="instance-row" key={i.id}><div className="instance-title"><h2>{p?.name ?? i.packageId}</h2><span className="badge">{i.location === 'desktop' ? '桌面' : '面板'} · {i.visible ? '已显示' : '已隐藏'}{i.pinned ? ' · 置顶' : ''}</span><small>实例 {i.id.slice(0, 8)} · v{p?.version}</small></div><div className="actions"><button disabled={busy || data.hiddenAll} onClick={() => void run(() => action(i.visible ? 'hide' : 'restore', i.id))}>{i.visible ? '隐藏' : '显示'}</button><button disabled={busy || data.hiddenAll} onClick={() => void run(() => action(i.location === 'desktop' ? 'embed' : 'float', i.id))}>{i.location === 'desktop' ? '移入面板' : '放回桌面'}</button>{i.visible && i.location === 'desktop' && <button disabled={busy || data.hiddenAll} onClick={() => void run(() => action('pin', i.id))}>{i.pinned ? '取消置顶' : '置顶'}</button>}{p?.id === 'local.souldesk.market' && <button disabled={busy || data.hiddenAll || !i.visible} onClick={() => void run(() => action('detail', i.id))}>自选与警报</button>}</div>
-      <details><summary>尺寸、排序与删除</summary><form className="size-form" key={`${i.id}-${i.location}-${data.panelLayouts[i.id]?.width}-${data.panelLayouts[i.id]?.height}-${i.width}-${i.height}`} onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => invoke('manage_instance', { instance: i.id, action: 'resize', width: Number(f.get('width')), height: Number(f.get('height')) }), '尺寸已保存'); }}><label>宽度<input name="width" type="number" min={p?.minSize.width} max={i.location === "panel" ? 16384 : 1600} defaultValue={(i.location === "panel" ? data.panelLayouts[i.id]?.width : undefined) ?? i.width ?? p?.defaultSize.width} required /></label><label>高度<input name="height" type="number" min={p?.minSize.height} max={i.location === "panel" ? 16384 : 1200} defaultValue={(i.location === "panel" ? data.panelLayouts[i.id]?.height : undefined) ?? i.height ?? p?.defaultSize.height} required /></label><button disabled={busy}>保存尺寸</button><button type="button" disabled={busy || data.instances[0]?.id === i.id} onClick={() => { const ids = data.instances.map(i => i.id), at = ids.indexOf(i.id); [ids[at - 1], ids[at]] = [ids[at], ids[at - 1]]; void run(() => invoke('reorder_instances', { ids })); }}>列表前移</button><button className="danger" type="button" disabled={busy} onClick={() => { if (window.confirm('删除此实例及其配置和自选？已有价格警报与历史会保留，请在警报管理中另行暂停或删除。')) void run(() => invoke('manage_instance', { instance: i.id, action: 'remove' })); }}>删除实例</button></form></details></article>; })}</> : <>
+      {data && !managedInstances.length && <div className="empty"><h2>{focusedPackage ? '这个组件还没有实例' : '桌面还很安静'}</h2><p>到组件库添加组件。</p><button onClick={() => setTab('library')}>浏览组件库</button></div>}
+      {data && <WidgetBrowser key={focusedPackage ?? 'all-instances'} items={managedInstances} layout="list">
+        {instance => {
+          const { id, pkg, visible, pinned, name, category } = instance;
+          const inPanel = instance.location === 'panel';
+          const locationLocked = busy || data.hiddenAll;
+          const layout = data.panelLayouts[id];
+          const width = (inPanel ? layout?.width : undefined) ?? instance.width ?? pkg?.defaultSize.width;
+          const height = (inPanel ? layout?.height : undefined) ?? instance.height ?? pkg?.defaultSize.height;
+          return <article className="instance-row" key={id}>
+            <div className="instance-title">
+              <h2>{name}</h2>
+              <span className="badge">{category} · {inPanel ? '面板' : '桌面'} · {visible ? '已显示' : '已隐藏'}{pinned ? ' · 置顶' : ''}</span>
+              <small>实例 {id.slice(0, 8)}{pkg && ' · v' + pkg.version}</small>
+            </div>
+            <div className="actions">
+              <button disabled={locationLocked} onClick={() => void run(() => action(visible ? 'hide' : 'restore', id))}>{visible ? '隐藏' : '显示'}</button>
+              <button disabled={locationLocked} onClick={() => void run(() => action(inPanel ? 'float' : 'embed', id))}>{inPanel ? '放回桌面' : '移入面板'}</button>
+              {visible && !inPanel && <button disabled={locationLocked} onClick={() => void run(() => action('pin', id))}>{pinned ? '取消置顶' : '置顶'}</button>}
+              {pkg?.id === 'local.souldesk.market' && <button disabled={locationLocked || !visible}
+                onClick={() => void run(() => action('detail', id))}>自选与警报</button>}
+            </div>
+            <details>
+              <summary>尺寸、排序与删除</summary>
+              <form className="size-form" key={`${id}-${instance.location}-${layout?.width}-${layout?.height}-${instance.width}-${instance.height}`} onSubmit={event => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                void run(() => invoke('manage_instance', {
+                  instance: id, action: 'resize', width: Number(form.get('width')), height: Number(form.get('height')),
+                }), '尺寸已保存');
+              }}>
+                <label>宽度<input name="width" type="number" min={pkg?.minSize.width} max={inPanel ? 16384 : 1600} defaultValue={width} required /></label>
+                <label>高度<input name="height" type="number" min={pkg?.minSize.height} max={inPanel ? 16384 : 1200} defaultValue={height} required /></label>
+                <button disabled={busy}>保存尺寸</button>
+                <button type="button" disabled={busy || data.instances[0]?.id === id} onClick={() => {
+                  const ids = data.instances.map(item => item.id);
+                  const index = ids.indexOf(id);
+                  [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+                  void run(() => invoke('reorder_instances', { ids }));
+                }}>列表前移</button>
+                <button className="danger" type="button" disabled={busy} onClick={() => {
+                  if (window.confirm('删除此实例及其配置和自选？已有价格警报与历史会保留，请在警报管理中另行暂停或删除。')) {
+                    void run(() => invoke('manage_instance', { instance: id, action: 'remove' }));
+                  }
+                }}>删除实例</button>
+              </form>
+            </details>
+          </article>;
+        }}
+      </WidgetBrowser>}</> : <>
       <div className="heading"><div><small>按你的习惯运行</small><h1>应用设置</h1><p>组件启动时恢复上次的桌面位置，面板与管理窗口保持关闭。</p></div></div>
       <section className="settings-panel app-theme-settings">
         <fieldset className="app-theme-picker" disabled={!data}>
@@ -297,17 +478,29 @@ export function App() {
         <p className="muted">应用于管理窗口、侧边面板和桌面组件的宿主工具栏。</p>
       </section>
       <section className="settings-panel"><h2>组件外观</h2><label className="check"><input type="checkbox" checked={widgetBackdrop} disabled={busy || !data} onChange={e => { void run(() => action(e.target.checked ? 'enable-widget-backdrop' : 'disable-widget-backdrop')); }} />显示宿主衬底</label><p className="muted">为普通组件的透明区域铺上半透明主题底色。</p></section>
+      <NotificationSettings />
       <section className="settings-panel"><h2>组件面板</h2><p>未锁定时，移出面板或失焦 3 秒后收起，点击外部立即收起。锁定时，点击外部会置底，点击挂件切换置顶和置底。快捷键或双击桌面空白处可锁定并展开，或解锁并收起。</p>{panelControls}</section>
       <section className="settings-panel">
         <h2>快捷键与启动</h2>
         {shortcutUnavailable && <p role="alert" className="notice error">面板快捷键 {configuredShortcut} 未能注册。可更换键位，或释放原键后重新保存。</p>}
         <label className="check"><input type="checkbox" checked={shortcutEnabled} disabled={busy || !data} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_shortcut', { enabled }), '快捷键设置已保存'); }} />启用面板快捷键</label>
-        <div className="setting-row"><label htmlFor="shortcut">开关辅助面板<small>设置的键位 {configuredShortcut ?? '—'}，冲突时保留原键</small></label><input id="shortcut" placeholder="Ctrl+Alt+Space" value={shortcutInput} onChange={e => setShortcut(e.target.value)} /><button disabled={busy || !data || !shortcutInput.trim()} onClick={() => void run(() => invoke('set_shortcut', { value: shortcutInput.trim() }), '快捷键已保存')}>保存</button></div>
+        <div className="setting-row">
+          <label htmlFor="shortcut">开关辅助面板<small id="shortcut-help">点击输入框，按住 Ctrl、Alt、Shift 或 Win，再按一个主键。按 Esc 取消。当前键位 {configuredShortcut?.replace(/\bSuper\b/gi, 'Win') ?? '—'}</small></label>
+          <input id="shortcut" className="shortcut-capture" aria-describedby="shortcut-help" readOnly
+            disabled={busy || !data} value={(shortcutModifiers ? shortcutModifiers + '+…' : shortcutInput).replace(/\bSuper\b/gi, 'Win')}
+            onKeyDown={captureShortcut} onKeyUp={event => { if (shortcutModifiers) setShortcutModifiers(heldShortcutModifiers(event)); }}
+            onBlur={() => setShortcutModifiers('')} />
+          <button disabled={busy || !data || !canSaveShortcut} onClick={() => void run(
+            () => invoke('set_shortcut', { value: shortcutInput }), '快捷键已保存',
+          ).then(saved => { if (saved) setShortcut(undefined); })}>保存</button>
+        </div>
         <label className="check"><input type="checkbox" disabled={busy || data?.autostart == null} checked={data?.autostart === true} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_autostart', { enabled }), '登录启动设置已保存'); }} />登录后后台启动</label>
         <button onClick={() => void run(() => action('repair'), '已校正可达位置')}>找回屏幕外组件</button>
       </section>
       <UpdateSettings state={data?.updates} refresh={refresh} /><NetworkSettings /><section className="settings-panel"><h2>本地数据与诊断</h2><p>数据目录：{data?.diagnostics.dataRoot ?? '未连接'}</p><p className="muted">{data?.diagnostics.views ?? 0} 个宿主窗口 · {data?.diagnostics.sessions ?? 0} 个组件会话。隐藏组件释放展示，自选与有效规则继续运行。</p><div className="actions"><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: true, sound: false, delay: 3 }), '已安排通知测试')}>测试通知</button><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: false, sound: true, delay: 3 }), '已安排声音测试')}>测试声音</button></div></section>
       </>}
+      {updatingAll && <UpdateAllWidgets packages={data?.packages ?? []} onCatalog={setLocalCatalog}
+        onClose={() => setUpdatingAll(false)} onInstalled={refresh} />}
     </div><footer className="statusbar"><span><i className="dot" /> 本地运行 · 组件隐藏不停止有效规则</span><span>SoulDesk {data?.updates.currentVersion ?? appPackage.version}</span></footer></section>
   </main>;
 }

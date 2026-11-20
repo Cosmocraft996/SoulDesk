@@ -1,16 +1,19 @@
 //! 灵动通知、久坐与来电的核心协调；原生输入通过显式回调注入。
 use crate::{
+    notification_sdk::{self, Request},
     reminder_state::{
         IslandState, LocalMinute, PhoneLedger, PhonePreset, PhoneRule, SitConfig, SitUsage,
     },
-    reminder_store::{self, InstanceConfig, Source},
+    reminder_store::{self, Channel, InstanceConfig, Source},
     store::{err, AppResult, Store},
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
+
+pub(crate) const HOST_NOTICE_OWNER: &str = "host";
 
 #[derive(Clone, Copy)]
 pub(crate) struct Clock {
@@ -50,6 +53,7 @@ pub(crate) enum Action {
     Countdown,
     Hangup,
     Answer,
+    OpenSource,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Surface {
@@ -65,17 +69,9 @@ pub(crate) struct Target {
     pub height: u32,
 }
 impl Target {
-    pub fn label(&self) -> String {
-        format!(
-            "{}-{}-{}",
-            if self.surface == Surface::Notice {
-                "island"
-            } else {
-                "break"
-            },
-            self.owner,
-            self.generation
-        )
+    pub fn rest_label(&self) -> String {
+        debug_assert_eq!(self.surface, Surface::Rest);
+        format!("break-{}-{}", self.owner, self.generation)
     }
 }
 #[derive(Clone, Serialize)]
@@ -92,12 +88,31 @@ pub(crate) struct Notice {
     pub duration: i64,
     pub mute: bool,
     pub phase: String,
+    pub source_name: Option<String>,
     #[serde(skip)]
     pub source_revision: u64,
     #[serde(skip)]
     preview: bool,
     #[serde(skip)]
     break_seconds: Option<u32>,
+}
+
+struct Receipt {
+    source: String,
+    request: Request,
+    at: u64,
+    result: AppResult<Value>,
+}
+
+fn sdk_island_allowed(store: &Store, notice: &Notice) -> AppResult<bool> {
+    let db = store.db.lock().map_err(err)?;
+    if notification_sdk::source(&db, &notice.source, notice.kind)?.is_none() {
+        return Ok(false);
+    }
+    Ok(Channel::Island.enabled(&db)?
+        && (notice.kind != NoticeKind::Call
+            || reminder_store::preference(&db, reminder_store::WIDGET_CALLS)?.as_deref()
+                == Some("true")))
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,8 +127,9 @@ pub(crate) struct Rest {
 #[derive(Default)]
 pub(crate) struct Engine {
     configs: Vec<InstanceConfig>,
-    provider: Option<(String, u64)>,
     notice: Option<Notice>,
+    queued: VecDeque<Notice>,
+    receipts: VecDeque<Receipt>,
     rest: Option<Rest>,
     island: IslandState,
     usages: HashMap<String, (u64, SitUsage)>,
@@ -139,10 +155,9 @@ impl Engine {
         match surface {
             Surface::Notice => {
                 let notice = self.notice.as_ref()?;
-                let (owner, _) = self.provider.as_ref()?;
                 Some(Target {
                     surface,
-                    owner: owner.clone(),
+                    owner: HOST_NOTICE_OWNER.into(),
                     event: notice.id.clone(),
                     generation: self.notice_generation,
                     height: match notice.kind {
@@ -165,13 +180,17 @@ impl Engine {
         }
     }
     pub fn status(&self, id: &str) -> Value {
-        json!({"usedMilliseconds":self.usages.get(id).map(|(_,usage)|usage.used_ms()).unwrap_or(0),"providerAvailable":self.provider.is_some(),"lastError":self.configuration_errors.get(id).or_else(||self.errors.get(id)),"delivery":self.delivery.get(id),"breakActive":self.rest.as_ref().is_some_and(|rest|rest.source==id)})
+        json!({"usedMilliseconds":self.usages.get(id).map(|(_,usage)|usage.used_ms()).unwrap_or(0),"providerAvailable":true,"lastError":self.configuration_errors.get(id).or_else(||self.errors.get(id)),"delivery":self.delivery.get(id),"breakActive":self.rest.as_ref().is_some_and(|rest|rest.source==id)})
     }
     pub fn clear(&mut self) {
-        self.clear_notice();
+        self.cancel_notifications();
         self.clear_rest();
         self.usages.clear();
         self.last_cursor = None;
+    }
+    pub(crate) fn cancel_notifications(&mut self) {
+        self.clear_notice();
+        self.queued.clear();
     }
     pub fn cancel(&mut self, surface: Surface) {
         if surface == Surface::Notice {
@@ -195,11 +214,11 @@ impl Engine {
     }
     pub fn invalidate(&mut self, id: &str) {
         self.usages.remove(id);
-        if self.provider.as_ref().is_some_and(|(owner, _)| owner == id)
-            || self
-                .notice
-                .as_ref()
-                .is_some_and(|notice| notice.source == id)
+        self.queued.retain(|notice| notice.source != id);
+        if self
+            .notice
+            .as_ref()
+            .is_some_and(|notice| notice.source == id)
         {
             self.clear_notice();
         }
@@ -208,36 +227,35 @@ impl Engine {
         }
     }
     fn sync(&mut self, store: &Store, clock: Clock) -> AppResult<()> {
-        let scan = reminder_store::configurations(&*store.db.lock().map_err(err)?)?;
+        let (scan, island_enabled) = {
+            let db = store.db.lock().map_err(err)?;
+            (
+                reminder_store::configurations(&db)?,
+                Channel::Island.enabled(&db)?,
+            )
+        };
+        if !island_enabled && (self.notice.is_some() || !self.queued.is_empty()) {
+            self.cancel_notifications();
+        }
         self.configs = scan.valid;
         self.configuration_errors = scan.failures;
-        let next = self
-            .provider
-            .as_ref()
-            .and_then(|(owner, _)| {
-                self.configs.iter().find(|c| {
-                    c.source == Source::Island && c.id == *owner && c.config["enabled"] == true
-                })
-            })
-            .or_else(|| {
-                self.configs
-                    .iter()
-                    .find(|c| c.source == Source::Island && c.config["enabled"] == true)
-            })
-            .map(|c| (c.id.clone(), c.revision));
-        if next != self.provider {
-            self.clear_notice();
-            self.provider = next;
-        }
         let valid = |id: &str, revision: u64, preview: bool| {
             self.configs.iter().any(|c| {
                 c.id == id && c.revision == revision && (preview || c.config["enabled"] == true)
             })
         };
-        let invalid_notice = self
-            .notice
-            .as_ref()
-            .is_some_and(|n| !valid(&n.source, n.source_revision, n.preview));
+        let invalid_notice = if let Some(n) = &self.notice {
+            let expired = n.target_at.is_some_and(|target| target <= clock.wall_ms);
+            if n.source_name.is_some() {
+                expired || !sdk_island_allowed(store, n)?
+            } else {
+                expired
+                    || (n.source != HOST_NOTICE_OWNER
+                        && !valid(&n.source, n.source_revision, n.preview))
+            }
+        } else {
+            false
+        };
         let invalid_rest = self.rest.as_ref().is_some_and(|r| {
             !valid(&r.source, r.source_revision, false)
                 || clock.wall_ms < r.started_at
@@ -298,11 +316,12 @@ impl Engine {
         result
     }
     fn publish_saved(&mut self, store: &Store, notice: Notice, clock: Clock) -> AppResult<()> {
-        if self.hidden || self.provider.is_none() {
+        let enabled = Channel::Island.enabled_in(store)?;
+        if self.hidden || !enabled {
             let message = if self.hidden {
                 "隐藏全部期间未显示专用提醒"
             } else {
-                "请添加并显式启用灵动通知容器"
+                "灵动通知渠道已关闭"
             };
             self.mark(
                 store,
@@ -343,6 +362,159 @@ impl Engine {
         self.notice = Some(notice);
         Ok(())
     }
+
+    pub(crate) fn send(
+        &mut self,
+        store: &Store,
+        source: &str,
+        request: Request,
+        clock: Clock,
+        hidden: bool,
+        windows: impl FnOnce(&str, &Notice) -> AppResult<()>,
+    ) -> AppResult<Value> {
+        let routing =
+            notification_sdk::available(&*store.db.lock().map_err(err)?, source, &request)?;
+        self.receipts
+            .retain(|r| clock.monotonic_ms.saturating_sub(r.at) < 300_000);
+        if let Some(prior) = self
+            .receipts
+            .iter()
+            .find(|r| r.source == source && r.request.request_id == request.request_id)
+        {
+            return if prior.request == request {
+                prior.result.clone()
+            } else {
+                Err("INVALID_ARGUMENT: 请求标识已用于另一条通知".into())
+            };
+        }
+        if self
+            .receipts
+            .iter()
+            .filter(|r| r.source == source && clock.monotonic_ms.saturating_sub(r.at) < 30_000)
+            .count()
+            >= 5
+            || self.receipts.len() >= 512
+        {
+            return Err("LIMIT: 通知请求过于频繁".into());
+        }
+        request.validate_time(clock.wall_ms)?;
+        self.hidden = hidden;
+        let result = (|| {
+            let Some((channel, name)) = routing.filter(|_| !hidden) else {
+                return Ok(json!({"status":"suppressed"}));
+            };
+            let id = Uuid::new_v4().to_string();
+            let mut notice = if let Some(preset) = request.preset {
+                let mut notice = Self::phone_notice(source, 0, preset, clock, false, false);
+                notice.duration = 45_000;
+                notice
+            } else {
+                Notice {
+                    id: id.clone(),
+                    source: source.into(),
+                    kind: request.kind,
+                    title: request.title.clone().unwrap_or_default(),
+                    message: request.body.clone().unwrap_or_default(),
+                    preset: None,
+                    target_at: request.target_at,
+                    created_at: clock.wall_ms,
+                    duration: if matches!(
+                        request.kind,
+                        NoticeKind::Reminder | NoticeKind::AdvanceCountdown
+                    ) {
+                        10_000
+                    } else {
+                        6_000
+                    },
+                    mute: true,
+                    phase: String::new(),
+                    source_name: None,
+                    source_revision: 0,
+                    preview: false,
+                    break_seconds: None,
+                }
+            };
+            notice.id = id.clone();
+            notice.source_name = Some(name.clone());
+            match channel {
+                Channel::Windows => {
+                    let delivery = windows(&name, &notice);
+                    let state = if delivery.is_ok() {
+                        "windows-accepted"
+                    } else {
+                        "delivery-failed"
+                    };
+                    let _ = store.log(
+                        "delivery",
+                        &format!("组件通知 {id} 来源 {source} 状态 {state}"),
+                    );
+                    delivery?;
+                }
+                Channel::Island => {
+                    self.sync(store, clock)?;
+                    self.show_queued(store, clock)?;
+                    if self.notice.is_none() && self.queued.is_empty() {
+                        self.activate_sdk_notice(store, notice, clock)?;
+                    } else {
+                        if self.queued.len() >= notification_sdk::QUEUE_LIMIT {
+                            return Err("LIMIT: 灵动通知队列已满".into());
+                        }
+                        self.mark(store, &notice.source, "queued", None, clock.wall_ms)?;
+                        self.queued.push_back(notice);
+                    }
+                }
+            }
+            Ok(json!({"status":"accepted","id":id,"channel":channel}))
+        })();
+        self.receipts.push_back(Receipt {
+            source: source.into(),
+            request,
+            at: clock.monotonic_ms,
+            result: result.clone(),
+        });
+        result
+    }
+
+    fn activate_sdk_notice(
+        &mut self,
+        store: &Store,
+        mut notice: Notice,
+        clock: Clock,
+    ) -> AppResult<()> {
+        notice.created_at = clock.wall_ms;
+        if notice.kind == NoticeKind::Countdown {
+            notice.duration = notice
+                .target_at
+                .unwrap_or(clock.wall_ms)
+                .saturating_sub(clock.wall_ms) as i64;
+        }
+        self.publish(store, notice, clock)
+    }
+
+    pub(crate) fn show_queued(&mut self, store: &Store, clock: Clock) -> AppResult<()> {
+        while let Some(notice) = self.queued.front() {
+            let expired = clock.wall_ms < notice.created_at
+                || clock.wall_ms.saturating_sub(notice.created_at) >= notification_sdk::MAX_WAIT_MS
+                || notice
+                    .target_at
+                    .is_some_and(|target| target <= clock.wall_ms);
+            if expired || !sdk_island_allowed(store, notice)? {
+                let notice = self.queued.pop_front().expect("已读取队首通知");
+                let state = if expired { "expired" } else { "not-shown" };
+                let _ = store.log(
+                    "delivery",
+                    &format!("组件通知 {} 来源 {} 状态 {state}", notice.id, notice.source),
+                );
+            } else if self.notice.is_some() {
+                break;
+            } else {
+                let notice = self.queued.pop_front().expect("已读取队首通知");
+                self.activate_sdk_notice(store, notice, clock)?;
+                break;
+            }
+        }
+        Ok(())
+    }
     fn phone_notice(
         id: &str,
         revision: u64,
@@ -370,6 +542,7 @@ impl Engine {
             duration: -1,
             mute,
             phase: "playing".into(),
+            source_name: None,
             preview,
             break_seconds: None,
         }
@@ -385,6 +558,7 @@ impl Engine {
         self.sync(store, clock)?;
         if hidden {
             self.clear_notice();
+            self.queued.clear();
             self.clear_rest();
         }
         let sits = self
@@ -430,6 +604,7 @@ impl Engine {
                                 duration: 10000,
                                 mute: true,
                                 phase: String::new(),
+                                source_name: None,
                                 preview: false,
                                 break_seconds: Some(config.break_interval * 60),
                             };
@@ -511,6 +686,7 @@ impl Engine {
                 }
             }
         }
+        self.show_queued(store, clock)?;
         Ok(())
     }
     pub fn demo(&mut self, store: &Store, id: &str, demo: Demo, clock: Clock) -> AppResult<()> {
@@ -521,12 +697,35 @@ impl Engine {
             .find(|c| c.id == id && c.source == Source::Island && c.config["enabled"] == true)
             .map(|c| c.revision)
             .ok_or("CAPABILITY_DENIED: 请先启用当前灵动通知组件")?;
+        self.publish(store, Self::demo_notice(id, revision, demo, clock), clock)
+    }
+
+    pub(crate) fn host_demo(
+        &mut self,
+        store: &Store,
+        demo: Demo,
+        channel: Channel,
+        clock: Clock,
+        hidden: bool,
+        windows: impl FnOnce(&Notice) -> AppResult<()>,
+    ) -> AppResult<()> {
+        self.hidden = hidden;
+        if hidden {
+            return Err("请先恢复组件显示".into());
+        }
+        if !channel.enabled_in(store)? {
+            return Err("所选通知渠道已关闭".into());
+        }
+        let notice = Self::demo_notice(HOST_NOTICE_OWNER, 0, demo, clock);
+        match channel {
+            Channel::Island => self.publish(store, notice, clock),
+            Channel::Windows => windows(&notice),
+        }
+    }
+
+    fn demo_notice(id: &str, revision: u64, demo: Demo, clock: Clock) -> Notice {
         if matches!(demo, Demo::Call) {
-            return self.publish(
-                store,
-                Self::phone_notice(id, revision, PhonePreset::Squidward, clock, true, true),
-                clock,
-            );
+            return Self::phone_notice(id, revision, PhonePreset::Squidward, clock, true, true);
         }
         let kind = match demo {
             Demo::Info => NoticeKind::Info,
@@ -538,41 +737,38 @@ impl Engine {
             Demo::Countdown => NoticeKind::Countdown,
             Demo::Call => unreachable!(),
         };
-        self.publish(
-            store,
-            Notice {
-                id: Uuid::new_v4().to_string(),
-                source: id.into(),
-                source_revision: revision,
-                kind,
-                title: if kind == NoticeKind::Reminder {
-                    "久坐提醒"
-                } else {
-                    "通知演示"
-                }
-                .into(),
-                message: if kind == NoticeKind::Reminder {
-                    "您已经连续使用电脑45分钟"
-                } else {
-                    "您好"
-                }
-                .into(),
-                preset: None,
-                target_at: matches!(kind, NoticeKind::AdvanceCountdown | NoticeKind::Countdown)
-                    .then_some(clock.wall_ms + 60000),
-                created_at: clock.wall_ms,
-                duration: if kind == NoticeKind::Countdown {
-                    60000
-                } else {
-                    10000
-                },
-                mute: true,
-                phase: String::new(),
-                preview: false,
-                break_seconds: None,
+        Notice {
+            id: Uuid::new_v4().to_string(),
+            source: id.into(),
+            source_revision: revision,
+            kind,
+            title: if kind == NoticeKind::Reminder {
+                "久坐提醒"
+            } else {
+                "通知演示"
+            }
+            .into(),
+            message: if kind == NoticeKind::Reminder {
+                "您已经连续使用电脑45分钟"
+            } else {
+                "您好"
+            }
+            .into(),
+            preset: None,
+            target_at: matches!(kind, NoticeKind::AdvanceCountdown | NoticeKind::Countdown)
+                .then_some(clock.wall_ms + 60000),
+            created_at: clock.wall_ms,
+            duration: if kind == NoticeKind::Countdown {
+                60000
+            } else {
+                10000
             },
-            clock,
-        )
+            mute: true,
+            phase: String::new(),
+            source_name: None,
+            preview: false,
+            break_seconds: None,
+        }
     }
     pub fn preview(
         &mut self,
@@ -647,7 +843,16 @@ impl Engine {
                 }
                 return self.publish(store, notice, clock);
             }
-            Action::Confirm if notice.kind == NoticeKind::Reminder => notice.break_seconds,
+            Action::Confirm
+                if notice.kind == NoticeKind::Reminder && notice.source_name.is_none() =>
+            {
+                notice.break_seconds
+            }
+            Action::OpenSource
+                if notice.kind == NoticeKind::Reminder && notice.source_name.is_some() =>
+            {
+                None
+            }
             Action::Dismiss => None,
             Action::Hangup if notice.kind == NoticeKind::Call => None,
             _ => return Err("INVALID_ARGUMENT: 此通知无对应动作".into()),
@@ -686,7 +891,9 @@ impl Engine {
         Ok(())
     }
     pub fn shown(&mut self, store: &Store, target: &Target, clock: Clock) -> AppResult<()> {
-        self.validate_target(store, target, &target.event, clock)?;
+        if self.target(target.surface).as_ref() != Some(target) {
+            return Err("SESSION_EXPIRED: 通知窗口已被替换".into());
+        }
         let source = if target.surface == Surface::Notice {
             self.notice.as_ref().unwrap().source.clone()
         } else {
@@ -989,9 +1196,7 @@ mod tests {
     #[test]
     fn reminders_sit_confirmation_opens_only_current_break_and_hide_all_cancels_surfaces() {
         let (s, sessions) = fixture();
-        let island = add(&s, Source::Island);
         let sit = add(&s, Source::Sit);
-        enable(&s, &sessions, &island, Source::Island);
         let mut cfg = Source::Sit.default_config();
         cfg["enabled"] = json!(true);
         cfg["sitInterval"] = json!(1);
@@ -1025,9 +1230,7 @@ mod tests {
     fn reminders_phone_reserves_exact_slot_in_sqlite_before_display_and_never_replays_after_restart(
     ) {
         let (s, sessions) = fixture();
-        let island = add(&s, Source::Island);
         let phone = add(&s, Source::Phone);
-        enable(&s, &sessions, &island, Source::Island);
         let mut cfg = Source::Phone.default_config();
         cfg["enabled"] = json!(true);
         cfg["rules"][1]["enabled"] = json!(true);
@@ -1083,7 +1286,7 @@ mod tests {
         assert_eq!(engine.notification().unwrap().id, new);
     }
     #[test]
-    fn reminders_provider_is_shared_retained_and_deleted_owner_does_not_resume_an_old_call() {
+    fn reminders_host_owns_overlay_and_removed_legacy_demo_does_not_resume() {
         let (s, sessions) = fixture();
         let a = add(&s, Source::Island);
         let b = add(&s, Source::Island);
@@ -1095,14 +1298,20 @@ mod tests {
             .tick(&s, clock(1000), false, &mut || panic!())
             .unwrap();
         engine.demo(&s, &a, Demo::Call, clock(1001)).unwrap();
-        assert_eq!(engine.target(Surface::Notice).unwrap().owner, a);
+        assert_eq!(
+            engine.target(Surface::Notice).unwrap().owner,
+            HOST_NOTICE_OWNER
+        );
         widgets::remove_instance(&s, &sessions, &a).unwrap();
         engine
             .tick(&s, clock(2000), false, &mut || panic!())
             .unwrap();
         assert!(engine.notification().is_none());
         engine.demo(&s, &b, Demo::Info, clock(2001)).unwrap();
-        assert_eq!(engine.target(Surface::Notice).unwrap().owner, b);
+        assert_eq!(
+            engine.target(Surface::Notice).unwrap().owner,
+            HOST_NOTICE_OWNER
+        );
     }
     #[test]
     fn reminders_cursor_failure_clears_usage_and_does_not_publish_false_reminder() {
@@ -1132,16 +1341,10 @@ mod tests {
         assert!(engine.notification().is_none());
     }
     #[test]
-    fn reminders_explicit_phone_preview_needs_provider_but_does_not_enable_background_rules() {
-        let (s, sessions) = fixture();
-        let island = add(&s, Source::Island);
+    fn reminders_explicit_phone_preview_works_without_legacy_provider_or_background_rules() {
+        let (s, _) = fixture();
         let phone = add(&s, Source::Phone);
         let mut engine = Engine::default();
-        assert!(engine
-            .preview(&s, &phone, PhonePreset::Pill, clock(0))
-            .is_err());
-        enable(&s, &sessions, &island, Source::Island);
-        engine.tick(&s, clock(0), false, &mut || panic!()).unwrap();
         engine
             .preview(&s, &phone, PhonePreset::Pill, clock(0))
             .unwrap();

@@ -91,7 +91,7 @@ pub(crate) async fn run(
         json!(first.version),
     )?;
     let first_release = first.clone();
-    crate::packages::install_verified(app, baseline_zip, move |manifest| {
+    crate::packages::install_verified(app, baseline_zip, None, move |manifest| {
         check_manifest(manifest, NOTE, &first_release)
     })
     .await?;
@@ -123,6 +123,7 @@ pub(crate) async fn run(
         app.state(),
         NOTE.into(),
         updated.sha256.clone(),
+        Some(first.sha256.clone()),
     )
     .await?;
     let after_update = store.snapshot()?;
@@ -140,8 +141,10 @@ pub(crate) async fn run(
     )?;
 
     let result =
-        crate::packages::install_verified(app, quiet_zip(active, &updated.version)?, |_| Ok(()))
-            .await;
+        crate::packages::install_verified(app, quiet_zip(active, &updated.version)?, None, |_| {
+            Ok(())
+        })
+        .await;
     check(
         report,
         "同版本内容冲突保留已安装包",
@@ -157,9 +160,13 @@ pub(crate) async fn run(
             .checked_add(1)
             .ok_or("无法构造测试版本")?
     );
-    let result =
-        crate::packages::install_verified(app, quiet_zip(active, &probe_version)?, |_| Ok(()))
-            .await;
+    let result = crate::packages::install_verified(
+        app,
+        quiet_zip(active, &probe_version)?,
+        None,
+        |_| Ok(()),
+    )
+    .await;
     check(
         report,
         "真实隐藏试加载超时保留旧包和两份配置",
@@ -176,6 +183,7 @@ pub(crate) async fn run(
         app.state(),
         CLOCK.into(),
         clock_release.sha256.clone(),
+        None,
     )
     .await?;
     let after_install = store.snapshot()?;
@@ -213,6 +221,7 @@ pub(crate) async fn run(
         app.state(),
         CLOCK.into(),
         clock_release.sha256.clone(),
+        None,
     )
     .await;
     check(

@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"notification-overlay","description":"宿主灵动通知仅接收显示确认并操作当前通知","windows":["island-host-*"],"permissions":["allow-island-surface","core:event:allow-listen","core:event:allow-unlisten"]}

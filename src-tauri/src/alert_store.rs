@@ -200,6 +200,7 @@ pub fn finish_delivery(
     let column = channel.column();
     let (status, error) = match outcome {
         Ok(()) => ("sent", None),
+        Err(message) if message == crate::reminder_store::WINDOWS_DISABLED => ("suppressed", None),
         Err(message) => (
             "failed",
             Some(message.chars().take(500).collect::<String>()),

@@ -46,6 +46,8 @@ interface Props {
 
 const permissionNames: Record<string, string> = {
   'storage.instance': '读取和保存当前实例的设置与存储',
+  'links.metadata': '读取公网网页标题和图标',
+  'links.verify': '打开临时网页验证窗口',
 };
 
 function compareVersion(lhs: string, rhs: string) {
@@ -62,6 +64,28 @@ function permissionText(capabilities: string[]) {
 }
 
 interface Confirmation { entry: Entry; release: Release; local?: LocalPackage }
+type Catalog = NonNullable<CatalogResponse['catalog']>;
+type PendingUpdate = Confirmation & { local: LocalPackage & { digest: string } };
+
+function publishedReleases(entry: Entry) {
+  return entry.versions.filter(item => item.status === 'published')
+    .sort((a, b) => compareVersion(b.version, a.version));
+}
+
+function compatibleRelease(releases: Release[]) {
+  return releases.find(item => compareVersion(appPackage.version, item.minHostVersion) >= 0);
+}
+
+function addedPermissions({ local, release }: Confirmation) {
+  return release.capabilities.filter(permission => !local?.capabilities?.includes(permission));
+}
+
+function installRelease({ entry, release, local }: Confirmation) {
+  return invoke('install_official', {
+    packageId: entry.id, expectedSha256: release.sha256,
+    ...(local?.digest ? { expectedLocalDigest: local.digest } : {}),
+  });
+}
 
 function ConfirmRelease({ target, onClose, onInstalled }: {
   target: Confirmation;
@@ -72,9 +96,7 @@ function ConfirmRelease({ target, onClose, onInstalled }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const update = !!target.local;
-  const newPermissions = target.release.capabilities.filter(
-    permission => !target.local?.capabilities?.includes(permission),
-  );
+  const newPermissions = addedPermissions(target);
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
@@ -84,7 +106,7 @@ function ConfirmRelease({ target, onClose, onInstalled }: {
     setBusy(true);
     setError('');
     try {
-      await invoke('install_official', { packageId: target.entry.id, expectedSha256: target.release.sha256 });
+      await installRelease(target);
       await onInstalled();
       onClose();
     } catch (cause) {
@@ -105,6 +127,88 @@ function ConfirmRelease({ target, onClose, onInstalled }: {
       <div className="actions">
         <button type="button" autoFocus disabled={busy} onClick={onClose}>取消</button>
         <button className="primary" disabled={busy}>{busy ? '正在下载和试加载…' : (update ? '确认更新' : '确认安装')}</button>
+      </div>
+    </form>
+  </dialog>;
+}
+
+export function UpdateAllWidgets({ packages, onCatalog, onClose, onInstalled }: {
+  packages: LocalPackage[];
+  onCatalog: (catalog: Catalog) => void;
+  onClose: () => void;
+  onInstalled: () => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const started = useRef(false);
+  const [check, setCheck] = useState<{ catalog?: Catalog; error?: string }>();
+  const [batch, setBatch] = useState<{ targets: PendingUpdate[]; outcomes: (string | null)[]; done: boolean }>();
+  useEffect(() => {
+    const element = dialog.current!;
+    element.showModal();
+    let current = true;
+    void invoke<CatalogResponse>('official_catalog').then(result => {
+      if (!current) return;
+      if (result.catalog) onCatalog(result.catalog);
+      if (result.online && result.catalog) setCheck({ catalog: result.catalog });
+      else setCheck({ error: result.error || '官方目录不可用，请稍后重试。' });
+    }, error => { if (current) setCheck({ error: String(error) }); });
+    return () => { current = false; element.close(); };
+  }, [onCatalog]);
+
+  const targets = batch?.targets ?? check?.catalog?.widgets.flatMap(entry => {
+    const local = packages.find(pkg => pkg.id === entry.id);
+    const release = compatibleRelease(publishedReleases(entry));
+    if (!local?.digest || !release || compareVersion(local.version, release.version) >= 0) return [];
+    return [{ entry, release, local: { ...local, digest: local.digest } }];
+  }) ?? [];
+  const running = !!batch && !batch.done;
+  const failures = batch?.outcomes.filter(error => error !== null).length ?? 0;
+
+  async function update() {
+    if (started.current || !targets.length) return;
+    started.current = true;
+    const outcomes: (string | null)[] = [];
+    setBatch({ targets, outcomes: [], done: false });
+    for (const target of targets) {
+      try {
+        await installRelease(target);
+        outcomes.push(null);
+      } catch (cause) {
+        outcomes.push(String(cause));
+      }
+      setBatch({ targets, outcomes: [...outcomes], done: false });
+    }
+    await onInstalled();
+    setBatch({ targets, outcomes, done: true });
+  }
+
+  return <dialog ref={dialog} className="remove-instance-dialog gallery-batch" aria-label="全部更新组件"
+    onCancel={event => { event.preventDefault(); if (!running) onClose(); }}>
+    <form onSubmit={event => { event.preventDefault(); void update(); }}>
+      <h2>全部更新组件</h2>
+      <p role="status">
+        {!check ? '正在检查官方组件更新…' : check.error ? '无法在线检查组件更新。'
+          : batch?.done ? `已更新 ${targets.length - failures} 个，失败 ${failures} 个。`
+          : running ? `已处理 ${batch.outcomes.length} / ${targets.length} 个组件。`
+          : targets.length ? `有 ${targets.length} 个已安装组件可更新。` : '已安装组件暂无兼容的新版。'}
+      </p>
+      {check?.error && <p className="error" role="alert">{check.error}</p>}
+      {targets.length > 0 && <ul className="gallery-update-list">
+        {targets.map((target, index) => {
+          const permissions = addedPermissions(target);
+          const outcome = batch?.outcomes[index];
+          return <li key={target.entry.id}>
+            <h3>{target.entry.name}</h3>
+            <p>v{target.local.version} → v{target.release.version} · 新增权限 · {permissions.length ? permissionText(permissions) : '无'}</p>
+            {outcome === null ? <p>已更新</p>
+              : outcome !== undefined ? <p className="error">更新失败：{outcome}</p>
+              : running && index === batch.outcomes.length && <p>正在下载和试加载…</p>}
+          </li>;
+        })}
+      </ul>}
+      <div className="actions">
+        <button type="button" autoFocus disabled={running} onClick={onClose}>{!batch && targets.length ? '取消' : '关闭'}</button>
+        {!batch && targets.length > 0 && <button className="primary">确认全部更新</button>}
       </div>
     </form>
   </dialog>;
@@ -152,9 +256,8 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
       {entry => {
         const local = packages.find(item => item.id === entry.id);
         const count = instances.filter(item => item.packageId === entry.id).length;
-        const published = entry.versions.filter(item => item.status === 'published')
-          .sort((a, b) => compareVersion(b.version, a.version));
-        const selected = published.find(item => compareVersion(appPackage.version, item.minHostVersion) >= 0);
+        const published = publishedReleases(entry);
+        const selected = compatibleRelease(published);
         const minimum = published.reduce<string | undefined>((lowest, item) =>
           !lowest || compareVersion(item.minHostVersion, lowest) < 0 ? item.minHostVersion : lowest, undefined);
         const comparison = local && selected ? compareVersion(local.version, selected.version) : -1;

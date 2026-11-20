@@ -216,8 +216,8 @@ pub(crate) fn build(
     } else {
         tauri::Theme::Dark
     };
-    // 仅文档组件的正式容器使用HTML文件拖放；其他窗口保留现有处理器。
-    let html_drop = html_drop_for_window(&core.store, label)?;
+    // 管理窗口的 ZIP 导入和支持文档拖放的组件使用 WebView2 的网页拖放。
+    let html_drop = label == "main" || html_drop_for_window(&core.store, label)?;
     let create = |profile: &str| -> tauri::Result<WebviewWindow> {
         // 隔离运行连 WebView 缓存也写入本次目录，不接触正常用户数据。
         let directory = core.store.root.join("webview").join(profile);
@@ -238,6 +238,10 @@ pub(crate) fn build(
             .initialization_script_for_all_frames("if(window!==window.top)document.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){const origin=new URLSearchParams(location.search).get('hostOrigin');if(origin)parent.postMessage({type:'souldesk:user-pointer',protocol:1},origin);}},true);");
         if html_drop {
             builder = builder.disable_drag_drop_handler();
+        }
+        #[cfg(windows)]
+        if label == "main" {
+            builder = builder.drag_and_drop(false);
         }
         if surface {
             builder = builder
@@ -271,9 +275,21 @@ pub(crate) fn build(
         }
         builder.build()
     };
-    let result = create(label);
+    let shared_notice = notice && app.get_webview_window("edge").is_some();
+    let result = create(if shared_notice {
+        "edge"
+    } else if notice {
+        "notification-overlay"
+    } else {
+        label
+    });
     #[cfg(windows)]
     let result = match result {
+        Err(tauri::Error::Runtime(error))
+            if shared_notice && error.to_string().contains("HRESULT(0x8007139F)") =>
+        {
+            create("notification-overlay")
+        }
         Err(tauri::Error::Runtime(error))
             if label == "main" && error.to_string().contains("HRESULT(0x8007139F)") =>
         {
@@ -724,16 +740,14 @@ pub(crate) fn reminder_reconcile(
     if core.reminders.target(surface) != target {
         return Ok(());
     }
-    let prefix = if surface == Surface::Notice {
-        "island-"
-    } else {
-        "break-"
-    };
+    if surface == Surface::Notice {
+        return island_reconcile(app, target);
+    }
     // 最新代次清理同类旧窗，过期清理任务即使被跳过也不会留下旧显示层。
     for label in app
         .webview_windows()
         .keys()
-        .filter(|label| label.starts_with(prefix))
+        .filter(|label| label.starts_with("break-"))
         .cloned()
         .collect::<Vec<_>>()
     {
@@ -745,50 +759,23 @@ pub(crate) fn reminder_reconcile(
     if core.reminders.target(surface).as_ref() != Some(&target) || hidden(app)? {
         return Ok(());
     }
-    let label = target.label();
+    let label = target.rest_label();
     let result = (|| {
         let w = build(
             app,
             &label,
-            format!(
-                "index.html?{}={}",
-                if surface == Surface::Notice {
-                    "noticeOverlay"
-                } else {
-                    "breakOverlay"
-                },
-                target.owner
-            ),
+            format!("index.html?breakOverlay={}", target.owner),
             350.,
-            if surface == Surface::Notice {
-                f64::from(target.height)
-            } else {
-                240.
-            },
+            240.,
         )?;
         let area = area(app, false)?;
-        if surface == Surface::Notice {
-            let size = w.outer_size().map_err(err)?;
-            w.set_position(tauri::PhysicalPosition::new(
-                area.left + (area.width as i32 - size.width as i32) / 2,
-                area.top
-                    + (if target.height == 160 { 100. } else { 80. } * area.scale_factor) as i32,
-            ))
+        w.set_position(tauri::PhysicalPosition::new(area.left, area.top))
             .map_err(err)?;
-            w.set_focusable(false).map_err(err)?;
-        } else {
-            w.set_position(tauri::PhysicalPosition::new(area.left, area.top))
-                .map_err(err)?;
-            w.set_fullscreen(true).map_err(err)?;
-        }
+        w.set_fullscreen(true).map_err(err)?;
         wait_ready(app, &label, &target.owner)?;
-        core.reminders.show_target(app, &target, || {
-            if surface == Surface::Notice {
-                native::show(&w)
-            } else {
-                w.show().map_err(err)?;
-                w.set_focus().map_err(err)
-            }
+        core.reminders.show_target(app, &target, &label, || {
+            w.show().map_err(err)?;
+            w.set_focus().map_err(err)
         })
     })();
     if let Err(error) = result {
@@ -800,6 +787,122 @@ pub(crate) fn reminder_reconcile(
             return Ok(());
         }
         return Err(error);
+    }
+    Ok(())
+}
+
+fn island_reconcile(
+    app: &AppHandle,
+    target: Option<crate::reminder_engine::Target>,
+) -> AppResult<()> {
+    use crate::{reminder_engine::Surface, reminder_host::IslandWindow};
+    let core = app.state::<Core>();
+    let service = &core.reminders;
+    let Some(target) = target else {
+        let label = service
+            .island_window
+            .lock()
+            .map_err(err)?
+            .as_ref()
+            .map(|view| view.label.clone());
+        if let Some(label) = label {
+            if let Some(w) = app.get_webview_window(&label) {
+                native::hide(&w)?;
+                app.emit_to(&label, "host:island-content", None::<serde_json::Value>)
+                    .map_err(err)?;
+            }
+            if let Some(view) = service.island_window.lock().map_err(err)?.as_mut() {
+                view.idle_since.get_or_insert_with(Instant::now);
+            }
+        }
+        return release_idle_island(app);
+    };
+    if hidden(app)? {
+        return Ok(());
+    }
+    let (label, window) = {
+        let mut cached = service.island_window.lock().map_err(err)?;
+        let existing = cached
+            .as_ref()
+            .and_then(|view| app.get_webview_window(&view.label));
+        let label = existing
+            .as_ref()
+            .map(|window| window.label().to_owned())
+            .unwrap_or_else(|| format!("island-host-{}", uuid::Uuid::new_v4()));
+        *cached = Some(IslandWindow {
+            label: label.clone(),
+            idle_since: None,
+        });
+        (label, existing)
+    };
+    let active = || service.target(Surface::Notice).as_ref() == Some(&target);
+    let result = (|| {
+        let w = if let Some(w) = window {
+            native::hide(&w)?;
+            w.set_size(LogicalSize::new(350., f64::from(target.height)))
+                .map_err(err)?;
+            w
+        } else {
+            build(
+                app,
+                &label,
+                "island.html".into(),
+                350.,
+                f64::from(target.height),
+            )?
+        };
+        let area = area(app, false)?;
+        let size = w.outer_size().map_err(err)?;
+        w.set_position(tauri::PhysicalPosition::new(
+            area.left + (area.width as i32 - size.width as i32) / 2,
+            area.top + (if target.height == 160 { 100. } else { 80. } * area.scale_factor) as i32,
+        ))
+        .map_err(err)?;
+        wait_ready_while(app, &label, &target.owner, Duration::ZERO, active)?;
+        app.emit_to(
+            &label,
+            "host:island-content",
+            service.notice_snapshot(&target)?,
+        )
+        .map_err(err)?;
+        wait_ready_while(app, &label, &target.event, Duration::ZERO, active)?;
+        service.show_target(app, &target, &label, || native::show(&w))
+    })();
+    {
+        let key = format!("{label}/{}", target.event);
+        let mut visibility = core.visibility.lock().map_err(err)?;
+        visibility.ready.remove(&key);
+        visibility.failed.remove(&key);
+    }
+    if let Err(error) = result {
+        if error.starts_with("SESSION_EXPIRED:") {
+            return Ok(());
+        }
+        if active() {
+            service.failed(app, &target, error.clone());
+        }
+        service.island_window.lock().map_err(err)?.take();
+        let _ = dispose(app, &label);
+        return Err(error);
+    }
+    Ok(())
+}
+
+pub(crate) fn release_idle_island(app: &AppHandle) -> AppResult<()> {
+    use crate::{reminder_engine::Surface, reminder_store::Channel};
+    let core = app.state::<Core>();
+    if core.reminders.target(Surface::Notice).is_some() {
+        return Ok(());
+    }
+    let enabled = Channel::Island.enabled_in(&core.store)?;
+    let mut cached = core.reminders.island_window.lock().map_err(err)?;
+    if cached
+        .as_ref()
+        .is_some_and(|view| !enabled || view.expired(Instant::now()))
+    {
+        let label = cached.take().expect("已检查胶囊窗口").label;
+        drop(cached);
+        dispose(app, &label)?;
     }
     Ok(())
 }
@@ -892,19 +995,28 @@ pub fn failed(app: &AppHandle, label: &str, id: &str, error: String) -> AppResul
     Ok(())
 }
 fn wait_ready(app: &AppHandle, label: &str, id: &str) -> AppResult<()> {
+    wait_ready_while(app, label, id, Duration::from_millis(800), || true)
+}
+fn wait_ready_while(
+    app: &AppHandle,
+    label: &str,
+    id: &str,
+    observe: Duration,
+    active: impl Fn() -> bool,
+) -> AppResult<()> {
     let key = format!("{label}/{id}");
     let deadline = std::time::Instant::now() + Duration::from_secs(12);
     loop {
+        if !active() {
+            return Err("SESSION_EXPIRED: 显示任务已被替换".into());
+        }
         {
             let core = app.state::<Core>();
             let v = core.visibility.lock().map_err(err)?;
             if let Some(e) = v.failed.get(&key) {
                 return Err(format!("LOAD_FAILED: {e}"));
             }
-            if v.ready
-                .get(&key)
-                .is_some_and(|t| t.elapsed() >= Duration::from_millis(800))
-            {
+            if v.ready.get(&key).is_some_and(|t| t.elapsed() >= observe) {
                 return Ok(());
             }
         }
@@ -914,7 +1026,11 @@ fn wait_ready(app: &AppHandle, label: &str, id: &str) -> AppResult<()> {
         if std::time::Instant::now() >= deadline {
             return Err("LOAD_FAILED: 目标组件握手超时".into());
         }
-        std::thread::sleep(Duration::from_millis(30));
+        std::thread::sleep(Duration::from_millis(if observe.is_zero() {
+            8
+        } else {
+            30
+        }));
     }
 }
 fn wait_panel_shell(app: &AppHandle) -> AppResult<()> {
@@ -1285,6 +1401,29 @@ pub fn show_instance(app: &AppHandle, id: &str) -> AppResult<()> {
         native::show(&w)?;
     }
     Ok(())
+}
+
+pub(crate) fn open_notification_source(app: &AppHandle, id: &str) -> AppResult<()> {
+    let source = instance(app, id)?;
+    let was_hidden = source["visible"] != true;
+    if was_hidden {
+        restore_instance(app, id)?;
+    }
+    if source["location"] == "panel" {
+        let groups = app.state::<Core>().store.panel_groups()?;
+        let group = groups.membership.get(id).cloned();
+        if group != groups.active {
+            change_panel_groups(app, crate::panel::GroupChange::Select { group })?;
+        }
+        show_panel(app, true)?;
+        show_instance(app, id)?;
+        app.emit_to("panel", "host:reveal-instance", id)
+            .map_err(err)
+    } else if was_hidden {
+        Ok(())
+    } else {
+        show_instance(app, id)
+    }
 }
 pub fn show_panel_on_hover(app: &AppHandle) -> AppResult<bool> {
     let Some(edge) = app.get_webview_window("edge") else {

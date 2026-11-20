@@ -13,6 +13,8 @@ fn main() {
             "surface_activate",
             "surface_pointer",
             "surface_failed",
+            "island_surface",
+            "notification_settings",
             "import_package",
             "create_instance",
             "manage_instance",

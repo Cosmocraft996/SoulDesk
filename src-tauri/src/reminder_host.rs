@@ -1,8 +1,9 @@
-//! 固定提醒能力与专用展示角色；不开放任意通知、窗口或系统输入。
+//! 宿主通知、固定提醒能力与专用展示角色。
 use crate::{
-    reminder_engine::{Action, Clock, Demo, Engine, Surface, Target},
+    notification_sdk,
+    reminder_engine::{Action, Clock, Demo, Engine, Surface, Target, HOST_NOTICE_OWNER},
     reminder_state::{LocalMinute, PhonePreset},
-    reminder_store::{self, Source},
+    reminder_store::{self, Channel, Source},
     store::{err, now_ms, AppResult, Store},
     widgets, windows, Core,
 };
@@ -14,30 +15,189 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Mutex,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum IslandCommand {
+    Ready,
+    Painted { id: String },
+    Failed { message: String, id: Option<String> },
+    Action { id: String, action: Action },
+    Hover { id: String, entered: bool },
+    Audio { id: String, state: String },
+}
+
+#[tauri::command]
+pub(crate) async fn island_surface(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    command: IslandCommand,
+) -> AppResult<Value> {
+    let label = window.label().to_owned();
+    if !label.starts_with("island-host-") {
+        return Err("CAPABILITY_DENIED: 仅宿主灵动通知窗口可调用".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let core = app.state::<Core>();
+        let service = &core.reminders;
+        let mut source_to_open = None;
+        let schedule = matches!(
+            &command,
+            IslandCommand::Action { .. } | IslandCommand::Audio { .. }
+        );
+        let result = (|| {
+            let _native = core.store.native_actions.lock().map_err(err)?;
+            if service.stopped.load(Ordering::Acquire) || windows::hidden(&app)? {
+                return Err("SESSION_EXPIRED: 通知窗口已停用".into());
+            }
+            if !service
+                .island_window
+                .lock()
+                .map_err(err)?
+                .as_ref()
+                .is_some_and(|view| view.label == label)
+            {
+                return Err("SESSION_EXPIRED: 灵动通知窗口已被替换".into());
+            }
+            let mut engine = service.engine.lock().map_err(err)?;
+            let target = engine.target(Surface::Notice);
+            let clock = service.clock()?;
+            match command {
+                IslandCommand::Ready => windows::ready(&app, &label, HOST_NOTICE_OWNER)?,
+                IslandCommand::Painted { id } => {
+                    require_notice(target, &id)?;
+                    windows::ready(&app, &label, &id)?;
+                }
+                IslandCommand::Failed { message, id } => {
+                    if let Some(id) = &id {
+                        require_notice(target, id)?;
+                    }
+                    windows::failed(
+                        &app,
+                        &label,
+                        id.as_deref().unwrap_or(HOST_NOTICE_OWNER),
+                        message.chars().take(1_000).collect(),
+                    )?;
+                }
+                IslandCommand::Action { id, action } => {
+                    let target = require_notice(target, &id)?;
+                    let source = engine.notification().map(|n| n.source.clone());
+                    engine.act(&core.store, &target, &id, action, clock)?;
+                    engine.show_queued(&core.store, clock)?;
+                    if matches!(action, Action::OpenSource) {
+                        source_to_open = source;
+                    }
+                }
+                IslandCommand::Hover { id, entered } => {
+                    let target = require_notice(target, &id)?;
+                    engine.hover(&core.store, &target, &id, entered, clock)?
+                }
+                IslandCommand::Audio { id, state } => {
+                    let target = require_notice(target, &id)?;
+                    engine.audio(&core.store, &target, &id, &state, clock)?;
+                    if state == "ended" {
+                        engine.show_queued(&core.store, clock)?;
+                    }
+                }
+            }
+            Ok(Value::Null)
+        })();
+        if let Some(source) = source_to_open {
+            windows::dispatch(&app, move |app| {
+                windows::open_notification_source(app, &source)
+            });
+        }
+        // 读取与悬停不等待窗口协调，窗口创建正在等待本页就绪。
+        if schedule {
+            service.schedule(&app);
+        }
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+fn require_notice(target: Option<Target>, id: &str) -> AppResult<Target> {
+    target
+        .filter(|current| current.event == id)
+        .ok_or_else(|| "SESSION_EXPIRED: 灵动通知事件已被替换".into())
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum SettingsCommand {
+    Get,
+    Channel { channel: Channel, enabled: bool },
+    Calls { enabled: bool },
+    Test { channel: Channel, sample: Demo },
+}
+
+#[tauri::command]
+pub(crate) async fn notification_settings(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    command: SettingsCommand,
+) -> AppResult<Value> {
+    if window.label() != "main" {
+        return Err("CAPABILITY_DENIED: 通知偏好只能在管理窗口操作".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let core = app.state::<Core>();
+        let service = &core.reminders;
+        let disable_island = matches!(&command, SettingsCommand::Channel { channel: Channel::Island, enabled: false });
+        let result = (|| {
+            let _native = core.store.native_actions.lock().map_err(err)?;
+            match command {
+                SettingsCommand::Get => {}
+                SettingsCommand::Channel { channel, enabled } => {
+                    core.store.save_preference(channel.preference_key(), if enabled { "true" } else { "false" })?;
+                    if channel == Channel::Island && !enabled {
+                        service.engine.lock().map_err(err)?.cancel_notifications();
+                    }
+                }
+                SettingsCommand::Calls { enabled } => {
+                    core.store.save_preference(reminder_store::WIDGET_CALLS, if enabled { "true" } else { "false" })?;
+                }
+                SettingsCommand::Test { channel, sample } => {
+                    let clock = service.clock()?;
+                    service.engine.lock().map_err(err)?.host_demo(
+                        &core.store, sample, channel, clock, windows::hidden(&app)?,
+                        |notice| notification_sdk::windows(&app, "SoulDesk", notice, clock.wall_ms),
+                    )?;
+                }
+            }
+            let db = core.store.db.lock().map_err(err)?;
+            Ok(json!({
+                "windows":Channel::Windows.enabled(&db)?,
+                "island":Channel::Island.enabled(&db)?,
+                "calls":reminder_store::preference(&db, reminder_store::WIDGET_CALLS)?.as_deref() == Some("true")
+            }))
+        })();
+        service.schedule(&app);
+        if disable_island && result.is_ok() {
+            windows::dispatch(&app, windows::release_idle_island);
+        }
+        result
+    })
+    .await
+    .map_err(err)?
+}
 
 pub(crate) fn surface_role(window: &str, instance: &str) -> Option<(Source, &'static str, u64)> {
-    for (prefix, source, role) in [
-        ("island", Source::Island, "notification-overlay"),
-        ("break", Source::Sit, "break-overlay"),
-    ] {
-        if let Some(suffix) = window.strip_prefix(&format!("{prefix}-{instance}-")) {
-            let generation = suffix.parse::<u64>().ok()?;
-            if generation > 0 && generation.to_string() == suffix {
-                return Some((source, role, generation));
-            }
-        }
-    }
-    None
+    let suffix = window.strip_prefix(&format!("break-{instance}-"))?;
+    let generation = suffix.parse::<u64>().ok()?;
+    (generation > 0 && generation.to_string() == suffix).then_some((
+        Source::Sit,
+        "break-overlay",
+        generation,
+    ))
 }
 pub(crate) fn surface_method(window: &str, method: &str) -> AppResult<()> {
     let allowed = if window.starts_with("island-") {
-        matches!(
-            method,
-            "runtime.ready" | "island.peek" | "island.action" | "island.hover" | "island.audio"
-        )
+        false
     } else if window.starts_with("break-") {
         matches!(
             method,
@@ -70,6 +230,18 @@ pub(crate) fn surface_allowed(
     }
     Ok(reminder_store::load(db, instance, source)?.config["enabled"] == true)
 }
+pub(crate) struct IslandWindow {
+    pub label: String,
+    pub idle_since: Option<Instant>,
+}
+
+impl IslandWindow {
+    pub(crate) fn expired(&self, now: Instant) -> bool {
+        self.idle_since
+            .is_some_and(|idle| now.saturating_duration_since(idle) >= Duration::from_secs(30))
+    }
+}
+
 pub(crate) struct Service {
     engine: Mutex<Engine>,
     origin: Instant,
@@ -77,6 +249,7 @@ pub(crate) struct Service {
     stopped: AtomicBool,
     sent: Mutex<[Option<Target>; 2]>,
     rendered: Mutex<std::collections::HashSet<String>>,
+    pub(crate) island_window: Mutex<Option<IslandWindow>>,
 }
 impl Default for Service {
     fn default() -> Self {
@@ -87,10 +260,19 @@ impl Default for Service {
             stopped: AtomicBool::new(false),
             sent: Mutex::new([None, None]),
             rendered: Mutex::new(Default::default()),
+            island_window: Mutex::new(None),
         }
     }
 }
 impl Service {
+    pub(crate) fn notice_snapshot(&self, target: &Target) -> AppResult<Value> {
+        let engine = self.engine.lock().map_err(err)?;
+        require_notice(engine.target(Surface::Notice), &target.event)?;
+        let notice = engine.notification().ok_or("SESSION_EXPIRED: 通知已关闭")?;
+        Ok(json!({
+            "notification":notice, "sampledAt":now_ms(), "displayed":false
+        }))
+    }
     fn clock(&self) -> AppResult<Clock> {
         let wall_ms = now_ms();
         let utc = chrono::DateTime::from_timestamp_millis(i64::try_from(wall_ms).map_err(err)?)
@@ -114,10 +296,8 @@ impl Service {
         self.engine.lock().ok()?.target(surface)
     }
     pub fn current_window(&self, label: &str, instance: &str) -> bool {
-        [Surface::Notice, Surface::Rest].into_iter().any(|surface| {
-            self.target(surface)
-                .is_some_and(|target| target.owner == instance && target.label() == label)
-        })
+        self.target(Surface::Rest)
+            .is_some_and(|target| target.owner == instance && target.rest_label() == label)
     }
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
@@ -126,14 +306,23 @@ impl Service {
         }
     }
     pub fn closed(&self, label: &str) {
+        let lost_island = if let Ok(mut view) = self.island_window.lock() {
+            if view.as_ref().is_some_and(|view| view.label == label) {
+                view.take().is_some_and(|view| view.idle_since.is_none())
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         if let Ok(mut engine) = self.engine.lock() {
-            for surface in [Surface::Notice, Surface::Rest] {
-                if engine
-                    .target(surface)
-                    .is_some_and(|target| target.label() == label)
-                {
-                    engine.cancel(surface);
-                }
+            if lost_island {
+                engine.cancel(Surface::Notice);
+            } else if engine
+                .target(Surface::Rest)
+                .is_some_and(|target| target.rest_label() == label)
+            {
+                engine.cancel(Surface::Rest);
             }
         }
         if let Ok(mut rendered) = self.rendered.lock() {
@@ -164,6 +353,7 @@ impl Service {
         &self,
         app: &AppHandle,
         target: &Target,
+        label: &str,
         show: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<()> {
         let core = app.state::<Core>();
@@ -185,7 +375,12 @@ impl Service {
             .lock()
             .map_err(err)?
             .shown(&core.store, target, self.clock()?)?;
-        self.rendered.lock().map_err(err)?.insert(target.label());
+        if target.surface == Surface::Notice {
+            app.emit_to(label, "host:island-shown", &target.event)
+                .map_err(err)?;
+        } else {
+            self.rendered.lock().map_err(err)?.insert(label.into());
+        }
         Ok(())
     }
     pub fn failed(&self, app: &AppHandle, target: &Target, error: String) {
@@ -236,9 +431,9 @@ impl Service {
                     windows::hidden(&handle)?,
                     &mut cursor,
                 )?;
-                for surface in [Surface::Notice, Surface::Rest] {
-                    if let Some(target) = engine.target(surface) {
-                        let label = target.label();
+                {
+                    if let Some(target) = engine.target(Surface::Rest) {
+                        let label = target.rest_label();
                         let failure = core
                             .visibility
                             .lock()
@@ -254,7 +449,7 @@ impl Service {
                             if let Err(error) =
                                 engine.failed(&core.store, &target, error, service.clock()?)
                             {
-                                engine.cancel(surface);
+                                engine.cancel(Surface::Rest);
                                 return Err(error);
                             }
                         }
@@ -269,6 +464,16 @@ impl Service {
                 core.report(format!("专用提醒后台：{error}"));
             }
             service.schedule(&handle);
+            if service
+                .island_window
+                .lock()
+                .ok()
+                .as_deref()
+                .and_then(Option::as_ref)
+                .is_some_and(|view| view.expired(Instant::now()))
+            {
+                windows::dispatch(&handle, windows::release_idle_island);
+            }
         });
     }
 }
@@ -317,7 +522,7 @@ fn request(
             .target(Surface::Rest)
             .filter(|target| {
                 target.owner == session.instance
-                    && target.label() == window
+                    && target.rest_label() == window
                     && target.event == args.id
             })
             .ok_or("SESSION_EXPIRED: 休息页已关闭或替换")?;
@@ -351,10 +556,8 @@ fn request(
         );
     }
     let source = match method {
-        "island.peek" | "island.action" | "island.hover" | "island.audio" | "island.demo" => {
-            Source::Island
-        }
-        "sit.break.peek" | "sit.break.close" => Source::Sit,
+        "island.demo" => Source::Island,
+        "sit.break.peek" => Source::Sit,
         "phone.preview" => Source::Phone,
         _ => return Err("CAPABILITY_DENIED: 未开放的专用提醒方法".into()),
     };
@@ -406,78 +609,19 @@ fn request(
                 }
                 _ => {}
             }
-            let surface = if method.starts_with("sit.break.") {
-                Surface::Rest
-            } else {
-                Surface::Notice
-            };
+            if !args.is_null() && args.as_object().is_none_or(|args| !args.is_empty()) {
+                return Err("INVALID_ARGUMENT: 休息页读取不接受参数".into());
+            }
             let target = engine
-                .target(surface)
-                .filter(|target| target.owner == session.instance && target.label() == window)
+                .target(Surface::Rest)
+                .filter(|target| target.owner == session.instance && target.rest_label() == window)
                 .ok_or("SESSION_EXPIRED: 当前显示代次已失效")?;
             engine.validate_target(store, &target, &target.event, clock)?;
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Act {
-                id: String,
-                action: Action,
-            }
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Hover {
-                id: String,
-                entered: bool,
-            }
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Audio {
-                id: String,
-                state: String,
-            }
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Close {
-                id: String,
-            }
-            match method {
-                "island.peek" | "sit.break.peek" => {
-                    if !args.is_null() && args.as_object().is_none_or(|args| !args.is_empty()) {
-                        return Err("INVALID_ARGUMENT: 专用显示读取不接受参数".into());
-                    }
-                    if surface == Surface::Notice {
-                        let notice = engine.notification().ok_or("SESSION_EXPIRED: 通知已关闭")?;
-                        Ok(
-                            json!({"notification":notice,"sampledAt":clock.wall_ms,"generation":target.generation,"displayed":service.rendered.lock().map_err(err)?.contains(window)}),
-                        )
-                    } else {
-                        let rest = engine.rest().ok_or("SESSION_EXPIRED: 休息已关闭")?;
-                        Ok(
-                            json!({"id":rest.id,"remainingSeconds":rest.deadline.saturating_sub(clock.wall_ms).div_ceil(1000),"sampledAt":clock.wall_ms}),
-                        )
-                    }
-                }
-                "island.action" => {
-                    let args: Act = serde_json::from_value(args).map_err(err)?;
-                    engine.act(store, &target, &args.id, args.action, clock)?;
-                    Ok(Value::Null)
-                }
-                "island.hover" => {
-                    let args: Hover = serde_json::from_value(args).map_err(err)?;
-                    engine.hover(store, &target, &args.id, args.entered, clock)?;
-                    Ok(Value::Null)
-                }
-                "island.audio" => {
-                    let args: Audio = serde_json::from_value(args).map_err(err)?;
-                    engine.audio(store, &target, &args.id, &args.state, clock)?;
-                    Ok(Value::Null)
-                }
-                "sit.break.close" => {
-                    let args: Close = serde_json::from_value(args).map_err(err)?;
-                    engine.act(store, &target, &args.id, Action::Dismiss, clock)?;
-                    Ok(Value::Null)
-                }
-                _ => Err("CAPABILITY_DENIED: 无此提醒动作".into()),
-            }
+            let rest = engine.rest().ok_or("SESSION_EXPIRED: 休息已关闭")?;
+            Ok(json!({
+                "id":rest.id, "sampledAt":clock.wall_ms,
+                "remainingSeconds":rest.deadline.saturating_sub(clock.wall_ms).div_ceil(1000)
+            }))
         },
     )
 }
@@ -494,16 +638,46 @@ pub(crate) async fn gateway(
     let method = method.to_owned();
     tauri::async_runtime::spawn_blocking(move || {
         let core = handle.state::<Core>();
-        let result = request(
-            &core.reminders,
-            &core.store,
-            &core.sessions,
-            &window,
-            &token,
-            &method,
-            args,
-            core.reminders.clock()?,
-        );
+        let result = if method == "notifications.send" {
+            (|| {
+                let _native = core.store.native_actions.lock().map_err(err)?;
+                if core.reminders.stopped.load(Ordering::Acquire) {
+                    return Err("SESSION_EXPIRED: 提醒后台已退出".into());
+                }
+                let clock = core.reminders.clock()?;
+                let hidden = windows::hidden(&handle)?;
+                widgets::with_capability(
+                    &core.store,
+                    &core.sessions,
+                    &window,
+                    &token,
+                    notification_sdk::SEND,
+                    |session| {
+                        core.reminders.engine.lock().map_err(err)?.send(
+                            &core.store,
+                            &session.instance,
+                            notification_sdk::Request::parse(args)?,
+                            clock,
+                            hidden,
+                            |source, notice| {
+                                notification_sdk::windows(&handle, source, notice, clock.wall_ms)
+                            },
+                        )
+                    },
+                )
+            })()
+        } else {
+            request(
+                &core.reminders,
+                &core.store,
+                &core.sessions,
+                &window,
+                &token,
+                &method,
+                args,
+                core.reminders.clock()?,
+            )
+        };
         core.reminders.schedule(&handle);
         result
     })
@@ -514,7 +688,7 @@ pub(crate) async fn gateway(
 mod tests {
     use super::*;
     #[test]
-    fn reminder_audio_waits_for_native_display_acknowledgement() {
+    fn reminder_cached_page_cannot_prepare_a_replaced_notice() {
         let store = Store::open(
             std::env::temp_dir().join(format!("souldesk-audio-ready-{}", uuid::Uuid::new_v4())),
         )
@@ -535,27 +709,35 @@ mod tests {
             clock(1),
         )
         .unwrap();
-        let target = service.target(Surface::Notice).unwrap();
-        let overlay = target.label();
-        let session =
-            widgets::open_display_session(&store, &sessions, &overlay, &id, None).unwrap();
-        let session = session["token"].as_str().unwrap();
-        let peek = || {
-            request(
-                &service,
-                &store,
-                &sessions,
-                &overlay,
-                session,
-                "island.peek",
-                Value::Null,
-                clock(2),
-            )
+        let old = service.target(Surface::Notice).unwrap();
+        assert_eq!(service.notice_snapshot(&old).unwrap()["displayed"], false);
+        service
+            .engine
+            .lock()
             .unwrap()
+            .demo(&store, &id, Demo::Info, clock(2))
+            .unwrap();
+        let current = service.target(Surface::Notice);
+        assert!(require_notice(current.clone(), &old.event).is_err());
+        assert!(service.notice_snapshot(&old).is_err());
+        let current = current.unwrap();
+        assert!(require_notice(Some(current.clone()), &current.event).is_ok());
+        assert_eq!(
+            service.notice_snapshot(&current).unwrap()["notification"]["id"],
+            current.event
+        );
+    }
+    #[test]
+    fn reminder_cached_window_expires_only_after_thirty_seconds_idle() {
+        let now = Instant::now();
+        let mut cache = IslandWindow {
+            label: "island-host-test".into(),
+            idle_since: None,
         };
-        assert_eq!(peek()["displayed"], false, "尚未显示不能开始播放");
-        service.rendered.lock().unwrap().insert(overlay.clone());
-        assert_eq!(peek()["displayed"], true);
+        assert!(!cache.expired(now + Duration::from_secs(60)));
+        cache.idle_since = Some(now);
+        assert!(!cache.expired(now + Duration::from_secs(29)));
+        assert!(cache.expired(now + Duration::from_secs(30)));
     }
     use crate::{store::Store, widgets};
     use serde_json::{json, Value};
@@ -620,7 +802,7 @@ mod tests {
                 .unwrap();
         }
         let target = service.target(Surface::Rest).unwrap();
-        let label = target.label();
+        let label = target.rest_label();
         let session = widgets::open_display_session(&store, &sessions, &label, &sit, None).unwrap();
         let token = session["token"].as_str().unwrap();
         store
@@ -657,7 +839,7 @@ mod tests {
         .is_err());
     }
     #[test]
-    fn reminder_gateway_rejects_extra_preview_arguments_and_config_on_overlay() {
+    fn reminder_gateway_validates_phone_preview_without_legacy_container() {
         let store = Store::open(
             std::env::temp_dir().join(format!("souldesk-reminder-gateway-{}", Uuid::new_v4())),
         )
@@ -678,7 +860,7 @@ mod tests {
         )
         .is_err());
         assert!(service.engine.lock().unwrap().notification().is_none());
-        assert!(request(
+        request(
             &service,
             &store,
             &sessions,
@@ -686,10 +868,19 @@ mod tests {
             &token,
             "phone.preview",
             json!({"preset":"tea"}),
-            clock(0)
+            clock(0),
         )
-        .unwrap_err()
-        .contains("灵动通知"));
+        .unwrap();
+        assert_eq!(
+            service
+                .engine
+                .lock()
+                .unwrap()
+                .notification()
+                .unwrap()
+                .preset,
+            Some(PhonePreset::Tea)
+        );
         service.stop();
         assert!(request(
             &service,
@@ -709,21 +900,11 @@ mod tests {
         for method in [
             "runtime.ready",
             "island.peek",
-            "island.action",
-            "island.hover",
-            "island.audio",
-        ] {
-            assert!(surface_method("island-id-1", method).is_ok());
-        }
-        for method in [
-            "settings.get",
-            "storage.set",
-            "island.configure",
             "island.demo",
-            "phone.preview",
-            "view.openDetails",
+            "notifications.send",
+            "settings.get",
         ] {
-            assert!(surface_method("island-id-1", method).is_err());
+            assert!(surface_method("island-host-1", method).is_err());
         }
         for method in ["runtime.ready", "sit.break.peek", "sit.break.close"] {
             assert!(surface_method("break-id-1", method).is_ok());
@@ -736,77 +917,48 @@ mod tests {
     fn reminder_surface_label_requires_matching_instance_and_positive_generation() {
         let id = Uuid::new_v4().to_string();
         assert_eq!(
-            surface_role(&format!("island-{id}-1"), &id).unwrap().1,
-            "notification-overlay"
-        );
-        assert_eq!(
             surface_role(&format!("break-{id}-9"), &id).unwrap().1,
             "break-overlay"
         );
         for label in [
-            format!("island-{id}-0"),
-            format!("island-{id}-01"),
-            format!("island-{id}-oops"),
+            format!("break-{id}-0"),
+            format!("break-{id}-01"),
+            format!("break-{id}-oops"),
+            format!("island-{id}-1"),
             "island-another-1".into(),
         ] {
             assert!(surface_role(&label, &id).is_none());
         }
     }
     #[test]
-    fn reminder_overlay_and_primary_sessions_coexist_and_hidden_control_keeps_overlay() {
+    fn reminder_legacy_control_card_remains_configurable_without_overlay_session() {
         let store = Store::open(
             std::env::temp_dir().join(format!("souldesk-reminder-role-{}", Uuid::new_v4())),
         )
         .unwrap();
         let sessions = widgets::Sessions::default();
-        let source = Source::Island;
-        let manifest = json!({"schemaVersion":1,"id":source.package(),"name":"灵动角色检查","version":"0.1.0","hostApiMajor":1,"entry":"dist/index.html","defaultSize":{"width":350,"height":180},"minSize":{"width":280,"height":140},"capabilities":[source.capability()],"settingsSchema":{"type":"object","additionalProperties":false,"properties":{}}});
-        store.db.lock().unwrap().execute("INSERT INTO widget_packages(id,manifest,directory,digest) VALUES(?1,?2,'role','role')",rusqlite::params![source.package(),manifest.to_string()]).unwrap();
-        let id = widgets::create_instance(&store, source.package()).unwrap();
-        let label = format!("float-{id}");
-        let primary = widgets::open_display_session(&store, &sessions, &label, &id, None).unwrap();
-        let token = primary["token"].as_str().unwrap();
-        let overlay = format!("island-{id}-1");
-        assert!(widgets::open_display_session(&store, &sessions, &overlay, &id, None).is_err());
-        reminder_store::authorized(&store,&sessions,&label,token,"island.configure",json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":0,"config":{"enabled":true}})).unwrap();
-        let extra = widgets::open_display_session(&store, &sessions, &overlay, &id, None).unwrap();
-        assert_eq!(extra["role"], "notification-overlay");
-        assert_eq!(sessions.0.lock().unwrap().len(), 2);
-        let other = widgets::open_display_session(&store, &sessions, &label, &id, None).unwrap();
-        assert!(sessions
-            .0
-            .lock()
-            .unwrap()
-            .contains_key(extra["token"].as_str().unwrap()));
-        assert!(widgets::gateway(
+        let service = Service::default();
+        let id = add_source(&store, Source::Island);
+        let (label, token) = primary(&store, &sessions, &id);
+        request(&service, &store, &sessions, &label, &token, "island.configure",
+            json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":0,"config":{"enabled":true}}), clock(0)).unwrap();
+        request(
+            &service,
             &store,
             &sessions,
-            &overlay,
-            extra["token"].as_str().unwrap(),
-            "storage.get",
-            Value::Null
+            &label,
+            &token,
+            "island.demo",
+            json!({"sample":"success"}),
+            clock(1),
         )
-        .is_err());
-        store.presentation(&id, "desktop", false, false).unwrap();
-        assert!(widgets::open_display_session(
-            &store,
-            &sessions,
-            &format!("island-{id}-2"),
-            &id,
-            None
-        )
-        .is_ok());
-        assert!(!sessions
-            .0
-            .lock()
-            .unwrap()
-            .contains_key(extra["token"].as_str().unwrap()));
-        assert!(sessions
-            .0
-            .lock()
-            .unwrap()
-            .contains_key(other["token"].as_str().unwrap()));
-        store.save_preference("hidden_all", "true").unwrap();
-        assert!(widgets::open_display_session(&store, &sessions, &overlay, &id, None).is_err());
+        .unwrap();
+        let target = service.target(Surface::Notice).unwrap();
+        assert_eq!(target.owner, HOST_NOTICE_OWNER);
+        assert!(
+            widgets::open_display_session(&store, &sessions, "island-host-test", &id, None)
+                .is_err()
+        );
+        assert_eq!(sessions.0.lock().unwrap().len(), 1);
     }
 }

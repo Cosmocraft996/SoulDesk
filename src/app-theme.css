@@ -72,6 +72,8 @@
 :where(:root[data-app-theme]) button:hover { background: var(--app-hover); border-color: var(--app-muted); }
 :where(:root[data-app-theme]) :is(button, input, select, summary):focus-visible { outline-color: var(--app-accent); }
 :where(:root[data-app-theme]) :is(input, select) { color: var(--app-text); background: var(--app-bg); border-color: var(--app-line); }
+.shortcut-capture { cursor: pointer; caret-color: transparent; }
+.shortcut-capture:focus { outline: 2px solid var(--app-accent, #bdbdbd); outline-offset: 2px; }
 :where(:root[data-app-theme]) :is(input[type="range"], input[type="checkbox"]) { accent-color: var(--app-accent); }
 :where(:root[data-app-theme]) button.primary { background: var(--app-accent); color: var(--app-on-accent); border-color: var(--app-accent); }
 :where(:root[data-app-theme]) button.primary:hover { filter: brightness(1.08); }

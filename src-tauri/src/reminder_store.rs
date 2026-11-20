@@ -129,6 +129,79 @@ pub(crate) struct ConfigurationScan {
     pub valid: Vec<InstanceConfig>,
     pub failures: std::collections::HashMap<String, String>,
 }
+const LEGACY_NOTIFICATION_CHANNEL: &str = "widget_notification_channel";
+pub(crate) const WIDGET_CALLS: &str = "widget_notification_calls";
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Channel {
+    Windows,
+    Island,
+}
+impl Channel {
+    pub(crate) fn preference_key(self) -> &'static str {
+        match self {
+            Self::Windows => "notification.windows.enabled",
+            Self::Island => "notification.island.enabled",
+        }
+    }
+    pub(crate) fn enabled(self, db: &Connection) -> AppResult<bool> {
+        Ok(preference(db, self.preference_key())?.as_deref() != Some("false"))
+    }
+    pub(crate) fn enabled_in(self, store: &Store) -> AppResult<bool> {
+        self.enabled(&*store.db.lock().map_err(err)?)
+    }
+    pub(crate) fn legacy_default(db: &Connection) -> AppResult<Self> {
+        Ok(
+            match preference(db, LEGACY_NOTIFICATION_CHANNEL)?.as_deref() {
+                Some("island") => Self::Island,
+                _ => Self::Windows,
+            },
+        )
+    }
+}
+
+pub(crate) const WINDOWS_DISABLED: &str = "NOTIFICATION_DISABLED: Windows 系统通知已关闭";
+
+pub(crate) fn ensure_windows_enabled(store: &Store) -> AppResult<()> {
+    if Channel::Windows.enabled_in(store)? {
+        Ok(())
+    } else {
+        Err(WINDOWS_DISABLED.into())
+    }
+}
+
+pub(crate) fn preference(db: &Connection, key: &str) -> AppResult<Option<String>> {
+    db.query_row(
+        "SELECT value FROM app_settings WHERE key=?1",
+        [key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(err)
+}
+
+pub(crate) fn migrate_notification_channel(store: &Store) -> AppResult<()> {
+    let mut db = store.db.lock().map_err(err)?;
+    let tx = db.transaction().map_err(err)?;
+    if preference(&tx, LEGACY_NOTIFICATION_CHANNEL)?.is_none() {
+        let channel = if configurations(&tx)?
+            .valid
+            .iter()
+            .any(|c| c.source == Source::Island && c.config["enabled"] == true)
+        {
+            "island"
+        } else {
+            "windows"
+        };
+        tx.execute(
+            "INSERT INTO app_settings(key,value) VALUES(?1,?2)",
+            params![LEGACY_NOTIFICATION_CHANNEL, channel],
+        )
+        .map_err(err)?;
+    }
+    tx.commit().map_err(err)
+}
 pub(crate) fn configurations(db: &Connection) -> AppResult<ConfigurationScan> {
     let mut query=db.prepare("SELECT i.id,p.id,p.manifest FROM widget_instances i JOIN widget_packages p ON p.id=i.package_id ORDER BY i.id").map_err(err)?;
     let rows = query
@@ -407,6 +480,52 @@ mod tests {
         let mut config = source.default_config();
         config["enabled"] = json!(enabled);
         json!({"requestId":uuid::Uuid::new_v4().to_string(),"expectedRevision":revision,"config":config})
+    }
+    #[test]
+    fn notification_channel_migrates_enabled_legacy_instance_once_and_keeps_preferences() {
+        let (store, sessions, id, other) = fixture(Source::Island);
+        let token = open(&store, &sessions, &id);
+        call(
+            &store,
+            &sessions,
+            &id,
+            &token,
+            "island.configure",
+            change(Source::Island, 0, true),
+        )
+        .unwrap();
+        migrate_notification_channel(&store).unwrap();
+        assert_eq!(
+            store.preference(LEGACY_NOTIFICATION_CHANNEL).as_deref(),
+            Some("island")
+        );
+        store
+            .save_preference(LEGACY_NOTIFICATION_CHANNEL, "off")
+            .unwrap();
+        migrate_notification_channel(&store).unwrap();
+        assert_eq!(
+            store.preference(LEGACY_NOTIFICATION_CHANNEL).as_deref(),
+            Some("off")
+        );
+        let db = store.db.lock().unwrap();
+        assert_eq!(
+            load(&db, &id, Source::Island).unwrap().config["enabled"],
+            true
+        );
+        assert_eq!(
+            load(&db, &other, Source::Island).unwrap().config["enabled"],
+            false
+        );
+
+        let (fresh, _, _, _) = fixture(Source::Phone);
+        migrate_notification_channel(&fresh).unwrap();
+        assert_eq!(
+            fresh.preference(LEGACY_NOTIFICATION_CHANNEL).as_deref(),
+            Some("windows")
+        );
+        assert!(fresh.preference(WIDGET_CALLS).is_none());
+        assert!(Channel::Windows.enabled(&db).unwrap());
+        assert!(Channel::Island.enabled(&db).unwrap());
     }
     #[test]
     fn reminder_configs_default_disabled_and_reading_does_not_register_active_sources() {

@@ -297,7 +297,12 @@ fn finish(store: &Store, id: &str, pending: &Pending, result: AppResult<()>) -> 
         return Ok(());
     };
     if state.pending.as_ref().is_some_and(|p| p.id == pending.id) && state.delivery == "sending" {
-        state.delivery = if result.is_ok() { "accepted" } else { "failed" }.into();
+        state.delivery = match result.as_ref().err().map(String::as_str) {
+            None => "accepted",
+            Some(crate::reminder_store::WINDOWS_DISABLED) => "suppressed",
+            Some(_) => "failed",
+        }
+        .into();
         state.error = result.err();
         save(&tx, id, &state)?;
     }
@@ -400,6 +405,7 @@ pub async fn gateway(
 }
 #[cfg(windows)]
 fn notify(app: &AppHandle, id: &str, pending: &Pending) -> AppResult<()> {
+    crate::reminder_store::ensure_windows_enabled(&app.state::<Core>().store)?;
     use tauri_winrt_notification::{Duration, Toast};
     let core = app.state::<Core>();
     let store = std::sync::Arc::downgrade(&core.store);

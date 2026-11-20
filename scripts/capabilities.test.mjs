@@ -77,9 +77,16 @@ test('键盘叠加层只有桥接与故障报告，不授予激活、拖动或�
 });
 
 test('灵动通知和显式休息页只开放固定桥接，不开放窗口或系统输入命令',()=>{
-  const capability=JSON.parse(readFileSync(new URL('capabilities/reminder-surfaces.json',root),'utf8'));
-  assert.deepEqual(capability.windows,['island-*','break-*']);
-  assert.deepEqual([...capability.permissions].sort(),['core:event:default','allow-open-session','allow-close-session','allow-widget-request','allow-surface-failed'].sort());
+  const overlay = JSON.parse(readFileSync(new URL('capabilities/notification-overlay.json', root), 'utf8'));
+  const rest = JSON.parse(readFileSync(new URL('capabilities/reminder-surfaces.json', root), 'utf8'));
+  const build = readFileSync(new URL('build.rs', root), 'utf8');
+  assert.deepEqual(overlay.windows, ['island-host-*']);
+  assert.deepEqual(overlay.permissions, ['allow-island-surface','core:event:allow-listen','core:event:allow-unlisten']);
+  assert.deepEqual(rest.windows, ['break-*']);
+  assert.deepEqual([...rest.permissions].sort(), ['core:event:default','allow-open-session','allow-close-session','allow-widget-request','allow-surface-failed'].sort());
+  assert.ok(build.includes('"island_surface"') && build.includes('"notification_settings"'));
+  assert.ok(capabilities[0].permissions.includes('allow-notification-settings'));
+  assert.ok(!capabilities[1].permissions.includes('allow-island-surface'));
 });
 
 test('剪切板弹窗仅授予桥接和失败报告，原生窗口及输入由固定业务后台执行',()=>{
