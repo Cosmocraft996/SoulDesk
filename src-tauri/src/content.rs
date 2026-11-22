@@ -42,7 +42,7 @@ fn source_url(source: &str, args: &Value) -> AppResult<String> {
         "bangumi" => "https://bangumi.bilibili.com/web_api/timeline_global",
         "douyin" => "https://aweme.snssdk.com/aweme/v1/hot/search/list/",
         "weibo" => "https://weibo.com/ajax/side/hotSearch",
-        "zhihu" => "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=30&desktop=true",
+        "zhihu" => "https://api.zhihu.com/topstory/hot-lists/total?limit=30",
         "metal" => "https://biquote.io/api/latest?symbols=XAUUSD&symbols=XAGUSD&symbols=XCUUSD&symbols=XPTUSD",
         "gold" => "https://push2.eastmoney.com/api/qt/stock/get?secid=118.AU9999&fields=f43,f44,f45,f46,f57,f58,f60,f86",
         "gold-trends" => "https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=118.AU9999&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0",
@@ -58,6 +58,14 @@ fn source_url(source: &str, args: &Value) -> AppResult<String> {
         _ => return Err("CAPABILITY_DENIED: 未开放的公开内容源".into()),
     };
     Ok(value.into())
+}
+
+fn source_headers(source: &str) -> &'static [(&'static str, &'static str)] {
+    match source {
+        "weibo" => &[("referer", "https://weibo.com/")],
+        "gold" | "gold-trends" => &[("x-custom-referer", "push2.eastmoney.com")],
+        _ => &[],
+    }
 }
 
 pub(crate) fn source_decimal(
@@ -561,16 +569,9 @@ pub async fn gateway(
         }
         return core.coin_index.peek(&instance, &cache_key);
     }
-    let headers: &[(&str, &str)] = if matches!(source, "gold" | "gold-trends") {
-        &[("x-custom-referer", "push2.eastmoney.com")]
-    } else {
-        &[]
-    };
-    let bytes = if headers.is_empty() {
-        network::http_get_bounded(&config, &url, 2 * 1024 * 1024).await?
-    } else {
-        network::http_get_bounded_headers(&config, &url, 2 * 1024 * 1024, headers).await?
-    };
+    let bytes =
+        network::http_get_bounded_headers(&config, &url, 2 * 1024 * 1024, source_headers(source))
+            .await?;
     let data: Value = match source {
         "metal" => parse_metals(&bytes)?,
         "gold" => parse_gold_quote(&bytes)?,
@@ -660,7 +661,9 @@ async fn fetch_public(
         let data = parse_forex_rates(&rates, &currencies)?;
         return Ok(json!({"data":data,"source":url,"fetchedAt":now_ms()}));
     }
-    let bytes = network::http_get_bounded(&config, &url, 2 * 1024 * 1024).await?;
+    let bytes =
+        network::http_get_bounded_headers(&config, &url, 2 * 1024 * 1024, source_headers(&source))
+            .await?;
     let data: Value = serde_json::from_slice(&bytes)
         .map_err(|_| "DATA_UNAVAILABLE: 内容源未返回有效JSON".to_owned())?;
     validate_cached_body(&source, &data)?;
@@ -1208,13 +1211,8 @@ mod tests {
         let sessions = widgets::Sessions::default();
         let cases: &[(&str, &[&str], bool)] = &[
             ("hotspot-bangumi", &["bangumi"], true),
-            ("hotspot-bilibili", &["bilibili"], true),
             ("hotspot-bilibili-rcmd", &["bilibili-rcmd"], true),
             ("hotspot-cls-telegraph", &["cls-telegraph"], false),
-            ("hotspot-douyin", &["douyin"], false),
-            ("hotspot-tou-tiao", &["tou-tiao"], true),
-            ("hotspot-weibo", &["weibo"], false),
-            ("hotspot-zhihu", &["zhihu"], false),
             ("calendar", &["itime-calendar"], false),
             ("calendar-large", &["itime-calendar"], false),
             ("sticker", &[], true),
@@ -1298,6 +1296,10 @@ mod tests {
         assert!(source_url("forex", &json!({"from":"BTC","to":"CNY"})).is_err());
         let bilibili = source_url("bilibili", &json!({"url":"http://127.0.0.1/private"})).unwrap();
         assert_eq!(bilibili, "https://s.search.bilibili.com/main/hotword");
+        assert_eq!(
+            source_url("zhihu", &json!({})).unwrap(),
+            "https://api.zhihu.com/topstory/hot-lists/total?limit=30"
+        );
         for source in [
             "bangumi",
             "bilibili-rcmd",
@@ -1316,6 +1318,44 @@ mod tests {
         assert!(source_url("https://attacker.example", &json!({})).is_err());
         assert!(source_url("bilibili-rcmd", &json!({"lastShown":"bad&inject=1"})).is_err());
         assert!(source_url("bilibili-rcmd", &json!({"lastShown":"a".repeat(10001)})).is_err());
+    }
+
+    #[tokio::test]
+    async fn cached_weibo_request_sends_its_public_referer() {
+        use tokio::{
+            io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            let mut referer = None;
+            loop {
+                let mut line = String::new();
+                if stream.read_line(&mut line).await.unwrap() == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':') {
+                    if name.eq_ignore_ascii_case("referer") {
+                        referer = Some(value.trim().to_owned());
+                    }
+                }
+            }
+            assert_eq!(referer.as_deref(), Some("https://weibo.com/"));
+            let body = r#"{"ok":1,"data":{"realtime":[{"word":"热搜"}]}}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        let result = fetch_public("weibo".into(), url, network::NetworkConfig::Direct)
+            .await
+            .unwrap();
+        assert_eq!(result["data"]["data"]["realtime"][0]["word"], "热搜");
+        server.await.unwrap();
     }
 
     #[test]

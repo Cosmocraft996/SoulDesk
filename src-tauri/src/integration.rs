@@ -2642,13 +2642,8 @@ async fn execute_permission_upgrades(
     } else {
         &[
             "hotspot-bangumi",
-            "hotspot-bilibili",
             "hotspot-bilibili-rcmd",
             "hotspot-cls-telegraph",
-            "hotspot-douyin",
-            "hotspot-tou-tiao",
-            "hotspot-weibo",
-            "hotspot-zhihu",
             "calendar",
             "calendar-large",
             "sticker",

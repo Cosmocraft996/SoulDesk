@@ -31,13 +31,9 @@
   ],
   "热点资讯": [
     "local.souldesk.widgetjs.hotspot-bangumi",
-    "local.souldesk.widgetjs.hotspot-bilibili",
     "local.souldesk.widgetjs.hotspot-bilibili-rcmd",
     "local.souldesk.widgetjs.hotspot-cls-telegraph",
-    "local.souldesk.widgetjs.hotspot-douyin",
-    "local.souldesk.widgetjs.hotspot-tou-tiao",
-    "local.souldesk.widgetjs.hotspot-weibo",
-    "local.souldesk.widgetjs.hotspot-zhihu"
+    "official.souldesk.hot-rank"
   ],
   "天气": [
     "local.souldesk.widgetjs.weather-large",

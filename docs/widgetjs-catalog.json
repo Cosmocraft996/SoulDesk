@@ -417,41 +417,6 @@
       "description": "追番小助手"
     },
     {
-      "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili",
-      "title": "bilibili热搜",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/bilibili",
-      "configPagePath": null,
-      "sourceLinks": [
-        "https://github.com/widget-js/hotspot"
-      ],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-bilibili",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-bilibili-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": true,
-        "sourceErrors": [],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      },
-      "description": "看看年轻人在B站搜什么"
-    },
-    {
       "upstreamId": "cn.widgetjs.widgets.hotspot.bilibili_rcmd",
       "title": "B站推荐",
       "package": "cn.widgetjs.widgets.hotspot",
@@ -518,74 +483,6 @@
         "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
       },
       "description": "每5分钟刷新一次"
-    },
-    {
-      "upstreamId": "cn.widgetjs.widgets.hotspot.douyin",
-      "title": "抖音热榜",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/douyin",
-      "configPagePath": null,
-      "sourceLinks": [
-        "https://github.com/widget-js/hotspot"
-      ],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-douyin",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-douyin-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": true,
-        "sourceErrors": [],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      },
-      "description": "抖音热榜"
-    },
-    {
-      "upstreamId": "cn.widgetjs.widgets.hotspot.tou_tiao",
-      "title": "头条热榜",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/tou_tiao",
-      "configPagePath": null,
-      "sourceLinks": [],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-tou-tiao",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。四份来源快照均真实取数并通过格式校验。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-tou-tiao-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": true,
-        "sourceErrors": [],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      },
-      "description": "今日头条热度榜单"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.clock.default",
@@ -1790,43 +1687,6 @@
       "description": "将照片贴在桌面上"
     },
     {
-      "upstreamId": "ccn.widgetjs.widgets.hotspot.weibo",
-      "title": "微博热搜",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/weibo",
-      "configPagePath": null,
-      "sourceLinks": [
-        "https://github.com/widget-js/hotspot"
-      ],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-weibo",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-weibo-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": false,
-        "sourceErrors": [
-          "DATA_UNAVAILABLE: 内容源HTTP 403 Forbidden"
-        ],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      },
-      "description": "微博热搜"
-    },
-    {
       "upstreamId": "widgetjs.cn.grid.default",
       "title": "文件收纳盒",
       "package": "widgetjs.cn.grid",
@@ -1983,43 +1843,6 @@
         "status": "source-and-offline-checked-awaiting-user-account-model-and-desktop"
       },
       "description": "用AI查找并分析职位信息、模拟面试、生成技能思维导图。"
-    },
-    {
-      "upstreamId": "cn.widgetjs.widgets.hotspot.zhihu",
-      "title": "知乎",
-      "package": "cn.widgetjs.widgets.hotspot",
-      "path": "/widget/zhihu",
-      "configPagePath": null,
-      "sourceLinks": [
-        "https://github.com/widget-js/hotspot"
-      ],
-      "remote": {
-        "entry": "https://widgetjs.cn/hotspot",
-        "hash": true,
-        "base": "/hotspot",
-        "hostname": "widgetjs.cn"
-      },
-      "permissions": [],
-      "webviewTag": false,
-      "status": "实现待验",
-      "sourceRepository": "widget-js/hotspot",
-      "sourceRevision": "cff331e104d8f991e5cd7aa1be164d0fb8c93cc9",
-      "souldeskId": "local.souldesk.widgetjs.hotspot-zhihu",
-      "notes": "保留原热点视图和固定来源；本批每款10项宿主检查（另有2项共同回收）通过，两阶段自然退出0，独立主题和重启通过。原接口不可用：DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized，页面明确提示；不当作数据成功。外部图片失败使用占位；真实链接、完整封面/视觉与鼠标仍未验。 2026-11-18公开内容缓存：标准包0.1.1，手动读取绕过已有结果，真实时间与失败保留；范围和检查见16，外部来源可用性及人工验收边界保持。",
-      "acceptance": {
-        "report": "artifacts/widgetjs-hotspot-zhihu-ui-checks.json",
-        "nativeChecks": 10,
-        "sharedBatchChecks": 2,
-        "batchReport": "artifacts/desktop-integration-widgetjs-hotspots-image-explorer-20261115.json",
-        "batchNativeChecks": 92,
-        "sha256": "e1e19142b9443a2c0b53abb7fd9aa8b87b9d35b1c7d5f6e5e3d8c270f9462869",
-        "sourceAvailable": false,
-        "sourceErrors": [
-          "DATA_UNAVAILABLE: 内容源HTTP 401 Unauthorized"
-        ],
-        "scope": "真实源状态与程序化主题/恢复分别验收；不等于九源全部可用或完整视觉"
-      },
-      "description": "知乎热榜与日报"
     },
     {
       "upstreamId": "cn.widgetjs.widgets.dynamic_island",
