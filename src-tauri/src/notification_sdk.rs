@@ -40,6 +40,9 @@ impl Request {
         request.request_id = Uuid::parse_str(&request.request_id)
             .map_err(|_| "INVALID_ARGUMENT: 请求标识须为 UUID")?
             .to_string();
+        if request.kind == NoticeKind::MarketAlert {
+            return Err("CAPABILITY_DENIED: 行情通知仅由宿主价格警报产生".into());
+        }
         if request.kind == NoticeKind::Call {
             if request.preset.is_none()
                 || request.title.is_some()
@@ -293,13 +296,15 @@ mod tests {
         assert!(send(&mut engine, &store, &source, conflict, 2).is_err());
         send(&mut engine, &store, &source, request("success"), 3).unwrap();
         send(&mut engine, &store, &source, request("warning"), 4).unwrap();
-        let first = engine.target(Surface::Notice).unwrap();
-        assert_eq!(engine.notification().unwrap().kind, NoticeKind::Info);
+        let first = engine.notice_target(first["id"].as_str().unwrap()).unwrap();
+        assert_eq!(engine.notification().unwrap().kind, NoticeKind::Warning);
+        assert_eq!(engine.visible().count(), 3);
         engine
             .act(&store, &first, &first.event, Action::Dismiss, clock(5))
             .unwrap();
         engine.show_queued(&store, clock(5)).unwrap();
-        assert_eq!(engine.notification().unwrap().kind, NoticeKind::Success);
+        assert_eq!(engine.notification().unwrap().kind, NoticeKind::Warning);
+        assert_eq!(engine.visible().count(), 2);
         widgets::remove_instance(&store, &widgets::Sessions::default(), &source).unwrap();
         engine
             .tick(&store, clock(7), false, &mut || unreachable!())

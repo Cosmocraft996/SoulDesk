@@ -91,7 +91,14 @@ impl Engine {
             let state = self
                 .states
                 .get(&rule.id)
-                .filter(|(rev, _)| *rev == rule.revision)
+                // 保存时只有触发参数变更会把持久化状态重置为未初始化。
+                // 渠道和名称变更可保留同一进程内的上一笔基准。
+                .filter(|(revision, state)| {
+                    loaded.initialized
+                        && loaded.sequence == state.sequence
+                        && (*revision == rule.revision
+                            || rule.condition == alerts::Condition::Cross)
+                })
                 .map(|(_, state)| state)
                 .unwrap_or(&loaded);
             let result = alerts::evaluate(&rule, state, quote, context)?;
@@ -116,7 +123,14 @@ impl Engine {
                 .map_err(err)?;
             }
             if let Some(event) = result.event {
-                tx.execute("INSERT INTO alert_events(id,rule_id,revision,sequence,event,created,notification,sound) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![event.id,event.rule_id,event.revision,event.sequence,serde_json::to_string(&event).map_err(err)?,event.created_utc_ms,if event.notification {"pending"}else{"suppressed"},if event.sound {"pending"}else{"suppressed"}]).map_err(err)?;
+                let sound = if event.notification
+                    && event.notification_channel == alerts::NotificationChannel::Island
+                {
+                    "island"
+                } else {
+                    "suppressed"
+                };
+                tx.execute("INSERT INTO alert_events(id,rule_id,revision,sequence,event,created,notification,sound) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![event.id,event.rule_id,event.revision,event.sequence,serde_json::to_string(&event).map_err(err)?,event.created_utc_ms,if event.notification {"pending"}else{"suppressed"},sound]).map_err(err)?;
                 events.push(event);
             }
             updates.push((rule.id, (rule.revision, result.state)));
@@ -166,15 +180,34 @@ pub fn list_events(store: &Store, offset: u64, limit: u32) -> AppResult<Vec<Valu
     .collect()
 }
 
+pub(crate) fn notification_event(store: &Store, id: &str) -> AppResult<AlertEvent> {
+    let db = store.db.lock().map_err(err)?;
+    let raw: String = db
+        .query_row("SELECT event FROM alert_events WHERE id=?1", [id], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(err)?
+        .ok_or("该警报已经找不到")?;
+    let event: AlertEvent = serde_json::from_str(&raw).map_err(err)?;
+    if event.id != id || !event.notification {
+        return Err("该警报没有通知入口".into());
+    }
+    event.key.validate()?;
+    Ok(event)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Channel {
     Notification,
+    #[cfg(test)]
     Sound,
 }
 impl Channel {
     fn column(self) -> &'static str {
         match self {
             Self::Notification => "notification",
+            #[cfg(test)]
             Self::Sound => "sound",
         }
     }
@@ -200,7 +233,14 @@ pub fn finish_delivery(
     let column = channel.column();
     let (status, error) = match outcome {
         Ok(()) => ("sent", None),
-        Err(message) if message == crate::reminder_store::WINDOWS_DISABLED => ("suppressed", None),
+        Err(message)
+            if matches!(
+                message.as_str(),
+                crate::reminder_store::WINDOWS_DISABLED | crate::alert_notice::ISLAND_SUPPRESSED
+            ) =>
+        {
+            ("suppressed", None)
+        }
         Err(message) => (
             "failed",
             Some(message.chars().take(500).collect::<String>()),
@@ -257,11 +297,14 @@ pub fn retry_delivery(store: &Store, id: &str, channel: Channel) -> AppResult<()
 }
 pub fn pending_deliveries(store: &Store, now: u64) -> AppResult<Vec<AlertEvent>> {
     let db = store.db.lock().map_err(err)?;
-    for column in ["notification", "sound"] {
-        // 主动重试由用户明确发起，允许重新递送较早历史。
-        db.execute(&format!("UPDATE alert_events SET {column}='expired' WHERE {column}='pending' AND created<?1 AND coalesce({column}_error,'')!='用户主动重试'"),[now.saturating_sub(120_000)]).map_err(err)?;
-    }
-    let mut query=db.prepare("SELECT event FROM alert_events WHERE (notification='pending' AND notification_attempts<3) OR (sound='pending' AND sound_attempts<3) ORDER BY created,rowid LIMIT 50").map_err(err)?;
+    // 已生成但尚未播出的旧版独立提示音停止排队，历史结果照常保留。
+    db.execute(
+        "UPDATE alert_events SET sound='suppressed',sound_error=NULL WHERE sound='pending'",
+        [],
+    )
+    .map_err(err)?;
+    db.execute("UPDATE alert_events SET notification='expired' WHERE notification='pending' AND created<?1 AND coalesce(notification_error,'')!='用户主动重试'",[now.saturating_sub(120_000)]).map_err(err)?;
+    let mut query=db.prepare("SELECT event FROM alert_events WHERE notification='pending' AND notification_attempts<3 ORDER BY created,rowid LIMIT 50").map_err(err)?;
     let rows = query
         .query_map([], |r| r.get::<_, String>(0))
         .map_err(err)?;
@@ -373,6 +416,8 @@ mod tests {
     }
     fn rule() -> Rule {
         Rule {
+            condition: Default::default(),
+            notification_channel: Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             revision: 1,
             name: "持久化测试".into(),
@@ -408,6 +453,47 @@ mod tests {
             },
         )
     }
+    #[test]
+    fn old_json_and_notification_channel_edits_preserve_trigger_state() {
+        let legacy = serde_json::to_value(rule()).unwrap();
+        assert!(legacy.get("condition").is_none() && legacy.get("notificationChannel").is_none());
+        let legacy: Rule = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.condition, alerts::Condition::Reach);
+        assert_eq!(
+            legacy.notification_channel,
+            alerts::NotificationChannel::Windows
+        );
+
+        let root =
+            std::env::temp_dir().join(format!("souldesk-alert-channel-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root).unwrap();
+        let mut crossing = Rule {
+            condition: alerts::Condition::Cross,
+            cooldown_ms: 0,
+            ..legacy
+        };
+        save_rule(&store, &crossing, None).unwrap();
+        let mut engine = Engine::default();
+        let (observation, context) = quote(&crossing, "99", 0);
+        assert!(engine
+            .process(&store, &observation, context)
+            .unwrap()
+            .is_empty());
+        crossing.revision += 1;
+        crossing.notification_channel = alerts::NotificationChannel::Island;
+        save_rule(&store, &crossing, Some(1)).unwrap();
+        let (observation, context) = quote(&crossing, "100", 100);
+        let events = engine.process(&store, &observation, context).unwrap();
+        assert_eq!(events.len(), 1);
+        let event = notification_event(&store, &events[0].id).unwrap();
+        assert_eq!(event.reason, alerts::Reason::Crossed);
+        assert_eq!(
+            event.notification_channel,
+            alerts::NotificationChannel::Island
+        );
+        assert_eq!(event.revision, 2);
+    }
+
     #[test]
     fn state_and_event_commit_together_and_once_does_not_replay_on_restart() {
         let root =

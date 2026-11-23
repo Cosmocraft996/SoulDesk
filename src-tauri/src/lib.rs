@@ -2,6 +2,7 @@ mod ai_credentials;
 mod ai_host;
 mod ai_protocol;
 mod ai_transport;
+mod alert_notice;
 mod alert_store;
 pub mod alerts;
 mod asset_permissions;
@@ -48,6 +49,7 @@ mod keyboard_host;
 mod labor;
 mod launcher;
 pub mod market;
+mod market_history;
 mod media;
 pub mod network;
 mod notification_sdk;
@@ -253,15 +255,37 @@ async fn snapshot(
         json!(core.store.preference("widget_backdrop").as_deref() == Some("true"));
     value["appTheme"] = json!(AppTheme::stored(&core.store).id());
     value["updates"] = updates::snapshot(&app)?;
-    value["autostart"] = json!(windows::autostart_enabled().ok());
+    value["autostart"] = json!(
+        if core.integration.is_none() && core.verification.is_none() {
+            windows::autostart_enabled().ok()
+        } else {
+            None
+        }
+    );
+    value["silentStartup"] = json!(windows::silent_startup(&core.store));
     value["windowTasks"] = json!(core.window_tasks.load(Ordering::Relaxed));
     value["trialCount"] = json!(core.trials.lock().map_err(err)?.len());
-    value["diagnostics"] = json!({"ticks":core.ticks.load(Ordering::Relaxed),"tasks":core.active_tasks.load(Ordering::Relaxed),"sessions":core.sessions.0.lock().map_err(err)?.len(),"views":app.webview_windows().len(),"error":core.last_error.lock().map_err(err)?.clone(),"dataRoot":core.store.root,"shortcut":core.store.preference("shortcut").unwrap_or("Ctrl+Alt+Space".into()),"docked":core.visibility.lock().map_err(err)?.docked});
+    value["diagnostics"] = json!({"ticks":core.ticks.load(Ordering::Relaxed),"tasks":core.active_tasks.load(Ordering::Relaxed),"sessions":core.sessions.0.lock().map_err(err)?.len(),"views":app.webview_windows().len(),"error":core.last_error.lock().map_err(err)?.clone(),"dataRoot":core.store.root,"shortcut":panel_shortcut(&core.store),"docked":core.visibility.lock().map_err(err)?.docked});
     Ok(value)
 }
 #[tauri::command]
-async fn set_autostart(enabled: bool) -> AppResult<()> {
-    windows::set_autostart(enabled)
+async fn set_autostart(
+    app: AppHandle,
+    enabled: Option<bool>,
+    silent: Option<bool>,
+) -> AppResult<()> {
+    let core = app.state::<Core>();
+    match (enabled, silent) {
+        (Some(enabled), None) if core.integration.is_none() && core.verification.is_none() => {
+            windows::set_autostart(enabled)
+        }
+        (Some(_), None) => Err("隔离环境无法更改 Windows 开机启动项".into()),
+        (None, Some(silent)) => core.store.save_preference(
+            windows::SILENT_STARTUP,
+            if silent { "true" } else { "false" },
+        ),
+        _ => Err("请一次修改一项启动设置".into()),
+    }
 }
 
 #[tauri::command]
@@ -758,6 +782,35 @@ async fn widget_request(
                 .ok_or("SESSION_EXPIRED: 无有效展示会话")?;
             s.instance.clone()
         };
+        if method == "view.resizeMarket" {
+            widgets::require_capability(
+                &core.store,
+                &core.sessions,
+                window.label(),
+                &token,
+                "market.chart",
+            )?;
+            if window.label().starts_with("detail-")
+                || args.as_object().is_none_or(|value| value.len() != 1)
+            {
+                return Err("INVALID_ARGUMENT: 仅主组件可选择尺寸".into());
+            }
+            let (width, height) = match args["size"].as_str() {
+                Some("small") => (320, 380),
+                Some("medium") => (430, 460),
+                Some("large") => (540, 530),
+                _ => return Err("INVALID_ARGUMENT: 组件尺寸无效".into()),
+            };
+            let handle = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                windows::serialized(&handle, |app| {
+                    windows::resize_instance(app, &id, width, height)
+                })
+            })
+            .await
+            .map_err(err)??;
+            return Ok(Value::Null);
+        }
         let page = args["page"].as_str().unwrap_or("quotes").to_owned();
         if window.label().starts_with("pomodoro-window-") {
             if !matches!(
@@ -921,16 +974,15 @@ async fn business_settings(
             let config = config.ok_or("INVALID_ARGUMENT: 缺少网络配置")?;
             let network = business::resolve_network(&config)?;
             core.store.save_preference("network", &config.to_string())?;
-            core.business.feed.desired.send_modify(|d| {
-                d.network = network;
-                d.reconnect += 1;
-            });
+            for feed in [&core.business.feed, &core.business.spot] {
+                feed.desired.send_modify(|d| d.network = network.clone());
+            }
             core.business.network_ready.store(true, Ordering::Release);
-            core.business.feed.reconnect();
+            core.business.reconnect();
             Ok(Value::Null)
         }
         "reconnect" => {
-            core.business.feed.reconnect();
+            core.business.reconnect();
             Ok(Value::Null)
         }
         "backup" => Ok(json!(core.store.backup()?)),
@@ -1266,6 +1318,12 @@ fn panel_shortcut_enabled(store: &Store) -> bool {
     store.preference("panel_shortcut_enabled").as_deref() != Some("false")
 }
 
+pub(crate) fn panel_shortcut(store: &Store) -> String {
+    store
+        .preference("shortcut")
+        .unwrap_or_else(|| "Shift+Space".into())
+}
+
 fn register_panel_shortcut(app: &AppHandle, value: &str) -> AppResult<()> {
     let shortcuts = app.global_shortcut();
     if shortcuts.is_registered(value) {
@@ -1287,10 +1345,7 @@ fn register_panel_shortcut(app: &AppHandle, value: &str) -> AppResult<()> {
 #[tauri::command]
 fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) -> AppResult<()> {
     let core = app.state::<Core>();
-    let old = core
-        .store
-        .preference("shortcut")
-        .unwrap_or("Ctrl+Alt+Space".into());
+    let old = panel_shortcut(&core.store);
     let available = panel_shortcut_available(&core);
     let was_enabled = panel_shortcut_enabled(&core.store);
     let registered = core.panel_shortcut_registered.load(Ordering::Relaxed);
@@ -1327,7 +1382,7 @@ fn set_shortcut(app: AppHandle, value: Option<String>, enabled: Option<bool>) ->
     };
     let key = value
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
-        .map_err(|_| "快捷键格式无效，例如 Ctrl+Alt+Space".to_string())?;
+        .map_err(|_| "快捷键格式无效，例如 Shift+Space".to_string())?;
     let same_key = old
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
         .is_ok_and(|old| old == key);
@@ -1401,34 +1456,6 @@ fn deliver_notification(app: &AppHandle) -> AppResult<&'static str> {
     Ok("sent")
 }
 
-#[cfg(windows)]
-fn alert_notification(app: &AppHandle, event: &alerts::AlertEvent) -> AppResult<()> {
-    reminder_store::ensure_windows_enabled(&app.state::<Core>().store)?;
-    let kind = if event.key.price_kind == alerts::PriceKind::Last {
-        "最新成交价 Last"
-    } else {
-        "标记价格 Mark"
-    };
-    let direction = if event.direction == alerts::Direction::Up {
-        "达到或高于"
-    } else {
-        "达到或低于"
-    };
-    tauri_winrt_notification::Toast::new(&app.config().identifier)
-        .title(&format!("SoulDesk · {}", event.rule_name))
-        .text1(&format!("币安 USD-M {} · {kind}", event.key.symbol))
-        .text2(&format!(
-            "{} {direction} {}",
-            event.observed_price, event.threshold
-        ))
-        .sound(None)
-        .show()
-        .map_err(err)
-}
-#[cfg(not(windows))]
-fn alert_notification(_app: &AppHandle, _event: &alerts::AlertEvent) -> AppResult<()> {
-    Err("当前平台未验证实际警报通知适配器".into())
-}
 #[cfg(not(windows))]
 fn deliver_notification(app: &AppHandle) -> AppResult<&'static str> {
     if !reminder_store::Channel::Windows.enabled_in(&app.state::<Core>().store)? {
@@ -1589,13 +1616,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let network = business::resolve_network(&config);
     let initial_error = network.as_ref().err().cloned();
     let network_ready = network.is_ok();
-    let (feed, market_rx, market_tx, market_inputs) =
-        market::Feed::new(network.unwrap_or(network::NetworkConfig::Direct));
+    let network = network.unwrap_or(network::NetworkConfig::Direct);
+    let (feed, market_rx, market_tx, market_inputs) = market::Feed::new(network.clone());
+    let (spot, spot_rx, spot_tx, spot_inputs) = market::Feed::for_market(network, "spot");
     let hidden = store.preference("hidden_all").as_deref() == Some("true");
     let panel_locked = store.preference("panel_locked").as_deref() == Some("true");
-    let shortcut = store
-        .preference("shortcut")
-        .unwrap_or("Ctrl+Alt+Space".into());
+    let shortcut = panel_shortcut(&store);
     app.manage(Core {
         ai: Default::default(),
         assistant: Default::default(),
@@ -1603,6 +1629,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         clipboard: Default::default(),
         business: business::Service {
             feed,
+            spot,
+            charts: Default::default(),
             subscriptions: Default::default(),
             network_ready: AtomicBool::new(network_ready),
         },
@@ -1651,12 +1679,31 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "panel", "切换组件面板", true, None::<&str>)?;
     let assistant = MenuItem::with_id(app, "assistant", "网页 AI 助手", true, None::<&str>)?;
+    let island_visibility = MenuItem::with_id(
+        app,
+        "island-visibility",
+        "切换灵动通知显隐",
+        true,
+        None::<&str>,
+    )?;
+    let island_mute =
+        MenuItem::with_id(app, "island-mute", "切换灵动通知静音", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 SoulDesk", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&show, &panel, &assistant, &restore, &hide, &settings, &quit],
+        &[
+            &show,
+            &panel,
+            &assistant,
+            &island_visibility,
+            &island_mute,
+            &restore,
+            &hide,
+            &settings,
+            &quit,
+        ],
     )?;
     let mut pixels = vec![0u8; 32 * 32 * 4];
     for y in 0..32 {
@@ -1692,6 +1739,15 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             {
                 return;
             }
+            let island_control = match action.as_str() {
+                "island-visibility" => Some(reminder_host::IslandControl::Visibility),
+                "island-mute" => Some(reminder_host::IslandControl::Mute),
+                _ => None,
+            };
+            if let Some(control) = island_control {
+                control.dispatch(app, None);
+                return;
+            }
             if action == "quit" {
                 let _ = app.state::<Core>().pomodoro_windows.service.stop();
                 app.state::<Core>().jobs.stop_memory();
@@ -1720,6 +1776,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .store(registered, Ordering::Relaxed);
     }
     let normal_run = core.integration.is_none() && core.verification.is_none();
+    if normal_run {
+        if let Err(error) = core.reminders.register_island_shortcuts(app.handle()) {
+            core.log_error(&error);
+        }
+    }
     #[cfg(windows)]
     if normal_run
         || core
@@ -1752,6 +1813,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(1));
+        let mut monitor_job: Option<tauri::async_runtime::JoinHandle<()>> = None;
         loop {
             timer.tick().await;
             if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
@@ -1759,28 +1821,51 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
             crate::component_lifecycle::tick(&handle);
             let tick = handle.state::<Core>().ticks.fetch_add(1, Ordering::Relaxed);
-            if tick % 2 == 0 {
-                windows::dispatch(&handle, windows::monitor_changes);
+            // 巡检读取的是当前状态，窗口线程阻塞时无需补跑已经错过的轮次。
+            if tick % 2 == 0
+                && monitor_job
+                    .as_ref()
+                    .is_none_or(|job| job.inner().is_finished())
+            {
+                monitor_job = Some(windows::dispatch(&handle, windows::monitor_changes));
             }
         }
     });
-    if std::env::args().any(|a| a == "--show") {
+    if args.iter().any(|a| a == "--show") {
         windows::show(app.handle(), true)?;
+    } else if normal_run && !windows::silent_startup(&core.store) {
+        windows::dispatch(app.handle(), |app| windows::show(app, false));
     }
+    alert_notice::activate_argument(app.handle(), std::env::args().skip(1));
     verification::start(app.handle());
     integration::start(app.handle());
     if app
         .state::<Core>()
         .integration
         .as_ref()
-        .is_none_or(|c| !c.standalone_check())
+        .is_none_or(|c| !c.standalone_check() || c.market_check())
         && app
             .state::<Core>()
             .verification
             .as_ref()
             .is_none_or(|c| c.g2)
     {
-        business::start(app.handle(), market_rx, market_tx, market_inputs);
+        let core = app.state::<Core>();
+        business::start_feed(
+            app.handle(),
+            core.business.feed.clone(),
+            market_rx,
+            market_tx,
+            market_inputs,
+        );
+        business::start_feed(
+            app.handle(),
+            core.business.spot.clone(),
+            spot_rx,
+            spot_tx,
+            spot_inputs,
+        );
+        business::start(app.handle());
     }
     Ok(())
 }
@@ -1884,6 +1969,7 @@ pub fn run() {
             if args.iter().any(|a| a == "--show") {
                 windows::dispatch(app, |app| windows::show(app, true));
             }
+            alert_notice::activate_argument(app, args.into_iter());
         }));
     }
     builder

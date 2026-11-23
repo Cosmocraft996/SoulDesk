@@ -2,7 +2,9 @@
 /* 桌面与面板的组件填满窗口，宿主操作浮在内容之上。 */
 .widget-surface {
   --surface-control-bg: rgb(37 44 47 / .95);
-  --surface-control-inset: min(90px, 37%);
+  --surface-control-size: 26px;
+  --surface-control-gap: 4px;
+  --surface-toolbar-left: calc(5px + var(--surface-control-size) + var(--surface-control-gap));
   height: 100%;
   position: relative;
   overflow: hidden;
@@ -28,18 +30,17 @@
 .icon-button:hover{background:#ffffff15;color:#fff}
 .surface-chrome {
   position: absolute;
-  inset: 5px var(--surface-control-inset) auto 5px;
+  inset: 5px auto auto 5px;
   z-index: 6;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 4px;
+  gap: var(--surface-control-gap);
   pointer-events: none;
 }
 .surface-chrome, .widget-surface > .resize-handle { opacity: 0; transition: opacity .15s; }
 .widget-surface:is(:hover, :has(:focus-visible), .menu-open) > :is(.surface-chrome, .resize-handle) { opacity: 1; }
 .widget-surface:is(:hover, :has(:focus-visible), .menu-open) :is(.surface-chrome .icon-button, .resize-handle) { pointer-events: auto; }
-.surface-chrome .icon-button { width: 26px; height: 26px; color: #edf1ef; }
+.surface-chrome .icon-button { width: var(--surface-control-size); height: var(--surface-control-size); color: #edf1ef; }
 .surface-chrome .drag-handle, .surface-toolbar, .resize-handle.icon-button {
   background: var(--surface-control-bg);
   border-radius: 8px;
@@ -53,9 +54,9 @@
   position: absolute;
   z-index: 10;
   top: 35px;
-  right: var(--surface-control-inset);
+  left: var(--surface-toolbar-left);
   width: max-content;
-  max-width: calc(100% - 10px);
+  max-width: calc(100% - var(--surface-toolbar-left) - 5px);
   max-height: calc(100% - 40px);
   overflow: auto;
   padding: 5px;
@@ -80,7 +81,6 @@
 }
 /* 窄卡片保留移动分组和删除按钮，其余通用操作收进更多菜单。 */
 @container (width < 260px) {
-  .surface-chrome, .surface-menu { right: auto; left: 5px; }
   .surface-quick-actions [data-overflow] { display: none; }
   .surface-compact-actions { display: contents; }
   .surface-more[data-compact-only] { display: inline-flex; }

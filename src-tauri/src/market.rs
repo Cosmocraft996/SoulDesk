@@ -24,12 +24,18 @@ use tokio_util::sync::CancellationToken;
 pub struct Contract {
     pub symbol: String,
     pub base_asset: String,
+    pub quote_asset: String,
+    pub market: String,
     pub contract_type: String,
     pub status: String,
     pub tick_size: String,
 }
 
 pub fn parse_catalog(text: &str) -> AppResult<Vec<Contract>> {
+    parse_market_catalog(text, "usd_m")
+}
+
+fn parse_market_catalog(text: &str, market: &str) -> AppResult<Vec<Contract>> {
     let value: Value = serde_json::from_str(text).map_err(err)?;
     let symbols = value["symbols"]
         .as_array()
@@ -37,12 +43,16 @@ pub fn parse_catalog(text: &str) -> AppResult<Vec<Contract>> {
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for v in symbols {
-        if v["quoteAsset"] != "USDT"
-            || !matches!(
-                v["contractType"].as_str(),
-                Some("PERPETUAL" | "TRADIFI_PERPETUAL")
-            )
+        if market == "usd_m"
+            && (v["quoteAsset"] != "USDT"
+                || !matches!(
+                    v["contractType"].as_str(),
+                    Some("PERPETUAL" | "TRADIFI_PERPETUAL")
+                ))
         {
+            continue;
+        }
+        if market == "spot" && (v["isSpotTradingAllowed"] != true || v["status"] != "TRADING") {
             continue;
         }
         let symbol = v["symbol"]
@@ -60,11 +70,16 @@ pub fn parse_catalog(text: &str) -> AppResult<Vec<Contract>> {
         alerts::parse_price(tick)?;
         result.push(Contract {
             symbol: symbol.into(),
+            market: market.into(),
+            quote_asset: v["quoteAsset"]
+                .as_str()
+                .ok_or("PROTOCOL_CHANGED: 缺少计价资产")?
+                .into(),
             base_asset: v["baseAsset"]
                 .as_str()
                 .ok_or("PROTOCOL_CHANGED: 缺少基础资产")?
                 .into(),
-            contract_type: v["contractType"].as_str().unwrap().into(),
+            contract_type: v["contractType"].as_str().unwrap_or("SPOT").into(),
             status: v["status"]
                 .as_str()
                 .ok_or("PROTOCOL_CHANGED: 缺少合约状态")?
@@ -73,7 +88,7 @@ pub fn parse_catalog(text: &str) -> AppResult<Vec<Contract>> {
         });
     }
     if result.is_empty() {
-        return Err("DATA_UNAVAILABLE: 无有效USDT永续合约目录".into());
+        return Err("DATA_UNAVAILABLE: 无有效币安市场目录".into());
     }
     result.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     Ok(result)
@@ -103,6 +118,15 @@ pub fn parse_frame(
     text: &str,
     catalog: &[Contract],
     desired: &HashSet<MarketKey>,
+) -> AppResult<Option<Parsed>> {
+    parse_market_frame(text, catalog, desired, "usd_m")
+}
+
+fn parse_market_frame(
+    text: &str,
+    catalog: &[Contract],
+    desired: &HashSet<MarketKey>,
+    market: &str,
 ) -> AppResult<Option<Parsed>> {
     let value: Value = serde_json::from_str(text).map_err(err)?;
     if value.get("id").is_some() {
@@ -142,10 +166,10 @@ pub fn parse_frame(
     if event == "contractInfo" && data["st"] == 2 {
         return Ok(None);
     }
-    if data["st"] != 1 {
+    if market == "usd_m" && data["st"] != 1 || market == "spot" && data.get("st").is_some() {
         return Err("WRONG_MARKET: USD-M行情缺少或不匹配st=1".into());
     }
-    if event == "contractInfo" {
+    if market == "usd_m" && event == "contractInfo" {
         return Ok(Some(Parsed::ContractUpdate {
             symbol: symbol.into(),
             status: data["cs"]
@@ -154,10 +178,9 @@ pub fn parse_frame(
                 .into(),
         }));
     }
-    let contract = catalog
-        .iter()
-        .find(|c| c.symbol == symbol)
-        .ok_or("UNKNOWN_CONTRACT: 报价不在当前目录")?;
+    let Some(contract) = catalog.iter().find(|c| c.symbol == symbol) else {
+        return Err("UNKNOWN_CONTRACT: 报价不在当前目录".into());
+    };
     if contract.status != "TRADING" {
         return Ok(None);
     }
@@ -167,7 +190,7 @@ pub fn parse_frame(
         .ok_or("PROTOCOL_CHANGED: 缺少事件时间")?;
     let (kind, stream) = match data["e"].as_str() {
         Some("aggTrade") => (PriceKind::Last, "aggTrade"),
-        Some("markPriceUpdate") => (PriceKind::Mark, "markPrice@1s"),
+        Some("markPriceUpdate") if market == "usd_m" => (PriceKind::Mark, "markPrice@1s"),
         Some("24hrTicker") => {
             if !desired.iter().any(|k| k.symbol == symbol) {
                 return Ok(None);
@@ -191,7 +214,10 @@ pub fn parse_frame(
             return Err("WRONG_MARKET: 流名称与载荷不一致".into());
         }
     }
-    let key = MarketKey::binance(symbol, kind);
+    let key = MarketKey {
+        market: market.into(),
+        ..MarketKey::binance(symbol, kind)
+    };
     if !desired.contains(&key) {
         return Ok(None);
     }
@@ -228,6 +254,7 @@ pub struct Quote {
     pub source_utc_ms: u64,
     pub generation: u64,
     pub quality: String,
+    pub direction: Option<i8>,
     #[serde(skip)]
     received: u64,
 }
@@ -254,6 +281,7 @@ pub struct Desired {
     pub reconnect: u64,
 }
 pub struct Feed {
+    pub market: &'static str,
     queue: tokio::sync::mpsc::WeakSender<Input>,
     pub processing: Mutex<()>,
     pub desired: watch::Sender<Desired>,
@@ -276,6 +304,17 @@ impl Feed {
         mpsc::Sender<Input>,
         mpsc::Receiver<Input>,
     ) {
+        Self::for_market(network, "usd_m")
+    }
+    pub fn for_market(
+        network: NetworkConfig,
+        market: &'static str,
+    ) -> (
+        Arc<Self>,
+        watch::Receiver<Desired>,
+        mpsc::Sender<Input>,
+        mpsc::Receiver<Input>,
+    ) {
         let (desired, rx) = watch::channel(Desired {
             network,
             keys: HashSet::new(),
@@ -284,6 +323,7 @@ impl Feed {
         let (tx, inputs) = mpsc::channel(2048);
         (
             Arc::new(Self {
+                market,
                 queue: tx.downgrade(),
                 processing: Mutex::new(()),
                 desired,
@@ -299,15 +339,34 @@ impl Feed {
         )
     }
     pub fn snapshot(&self) -> AppResult<Value> {
+        self.snapshot_inner(None)
+    }
+    pub fn snapshot_for(&self, keys: &HashSet<MarketKey>) -> AppResult<Value> {
+        self.snapshot_inner(Some(keys))
+    }
+    fn snapshot_inner(&self, keys: Option<&HashSet<MarketKey>>) -> AppResult<Value> {
         let state = self.state.lock().map_err(err)?;
-        let mut v = serde_json::to_value(&*state).map_err(err)?;
+        let quotes = state
+            .quotes
+            .iter()
+            .filter(|q| keys.is_none_or(|keys| keys.contains(&q.key)))
+            .collect::<Vec<_>>();
+        let mut v = if let Some(keys) = keys {
+            let tickers = state
+                .tickers
+                .iter()
+                .filter(|(symbol, _)| {
+                    keys.iter().any(|key| {
+                        key.market == self.market && key.symbol.as_str() == symbol.as_str()
+                    })
+                })
+                .collect::<HashMap<_, _>>();
+            json!({"sessions":state.sessions,"quotes":quotes,"tickers":tickers,"status":state.status,"error":state.error,"generation":state.generation,"subscriptions":state.subscriptions,"received":state.received,"interruptions":state.interruptions,"queueOverflows":state.queue_overflows})
+        } else {
+            serde_json::to_value(&*state).map_err(err)?
+        };
         let mono = self.origin.elapsed().as_millis() as u64;
-        for (row, q) in v["quotes"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .zip(&state.quotes)
-        {
+        for (row, q) in v["quotes"].as_array_mut().unwrap().iter_mut().zip(quotes) {
             row["quality"] = json!(if state.status != "connected"
                 || q.generation != state.generation
             {
@@ -413,7 +472,16 @@ impl Default for Endpoints {
     }
 }
 pub async fn run(feed: Arc<Feed>, desired: watch::Receiver<Desired>, tx: mpsc::Sender<Input>) {
-    run_endpoints(feed, desired, tx, Endpoints::default()).await;
+    let endpoints = if feed.market == "spot" {
+        Endpoints {
+            time: "https://data-api.binance.vision/api/v3/time".into(),
+            catalog: "https://data-api.binance.vision/api/v3/exchangeInfo".into(),
+            ws: "wss://data-stream.binance.vision/stream".into(),
+        }
+    } else {
+        Endpoints::default()
+    };
+    run_endpoints(feed, desired, tx, endpoints).await;
 }
 async fn run_endpoints(
     feed: Arc<Feed>,
@@ -469,8 +537,10 @@ async fn connection(
         }
         let anchor = Instant::now();
         let source = source + latency / 2;
-        let catalog =
-            parse_catalog(&network::http_get(&config.network, &endpoints.catalog, &cancel).await?)?;
+        let catalog = parse_market_catalog(
+            &network::http_get(&config.network, &endpoints.catalog, &cancel).await?,
+            feed.market,
+        )?;
         Ok::<_, String>((source, anchor, catalog))
     };
     let (source, anchor, catalog) = tokio::select! {biased;_=feed.cancel.cancelled()=>return Err("CANCELLED".into()),_=desired.changed()=>return Ok(()),r=bootstrap=>r?};
@@ -492,7 +562,15 @@ async fn connection(
             .collect::<HashSet<_>>()
     };
     let mut keys = supported(&config.keys);
-    let mut active = streams(&keys);
+    let stream_set = |keys: &HashSet<MarketKey>| {
+        let mut set = streams(keys);
+        if feed.market == "spot" {
+            set.remove("!contractInfo");
+            set.remove("tradingSession");
+        }
+        set
+    };
+    let mut active = stream_set(&keys);
     if active.len() > 900 {
         return Err("LIMIT: 行情订阅超过900条".into());
     }
@@ -530,10 +608,10 @@ async fn connection(
     loop {
         tokio::select! {biased;
             _=feed.cancel.cancelled()=>return Err("CANCELLED".into()),
-            changed=desired.changed()=>{changed.map_err(err)?;let next=desired.borrow_and_update().clone();if next.network!=config.network||next.reconnect!=config.reconnect||next.keys.is_empty(){return Ok(());}keys=supported(&next.keys);target=streams(&keys);if target.len()>900{return Err("LIMIT: 行情订阅超过900条".into());}},
+            changed=desired.changed()=>{changed.map_err(err)?;let next=desired.borrow_and_update().clone();if next.network!=config.network||next.reconnect!=config.reconnect||next.keys.is_empty(){return Ok(());}keys=supported(&next.keys);target=stream_set(&keys);if target.len()>900{return Err("LIMIT: 行情订阅超过900条".into());}},
             _=controls.tick()=>{
                 if ack.as_ref().is_some_and(|(_,at)|at.elapsed()>Duration::from_secs(10)){return Err("SUBSCRIBE_TIMEOUT: 订阅确认超时".into());}
-                if ack.is_none()&&target!=active {let removed=active.difference(&target).cloned().collect::<Vec<_>>();let added=target.difference(&active).cloned().collect::<Vec<_>>();let(method,params)=if !removed.is_empty(){("UNSUBSCRIBE",removed)}else{("SUBSCRIBE",added)};request+=1;let id=format!("g{generation}-{request}");ws.send(Message::Text(json!({"method":method,"params":params,"id":id}).to_string().into())).await.map_err(err)?;ack=Some((id,Instant::now()));if method=="UNSUBSCRIBE"{for p in params{active.remove(&p);}}else{active.extend(params);}feed.state.lock().map_err(err)?.subscriptions=active.len();}
+                if ack.is_none()&&target!=active {let removed=active.difference(&target).cloned().collect::<Vec<_>>();let added=target.difference(&active).cloned().collect::<Vec<_>>();let(method,params)=if !removed.is_empty(){("UNSUBSCRIBE",removed)}else{("SUBSCRIBE",added)};request+=1;let id=format!("g{generation:x}r{request:x}");ws.send(Message::Text(json!({"method":method,"params":params,"id":id}).to_string().into())).await.map_err(err)?;ack=Some((id,Instant::now()));if method=="UNSUBSCRIBE"{for p in params{active.remove(&p);}}else{active.extend(params);}feed.state.lock().map_err(err)?.subscriptions=active.len();}
             },
             _=heartbeat.tick()=>{
                 if last_frame.elapsed()>Duration::from_secs(60){return Err("HEARTBEAT_TIMEOUT: 60秒未收到任何数据或心跳".into());}
@@ -547,18 +625,19 @@ async fn connection(
                     let v:Value=serde_json::from_str(&text).map_err(err)?;
                     if let Some(id)=v["id"].as_str(){if v.get("code").is_some(){return Err("SUBSCRIBE_FAILED: 交易所拒绝订阅".into());}if ack.as_ref().is_some_and(|(pending,_)|pending==id){ack=None;}continue;}
                     let mono=feed.origin.elapsed().as_millis() as u64;let source_now=source+anchor.elapsed().as_millis() as u64;
-                    match parse_frame(&text,&catalog,&keys)? {
+                    match parse_market_frame(&text,&catalog,&keys,feed.market)? {
                         Some(Parsed::Session{event,mut value})=>{value["generation"]=json!(generation);feed.state.lock().map_err(err)?.sessions.insert(event,value);},
                         Some(Parsed::ContractUpdate{symbol,status})=>{if catalog.iter().find(|c|c.symbol==symbol).is_none_or(|c|c.status!=status){return Ok(());}},
                         Some(Parsed::Ticker{symbol,value})=>{feed.state.lock().map_err(err)?.tickers.insert(symbol,value);},
                         Some(Parsed::Price{key,price,time,trade_id})=>{
                             if time>source_now.saturating_add(5000)||source_now.saturating_sub(time)>10000 {continue;}
-                            if last.get(&key).is_some_and(|(t,p,id,_)|time<*t||(time==*t&&price==*p)||trade_id.zip(*id).is_some_and(|(a,b)|a<=b)){continue;}
+                            if last.get(&key).is_some_and(|(t,p,id,_)|time<*t||(time==*t&&price==*p&&trade_id.is_none())||trade_id.zip(*id).is_some_and(|(a,b)|a<=b)){continue;}
                             let recovered=last.get(&key).is_none_or(|(_,_,_,at)|mono.saturating_sub(*at)>10_000);
+                            let direction=last.get(&key).filter(|_|!recovered).map(|(_,previous,_,_)| alerts::parse_price(&price).unwrap().cmp(&alerts::parse_price(previous).unwrap()) as i8);
                             last.insert(key.clone(),(time,price.clone(),trade_id,mono));ordinal+=1;
                             let input=Input{observation:Observation{key:key.clone(),price:price.clone(),source_utc_ms:time,received_mono_ms:mono,generation,ordinal,recovered,valid:true},context:Context{clock:Clock{utc_ms:now_ms(),mono_ms:mono},generation,source_now_utc_ms:source_now}};
                             if tx.try_send(input).is_err(){feed.state.lock().map_err(err)?.queue_overflows+=1;return Err("QUEUE_OVERFLOW: 警报输入队列已满，停止该代次并恢复".into());}
-                            let mut s=feed.state.lock().map_err(err)?;s.received+=1;s.source_now=Some(source_now);s.quotes.retain(|q|q.key!=key&&keys.contains(&q.key));s.quotes.push(Quote{key,price,source_utc_ms:time,generation,quality:"fresh".into(),received:mono});
+                            let mut s=feed.state.lock().map_err(err)?;s.received+=1;s.source_now=Some(source_now);s.quotes.retain(|q|q.key!=key&&keys.contains(&q.key));s.quotes.push(Quote{key,price,source_utc_ms:time,generation,quality:"fresh".into(),direction,received:mono});
                         },None=>{}
                     }
                 },_=>{}
@@ -570,6 +649,30 @@ async fn connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn spot_catalog_and_trade_keep_market_identity_and_do_not_admit_mark_prices() {
+        let data = json!({"symbols":[{"symbol":"BTCUSDT","baseAsset":"BTC","quoteAsset":"USDT","status":"TRADING","isSpotTradingAllowed":true,"filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"}]}]});
+        let catalog = parse_market_catalog(&data.to_string(), "spot").unwrap();
+        let key = MarketKey::spot("BTCUSDT");
+        assert!(MarketKey {
+            price_kind: PriceKind::Mark,
+            ..key.clone()
+        }
+        .validate()
+        .is_err());
+        let desired = HashSet::from([key.clone()]);
+        let frame = json!({"stream":"btcusdt@aggTrade","data":{"e":"aggTrade","E":1100,"T":1090,"s":"BTCUSDT","a":7,"p":"20.1"}});
+        assert!(
+            matches!(parse_market_frame(&frame.to_string(),&catalog,&desired,"spot").unwrap(),Some(Parsed::Price {key:observed,time:1090,trade_id:Some(7),..}) if observed==key)
+        );
+        assert!(parse_frame(&frame.to_string(), &catalog, &desired).is_err());
+        let mut wrong = frame.clone();
+        wrong["data"]["st"] = json!(1);
+        assert!(parse_market_frame(&wrong.to_string(), &catalog, &desired, "spot").is_err());
+        let mut wrong = frame;
+        wrong["stream"] = json!("ethusdt@aggTrade");
+        assert!(parse_market_frame(&wrong.to_string(), &catalog, &desired, "spot").is_err());
+    }
     #[tokio::test]
     async fn queue_depth_tracks_enqueued_and_consumed_observations_without_keeping_sender_alive() {
         let (feed, _, tx, mut rx) = Feed::new(NetworkConfig::Direct);
@@ -797,6 +900,7 @@ mod tests {
                 source_utc_ms: 1,
                 generation: 1,
                 quality: "fresh".into(),
+                direction: None,
                 received: 0,
             });
         }
@@ -809,6 +913,8 @@ mod tests {
         vec![Contract {
             symbol: "BTCUSDT".into(),
             base_asset: "BTC".into(),
+            quote_asset: "USDT".into(),
+            market: "usd_m".into(),
             contract_type: "PERPETUAL".into(),
             status: "TRADING".into(),
             tick_size: "0.1".into(),

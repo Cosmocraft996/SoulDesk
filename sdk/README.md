@@ -93,10 +93,17 @@ API Host仅接受用户专属`*.qweatherapi.com`的HTTPS默认端口，不含路
 
 | 清单能力 | 接口 |
 |---|---|
-| `market.read` | `market.catalog`、`watchlist.get/set`、`market.subscribe/unsubscribe/poll` |
+| `market.read` | `market.catalog`、`market.instruments`、`watchlist.get/set`、`watchlist.getItems/setItems`、`market.subscribe/unsubscribe/poll`、`market.preferences` |
+| `market.chart` | `market.candles/openInterest`、行情详情页、`view.resizeMarket` |
 | `alerts.manage` | `alerts.list/save/delete/history/retry` |
 
 行情键为 `{exchange:'binance',market:'usd_m',symbol:'BTCUSDT',priceKind:'last'|'mark'}`。价格、阈值和步长均为字符串。`watchlist.set` 替换本实例有序列表，最多20项，后台持续保留Last/Mark消费者；规则是独立宿主对象，不随实例删除。
+
+现货使用 `market:'spot'`，仅支持 `priceKind:'last'`。`market.instruments` 合并两个独立目录并返回 `market`、`symbol`、`baseAsset`、`quoteAsset`、`contractType`、`status` 和 `tickSize`。`watchlist.getItems/setItems` 读写 `{market,symbol,alias?}` 的有序数组，最多20项，兼容旧有纯合约列表。订阅快照新增 `marketStatus` 和以 `market:symbol` 索引的 `marketTickers`，保留旧 `tickers` 的永续索引。新鲜报价的 `direction` 为 `-1/0/1`，首次或恢复后尚无有效前一笔时为 `null`。
+
+`market.candles/openInterest` 接收 `{key,interval,limit,endTime?}`，最多500项，返回 `{key,interval,rows}`。K 线提供开高低收、开收时间、成交量，标记价的成交量为 `null`。未平仓量仅用于 USDT 永续，最短5分钟，按交易所提供的时间点返回 `{time,value}`。请求经宿主网络配置读取固定币安公开接口，共用短期缓存和并发控制。历史数据仅用于展示，警报仍由实时新鲜报价驱动。
+
+`market.preferences` 原子更新已声明的 `layout`、`rangeHours` 或 `maPeriods` 字段。`view.openDetails({page:'market-chart:spot:BTCUSDT'})` 或 `market-chart:usd_m:BTCUSDT` 打开该实例的独立行情详情。`view.resizeMarket({size:'small'|'medium'|'large'})` 只接受固定尺寸并按当前主组件归属保存布局。后台价格规则没有总条数上限，同一来源的规则共享相同订阅，市场连接仍受独立源流容量限制。
 
 ```javascript
 const stop = await host.subscribe([
@@ -110,9 +117,11 @@ await stop(); // 仅释放当前会话的本次临时订阅。
 
 SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器最多每秒4次拉取合并快照并转送。页面计时器只更新展示，行情连接和规则判断在Rust后台。会话销毁后临时订阅回收，不影响持久自选或规则。
 
-`alerts.save` 参数为 `{rule,expectedRevision}`。新建revision=1、expectedRevision=null；编辑传旧版本号，并把revision加1。过期编辑明确冲突。`alerts.list` 返回 `{rule,state}` 列表；保存前必须提示首次启用或业务条件修改后已满足会提醒一次。仅改名称或通知策略不重新武装。
+`alerts.save` 参数为 `{rule,expectedRevision}`。新建 `revision=1`、`expectedRevision=null`，编辑传旧版本号，并把 `revision` 加 1。过期编辑明确冲突。`alerts.list` 返回 `{rule,state}` 列表。
 
-`alerts.history` 使用offset/limit（最多100），返回逻辑事件、两个独立渠道的状态/尝试次数/错误。`alerts.retry` 接收同一事件id及channel=`notification`或`sound`，仅对failed/unknown/expired执行，每渠道累计最多3次。sent不等于用户实际看到；不确定结果不得显示为失败后自动重播。
+`condition` 默认 `reach`（到价），首次启用或触发参数变化后，第一笔有效报价已满足时提醒一次。选填 `cross`（穿越）时，`direction` 指定方向且 `cooldownMs` 须为 0。穿越在同一连接代次的连续有效报价中判断，首笔和重连后首笔仅建立基准。仅改名称或通知策略不重新武装。
+
+`notification: true` 开启弹窗，`notificationChannel` 默认 `windows`，也可选 `island`。灵动行情铃声由宿主设置统一管理，旧 `sound` 字段保留用于读取已有规则。`alerts.history` 使用 `offset/limit`（最多 100），返回触发原因及递送结果。灵动行情事件的 `sound: 'island'` 表示由灵动通知管理。`alerts.retry` 接收事件 ID 及 `channel: 'notification'`，对失败、结果不确定或过期的弹窗累计最多尝试 3 次。`sent` 表示系统调用成功或灵动队列已受理。
 
 隐藏试加载只接收隔离配置和存储。组件应在 `host.preview` 为true时跳过真实行情/警报和公开内容，先完成静态界面初始化，再 `await host.ready()`。本地表单的提交事件已允许；内容安全策略仍禁止表单导航和网页直接请求外部接口，HTTPS图片仅向声明内容能力的包开放。确认交互使用HTML `dialog`；容器不开放原生alert/confirm/prompt。
 
@@ -311,6 +320,8 @@ if (!host.preview) {
 | `call` | `preset` 为 `squidward\|tea\|pill\|study` | 使用内置头像与音频，支持接听重试或挂断 |
 
 每种类型都需要 UUID `requestId`，同一事件重试应复用原 ID 与完整参数。标题不超过 80 字符，正文不超过 200 字符。`targetAt` 是未来一小时内的 Unix 毫秒时间，仅用于倒计时显示。`accepted` 返回 `id/channel`，关闭渠道、隐藏全部或来电开关关闭时返回 `suppressed`。试加载、缺少权限、错误参数或达到限额时返回错误。宿主在当前进程保留最多 5 分钟的回执，同一实例每 30 秒最多受理 5 个新请求。胶囊队列最多等候 16 条，排队满 45 秒或目标时间已过会跳过。已受理的即时通知由宿主处理，定时业务仍通过已有的专用后台接口注册。
+
+灵动通知每类最多显示 3 条，合计最多显示 6 条。可见通知从上到下依次按来电、错误、警告、双按钮提醒、实时倒计时、倒计时预告、成功、普通信息排序，同类按进入顺序排列。空出位置后优先补入可显示的高优先级项。宿主只播放一通来电的声音，结束后再播放下一通。通知记录由宿主本地保存，队列中的待显示项可从「更多」查看。
 
 ## 旧灵动通知、久坐和来电提醒
 

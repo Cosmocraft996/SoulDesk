@@ -1,1 +1,23 @@
-*{box-sizing:border-box}html,body,#root,.surface{margin:0;width:100%;height:100%;overflow:hidden}html{font:16px/1.4 "Microsoft YaHei",sans-serif;background:transparent}button,input{font-family:inherit}.surface{position:relative;background:transparent}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+html { font: 16px/1.4 "Microsoft YaHei", sans-serif; background: transparent; }
+button { font-family: inherit; }
+.surface { display: flex; flex-direction: column; height: 100%; overflow: hidden auto; scrollbar-width: none; }
+.island-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  gap: 12px;
+  width: min(310px, 100%);
+  margin-inline: auto;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 20px;
+  background: #171719;
+  color: #f4f4f4;
+  cursor: pointer;
+}
+.island-more:hover { background: #262629; }
+.island-more strong { white-space: nowrap; }
+.island-more span { color: #c9c9ce; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

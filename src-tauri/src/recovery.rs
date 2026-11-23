@@ -213,6 +213,8 @@ pub async fn run(report: std::path::PathBuf, sleep_mode: bool) -> AppResult<()> 
         return Err("不足20个可验证合约".into());
     }
     let rule = Rule {
+        condition: Default::default(),
+        notification_channel: Default::default(),
         id: uuid::Uuid::new_v4().to_string(),
         revision: 1,
         name: "传输中断去重验证".into(),

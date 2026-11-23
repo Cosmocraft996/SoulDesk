@@ -190,3 +190,13 @@
 .app-theme-sample i { border-radius: 3px; background: var(--app-card); border: 1px solid var(--app-line); }
 .app-theme-sample i:last-child { border: 0; background: var(--app-accent); width: 66%; }
 .settings-panel.app-theme-settings > p { margin: 10px 0 0; }
+.notification-tone select { width: min(19rem, 100%); }
+.island-level input { width: min(14rem, 45%); }
+.island-level output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.notification-history { list-style: none; padding: 0; max-height: 320px; overflow-y: auto; }
+.notification-history li { padding: 10px 4px; overflow-wrap: anywhere; }
+.notification-history li + li { border-top: 1px solid var(--border, #6665); }
+.notification-history li[aria-current] { background: var(--button-bg, #9992); outline: 1px solid var(--border, #6665); outline-offset: -1px; }
+.notification-history li > div { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.notification-history p { margin: 4px 0; }
+.notification-history :is(time, small) { color: var(--muted); }

@@ -8,6 +8,7 @@ import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
 import { WidgetFrame } from './WidgetFrame';
 import { NetworkSettings } from './NetworkSettings';
 import { NotificationSettings } from './NotificationSettings';
+import { heldShortcutModifiers, shortcutMainKey } from './shortcut-keys.ts';
 import { PanelCanvas, type PanelScroll } from './PanelCanvas';
 import { defaultEdge, edgeStyles, EdgeStylePicker, PanelEdge, readEdgeStyle, type EdgeStyle, type EdgeVisual } from './PanelEdge';
 import { PanelGroups, MovePanelGroupDialog, ungrouped, type PanelGroupsState, type GroupChange } from './PanelGroups';
@@ -31,36 +32,11 @@ interface Snapshot {
   panelGroups: PanelGroupsState;
   widgetBackdrop: boolean;
   panelScroll?: PanelScroll; panelTarget?: string | null;
-  packages: Package[]; instances: Instance[]; autostart: boolean | null; hiddenAll: boolean; panelOpen: boolean; panelLocked: boolean; panelLowered?: boolean; panelShortcutEnabled?: boolean; panelGeometry?: { effective_ratio: number }; panel: { ratio: number; tint: number; slideInMs: number; slideOutMs: number; desktopDoubleClick: boolean; edge: EdgeVisual['position']; edgeStyle: EdgeStyle }; panelLayouts: Record<string, PanelLayout>; updates: UpdateState;
+  packages: Package[]; instances: Instance[]; autostart: boolean | null; silentStartup: boolean; hiddenAll: boolean; panelOpen: boolean; panelLocked: boolean; panelLowered?: boolean; panelShortcutEnabled?: boolean; panelGeometry?: { effective_ratio: number }; panel: { ratio: number; tint: number; slideInMs: number; slideOutMs: number; desktopDoubleClick: boolean; edge: EdgeVisual['position']; edgeStyle: EdgeStyle }; panelLayouts: Record<string, PanelLayout>; updates: UpdateState;
   panelShortcutRegistered?: boolean;
   diagnostics: { ticks: number; tasks: number; sessions: number; views: number; error: string | null; dataRoot: string; shortcut: string };
 }
 const action = (action: string, instance?: string) => invoke('window_action', { action, instance });
-
-// 与宿主的 Windows 快捷键解析器使用相同的键名。
-const shortcutKeyCodes = new Set([
-  'Backquote', 'Backslash', 'BracketLeft', 'BracketRight', 'Comma', 'Equal', 'Minus',
-  'Period', 'Quote', 'Semicolon', 'Slash', 'Backspace', 'CapsLock', 'Enter', 'Space',
-  'Tab', 'Escape', 'Delete', 'End', 'Home', 'Insert', 'PageDown', 'PageUp', 'PrintScreen',
-  'ScrollLock', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Pause', 'NumLock',
-  'NumpadAdd', 'NumpadDecimal', 'NumpadDivide', 'NumpadEnter', 'NumpadEqual', 'NumpadMultiply', 'NumpadSubtract',
-  'AudioVolumeDown', 'AudioVolumeUp', 'AudioVolumeMute', 'MediaPlay', 'MediaPause',
-  'MediaPlayPause', 'MediaStop', 'MediaTrackNext', 'MediaTrackPrevious',
-]);
-
-function shortcutMainKey({ code, key }: KeyboardEvent<HTMLInputElement>) {
-  if (/^Key[A-Z]$/.test(code)) return /^[a-z]$/i.test(key) ? key.toUpperCase() : code.slice(3);
-  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  if (/^Numpad[0-9]$/.test(code) || code === 'NumpadDecimal') {
-    // 数字锁关闭时，小键盘发送方向、删除和导航键。
-    return shortcutKeyCodes.has(key) ? key : code;
-  }
-  if (/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(code) || shortcutKeyCodes.has(code)) return code;
-}
-
-function heldShortcutModifiers({ ctrlKey, altKey, shiftKey, metaKey }: KeyboardEvent<HTMLInputElement>) {
-  return [ctrlKey && 'Ctrl', altKey && 'Alt', shiftKey && 'Shift', metaKey && 'Super'].filter(Boolean).join('+');
-}
 
 function WidgetPackageImport({ disabled, onImport, onError }: {
   disabled: boolean;
@@ -134,6 +110,10 @@ export function App() {
   const [dropGroup, setDropGroup] = useState<string | null>();
   const [focusedPackage, setFocusedPackage] = useState<string>();
   const [tab, setTab] = useState<'gallery' | 'library' | 'instances' | 'checks'>(query.get('tab') === 'checks' ? 'checks' : 'library');
+  const [notificationHistory, setNotificationHistory] = useState(() => {
+    const id = query.get('notificationHistory');
+    return id ? { id } : undefined;
+  });
   const [localCatalog, setLocalCatalog] = useState<CatalogResponse['catalog']>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const browsingLocal = (tab === 'library' || tab === 'instances') && !panel && !edge && !desktop && !detail && !trial;
@@ -217,10 +197,14 @@ export function App() {
     void refresh();
     const off = listen('host:changed', refresh);
     const nav = listen<string>('host:navigate', e => { if (e.payload === 'checks') setTab('checks'); });
+    const notificationNav = listen<string>('host:notification-history', event => {
+      setTab('checks');
+      setNotificationHistory({ id: event.payload });
+    });
     const geometry = listen<{ effective_ratio: number }>('host:panel-geometry', e => setEffective(e.payload.effective_ratio));
     const offPage = listen<string>('host:detail-page', e => setDetailPage(e.payload));
     const timer = setInterval(refresh, 3000);
-    return () => { clearInterval(timer); for (const item of [off, nav, geometry, offPage]) void item.then(fn => fn()); };
+    return () => { clearInterval(timer); for (const item of [off, nav, notificationNav, geometry, offPage]) void item.then(fn => fn()); };
   }, [refresh, edge, trial]);
   useEffect(() => {
     if (!isTauri() || !(panel || edge)) return;
@@ -478,7 +462,7 @@ export function App() {
         <p className="muted">应用于管理窗口、侧边面板和桌面组件的宿主工具栏。</p>
       </section>
       <section className="settings-panel"><h2>组件外观</h2><label className="check"><input type="checkbox" checked={widgetBackdrop} disabled={busy || !data} onChange={e => { void run(() => action(e.target.checked ? 'enable-widget-backdrop' : 'disable-widget-backdrop')); }} />显示宿主衬底</label><p className="muted">为普通组件的透明区域铺上半透明主题底色。</p></section>
-      <NotificationSettings />
+      <NotificationSettings historyRequest={notificationHistory} />
       <section className="settings-panel"><h2>组件面板</h2><p>未锁定时，移出面板或失焦 3 秒后收起，点击外部立即收起。锁定时，点击外部会置底，点击挂件切换置顶和置底。快捷键或双击桌面空白处可锁定并展开，或解锁并收起。</p>{panelControls}</section>
       <section className="settings-panel">
         <h2>快捷键与启动</h2>
@@ -494,7 +478,9 @@ export function App() {
             () => invoke('set_shortcut', { value: shortcutInput }), '快捷键已保存',
           ).then(saved => { if (saved) setShortcut(undefined); })}>保存</button>
         </div>
-        <label className="check"><input type="checkbox" disabled={busy || data?.autostart == null} checked={data?.autostart === true} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_autostart', { enabled }), '登录启动设置已保存'); }} />登录后后台启动</label>
+        <label className="check"><input type="checkbox" disabled={busy || data?.autostart == null} checked={data?.autostart === true} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_autostart', { enabled }), '开机启动设置已保存'); }} />开机启动（登录 Windows 后）</label>
+        <label className="check"><input type="checkbox" disabled={busy || !data} checked={data?.silentStartup === true} onChange={e => { const silent = e.target.checked; void run(() => invoke('set_autostart', { silent }), '静默启动设置已保存'); }} />静默启动</label>
+        <p className="muted">桌面组件和挂件照常恢复。开启静默启动后，管理窗口和面板保持关闭。</p>
         <button onClick={() => void run(() => action('repair'), '已校正可达位置')}>找回屏幕外组件</button>
       </section>
       <UpdateSettings state={data?.updates} refresh={refresh} /><NetworkSettings /><section className="settings-panel"><h2>本地数据与诊断</h2><p>数据目录：{data?.diagnostics.dataRoot ?? '未连接'}</p><p className="muted">{data?.diagnostics.views ?? 0} 个宿主窗口 · {data?.diagnostics.sessions ?? 0} 个组件会话。隐藏组件释放展示，自选与有效规则继续运行。</p><div className="actions"><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: true, sound: false, delay: 3 }), '已安排通知测试')}>测试通知</button><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: false, sound: true, delay: 3 }), '已安排声音测试')}>测试声音</button></div></section>

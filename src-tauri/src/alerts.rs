@@ -51,9 +51,16 @@ impl MarketKey {
             price_kind,
         }
     }
+    pub fn spot(symbol: &str) -> Self {
+        Self {
+            market: "spot".into(),
+            ..Self::binance(symbol, PriceKind::Last)
+        }
+    }
     pub fn validate(&self) -> AppResult<()> {
         if self.exchange != "binance"
-            || self.market != "usd_m"
+            || !matches!(self.market.as_str(), "usd_m" | "spot")
+            || (self.market == "spot" && self.price_kind != PriceKind::Last)
             || self.symbol.is_empty()
             || self.symbol.len() > 120
             || self.symbol.chars().count() > 40
@@ -79,6 +86,30 @@ pub enum Mode {
     Once,
     Repeat,
 }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Condition {
+    #[default]
+    Reach,
+    Cross,
+}
+impl Condition {
+    fn is_reach(&self) -> bool {
+        *self == Self::Reach
+    }
+}
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationChannel {
+    #[default]
+    Windows,
+    Island,
+}
+impl NotificationChannel {
+    fn is_windows(&self) -> bool {
+        *self == Self::Windows
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Rule {
@@ -87,11 +118,15 @@ pub struct Rule {
     pub name: String,
     pub key: MarketKey,
     pub direction: Direction,
+    #[serde(default, skip_serializing_if = "Condition::is_reach")]
+    pub condition: Condition,
     pub threshold: String,
     pub mode: Mode,
     pub cooldown_ms: u64,
     pub enabled: bool,
     pub notification: bool,
+    #[serde(default, skip_serializing_if = "NotificationChannel::is_windows")]
+    pub notification_channel: NotificationChannel,
     pub sound: bool,
 }
 impl Rule {
@@ -105,6 +140,9 @@ impl Rule {
             || self.cooldown_ms > 7 * 24 * 60 * 60 * 1000
         {
             return Err("INVALID_ARGUMENT: 规则标识、版本、名称或冷却范围无效".into());
+        }
+        if self.condition == Condition::Cross && self.cooldown_ms != 0 {
+            return Err("INVALID_ARGUMENT: 穿越规则的冷却时间须为零".into());
         }
         Ok(())
     }
@@ -156,6 +194,7 @@ pub struct RuleState {
 pub enum Reason {
     InitialMet,
     Reached,
+    Crossed,
     CooldownDue,
     RecoveredMet,
 }
@@ -175,6 +214,8 @@ pub struct AlertEvent {
     pub created_utc_ms: u64,
     pub reason: Reason,
     pub notification: bool,
+    #[serde(default, skip_serializing_if = "NotificationChannel::is_windows")]
+    pub notification_channel: NotificationChannel,
     pub sound: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -294,7 +335,25 @@ pub fn evaluate(
         Direction::Down => price <= threshold,
     };
     let mut reason = None;
-    if !next.initialized {
+    if rule.condition == Condition::Cross {
+        // 重启、换代或本键恢复后的第一笔只建立基准。
+        let continuous = !quote.recovered
+            && state
+                .last_input
+                .is_some_and(|(generation, _)| generation == quote.generation);
+        let previous_outside =
+            state
+                .last_source
+                .is_some_and(|(_, previous)| match rule.direction {
+                    Direction::Up => previous < threshold,
+                    Direction::Down => previous > threshold,
+                });
+        next.initialized = true;
+        next.waiting_side = !met;
+        if continuous && previous_outside && met {
+            reason = Some(Reason::Crossed);
+        }
+    } else if !next.initialized {
         next.initialized = true;
         next.waiting_side = !met;
         if met {
@@ -338,19 +397,21 @@ pub fn evaluate(
         next.pending = false;
         next.waiting_side = false;
         next.completed = rule.mode == Mode::Once;
-        next.cooldown_until_utc_ms = Some(
-            context
-                .source_now_utc_ms
-                .checked_add(rule.cooldown_ms)
-                .ok_or("CLOCK_INVALID: UTC冷却截止溢出")?,
-        );
-        next.cooldown_until_mono_ms = Some(
-            context
-                .clock
-                .mono_ms
-                .checked_add(rule.cooldown_ms)
-                .ok_or("CLOCK_INVALID: 单调冷却截止溢出")?,
-        );
+        if rule.condition == Condition::Reach {
+            next.cooldown_until_utc_ms = Some(
+                context
+                    .source_now_utc_ms
+                    .checked_add(rule.cooldown_ms)
+                    .ok_or("CLOCK_INVALID: UTC冷却截止溢出")?,
+            );
+            next.cooldown_until_mono_ms = Some(
+                context
+                    .clock
+                    .mono_ms
+                    .checked_add(rule.cooldown_ms)
+                    .ok_or("CLOCK_INVALID: 单调冷却截止溢出")?,
+            );
+        }
         Some(AlertEvent {
             id: format!("{}:{}:{}", rule.id, rule.revision, next.sequence),
             rule_id: rule.id.clone(),
@@ -365,6 +426,7 @@ pub fn evaluate(
             created_utc_ms: context.source_now_utc_ms,
             reason,
             notification: rule.notification,
+            notification_channel: rule.notification_channel,
             sound: rule.sound,
         })
     } else {
@@ -386,6 +448,7 @@ pub fn revise(old: &Rule, new: &Rule, state: &RuleState) -> AppResult<RuleState>
     }
     let same = old.key == new.key
         && old.direction == new.direction
+        && old.condition == new.condition
         && parse_price(&old.threshold)? == parse_price(&new.threshold)?
         && old.mode == new.mode
         && old.cooldown_ms == new.cooldown_ms
@@ -417,6 +480,8 @@ mod tests {
     const UTC: u64 = 1_700_000_000_000;
     fn rule(direction: Direction) -> Rule {
         Rule {
+            condition: Default::default(),
+            notification_channel: Default::default(),
             id: "00000000-0000-4000-8000-000000000001".into(),
             revision: 1,
             name: "测试规则".into(),
@@ -457,6 +522,76 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn crossing_rearms_on_the_other_side_and_counts_a_touch_once() {
+        for (direction, outside, beyond) in
+            [(Direction::Up, "99", "101"), (Direction::Down, "101", "99")]
+        {
+            let rule = Rule {
+                condition: Condition::Cross,
+                cooldown_ms: 0,
+                ..rule(direction)
+            };
+            let mut state = RuleState::default();
+            for (index, (price, expected)) in [
+                (beyond, None),
+                (outside, None),
+                ("100", Some(Reason::Crossed)),
+                (beyond, None),
+                ("100", None),
+                (outside, None),
+                (beyond, Some(Reason::Crossed)),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let transition = step(&rule, &state, price, index as u64 * 100);
+                assert_eq!(transition.event.map(|event| event.reason), expected);
+                state = transition.state;
+            }
+            assert_eq!(state.sequence, 2);
+        }
+    }
+
+    #[test]
+    fn crossing_establishes_a_fresh_baseline_after_recovery_and_restart() {
+        let rule = Rule {
+            condition: Condition::Cross,
+            cooldown_ms: 0,
+            mode: Mode::Once,
+            ..rule(Direction::Up)
+        };
+        let waiting = step(&rule, &RuleState::default(), "99", 0).state;
+        for generation in [1, 2] {
+            let recovered = Observation {
+                recovered: true,
+                generation,
+                ..input(&rule, "101", 10)
+            };
+            let context = Context {
+                clock: Clock {
+                    utc_ms: UTC + 10,
+                    mono_ms: 10,
+                },
+                generation,
+                source_now_utc_ms: UTC + 10,
+            };
+            assert!(evaluate(&rule, &waiting, &recovered, context)
+                .unwrap()
+                .event
+                .is_none());
+        }
+        let persisted: RuleState =
+            serde_json::from_value(serde_json::to_value(&waiting).unwrap()).unwrap();
+        let restored = step(&rule, &persisted, "101", 20);
+        assert!(restored.event.is_none());
+        let rearmed = step(&rule, &restored.state, "99", 30);
+        let crossed = step(&rule, &rearmed.state, "100", 40);
+        assert_eq!(crossed.event.unwrap().reason, Reason::Crossed);
+        assert!(crossed.state.completed);
+        assert!(step(&rule, &crossed.state, "101", 50).event.is_none());
     }
 
     #[test]

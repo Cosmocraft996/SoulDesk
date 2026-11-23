@@ -68,6 +68,8 @@ pub async fn check(
     let started = Instant::now();
     // 保持一条真正启用的重复规则参与每笔Mark判断，避免长期检查只遍历已完成规则。
     let watching = crate::alerts::Rule {
+        condition: Default::default(),
+        notification_channel: Default::default(),
         id: uuid::Uuid::new_v4().to_string(),
         revision: 1,
         name: "长期采样等待侧规则".into(),

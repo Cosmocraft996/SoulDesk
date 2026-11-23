@@ -1353,13 +1353,13 @@ impl InnerWebView {
     unsafe {
       match msg {
         WM_SIZE if wparam.0 != SIZE_MINIMIZED as usize => {
-          let controller = dwrefdata as *mut ICoreWebView2Controller;
-
           let Ok(PhysicalSize { width, height }) = Self::parent_bounds(hwnd) else {
             return DefSubclassProc(hwnd, msg, wparam, lparam);
           };
 
-          let _ = (*controller).SetBounds(RECT {
+          // COM 调用可能重入窗口销毁，回调期间持有独立引用。
+          let controller = (*(dwrefdata as *const ICoreWebView2Controller)).clone();
+          let _ = controller.SetBounds(RECT {
             left: 0,
             top: 0,
             right: width,
@@ -1367,7 +1367,7 @@ impl InnerWebView {
           });
 
           let mut hwnd = HWND::default();
-          if (*controller).ParentWindow(&mut hwnd).is_ok() {
+          if controller.ParentWindow(&mut hwnd).is_ok() {
             let _ = SetWindowPos(
               hwnd,
               None,
@@ -1381,22 +1381,25 @@ impl InnerWebView {
         }
 
         WM_SETFOCUS => {
-          let controller = dwrefdata as *mut ICoreWebView2Controller;
-          let _ = (*controller).MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+          let controller = (*(dwrefdata as *const ICoreWebView2Controller)).clone();
+          let _ = controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
         }
 
         WM_MOVE | WM_MOVING => {
-          let controller = dwrefdata as *mut ICoreWebView2Controller;
-          let _ = (*controller).NotifyParentWindowPositionChanged();
+          let controller = (*(dwrefdata as *const ICoreWebView2Controller)).clone();
+          let _ = controller.NotifyParentWindowPositionChanged();
         }
 
         WM_DESTROY | PARENT_DESTROY_MESSAGE => {
-          let _ = RemoveWindowSubclass(
+          if RemoveWindowSubclass(
             hwnd,
             Some(Self::parent_subclass_proc),
             PARENT_SUBCLASS_ID as _,
-          );
-          drop(Box::from_raw(dwrefdata as *mut ICoreWebView2Controller));
+          )
+          .as_bool()
+          {
+            drop(Box::from_raw(dwrefdata as *mut ICoreWebView2Controller));
+          }
         }
 
         _ => {}
@@ -1409,12 +1412,17 @@ impl InnerWebView {
   #[inline]
   unsafe fn attach_parent_subclass(parent: HWND, controller: &ICoreWebView2Controller) {
     unsafe {
-      let _ = SetWindowSubclass(
+      let reference = Box::into_raw(Box::new(controller.clone()));
+      if !SetWindowSubclass(
         parent,
         Some(Self::parent_subclass_proc),
         PARENT_SUBCLASS_ID as _,
-        Box::into_raw(Box::new(controller.clone())) as _,
-      );
+        reference as _,
+      )
+      .as_bool()
+      {
+        drop(Box::from_raw(reference));
+      }
     }
   }
 
@@ -1422,11 +1430,6 @@ impl InnerWebView {
   unsafe fn dettach_parent_subclass(parent: HWND) {
     unsafe {
       SendMessageW(parent, PARENT_DESTROY_MESSAGE, None, None);
-      let _ = RemoveWindowSubclass(
-        parent,
-        Some(Self::parent_subclass_proc),
-        PARENT_SUBCLASS_ID as _,
-      );
     }
   }
 

@@ -508,9 +508,7 @@ impl Service {
                 shortcut: s.document.config.shortcut.clone(),
             })
             .collect::<Vec<_>>();
-        let primary = store
-            .preference("shortcut")
-            .unwrap_or_else(|| "Ctrl+Alt+Space".into());
+        let primary = crate::panel_shortcut(store);
         let mut keys = self.shortcuts.lock().map_err(err)?;
         if self.stopped.load(Ordering::Acquire) {
             keys.release(driver)?;
@@ -1658,7 +1656,7 @@ mod tests {
             .id();
         assert_eq!(service.shortcut_route(key).unwrap().instance, first.0);
         let mut conflicting = c;
-        conflicting.shortcut = "Ctrl+Alt+Space".into();
+        conflicting.shortcut = crate::panel_shortcut(&s);
         call(
             &service,
             &s,

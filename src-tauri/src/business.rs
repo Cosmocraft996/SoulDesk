@@ -8,6 +8,7 @@ use crate::{
     widgets, Core,
 };
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -22,13 +23,203 @@ pub struct Subscription {
 }
 pub struct Service {
     pub feed: Arc<market::Feed>,
+    pub spot: Arc<market::Feed>,
+    pub charts: crate::market_history::History,
     pub subscriptions: Mutex<HashMap<String, Subscription>>,
     pub network_ready: std::sync::atomic::AtomicBool,
+}
+impl Service {
+    pub fn feed_for(&self, market: &str) -> &Arc<market::Feed> {
+        if market == "spot" {
+            &self.spot
+        } else {
+            &self.feed
+        }
+    }
+    fn feeds(&self) -> [&Arc<market::Feed>; 2] {
+        [&self.feed, &self.spot]
+    }
+    pub fn reconnect(&self) {
+        for feed in self.feeds() {
+            feed.reconnect();
+        }
+    }
+    fn snapshot(&self, keys: &HashSet<MarketKey>) -> AppResult<Value> {
+        let mut result = self.feed.snapshot_for(keys)?;
+        let spot = self.spot.snapshot_for(keys)?;
+        let quotes = result["quotes"].as_array_mut().unwrap();
+        quotes.extend(spot["quotes"].as_array().unwrap().iter().cloned());
+        let mut tickers = serde_json::Map::new();
+        for (market, snapshot) in [("usd_m", &result), ("spot", &spot)] {
+            for (symbol, ticker) in snapshot["tickers"].as_object().unwrap() {
+                if keys
+                    .iter()
+                    .any(|key| key.market == market && key.symbol == *symbol)
+                {
+                    let mut value = ticker.clone();
+                    value["fresh"] = json!(
+                        snapshot["status"] == "connected"
+                            && snapshot["sourceNow"]
+                                .as_u64()
+                                .zip(ticker["time"].as_u64())
+                                .is_some_and(|(now, time)| now.saturating_sub(time) <= 10_000)
+                    );
+                    tickers.insert(format!("{market}:{symbol}"), value);
+                }
+            }
+        }
+        result["marketStatus"] = json!({"usd_m":{"status":result["status"],"error":result["error"],"sourceNow":result["sourceNow"]},"spot":{"status":spot["status"],"error":spot["error"],"sourceNow":spot["sourceNow"]}});
+        result["marketTickers"] = json!(tickers);
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mixed_watchlist_retains_legacy_items_and_same_symbol_market_identity() {
+        let store = Store::open(
+            std::env::temp_dir().join(format!("souldesk-market-mixed-{}", uuid::Uuid::new_v4())),
+        )
+        .unwrap();
+        {
+            let db = store.db.lock().unwrap();
+            db.execute(
+                "INSERT INTO widget_packages VALUES('test','{}','test','test')",
+                [],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO widget_instances(id,package_id,settings) VALUES('market','test','{}')",
+                [],
+            )
+            .unwrap();
+            db.execute("INSERT INTO watchlist VALUES('market','BTCUSDT',0)", [])
+                .unwrap();
+        }
+        let mut items = watch_items(&store, "market").unwrap();
+        assert_eq!(items[0].market, "usd_m");
+        items.insert(
+            0,
+            WatchItem {
+                market: "spot".into(),
+                symbol: "BTCUSDT".into(),
+                alias: "现货观察".into(),
+            },
+        );
+        save_watch_items(&store, "market", &items).unwrap();
+        let read = watch_items(&store, "market").unwrap();
+        assert_eq!((&*read[0].market, &*read[0].alias), ("spot", "现货观察"));
+        assert_eq!(watchlist(&store, "market").unwrap(), vec!["BTCUSDT"]);
+        assert_eq!(
+            persistent_keys(&store).unwrap(),
+            HashSet::from([
+                MarketKey::spot("BTCUSDT"),
+                MarketKey::binance("BTCUSDT", PriceKind::Last),
+                MarketKey::binance("BTCUSDT", PriceKind::Mark)
+            ])
+        );
+        save_watchlist(&store, "market", &[]).unwrap();
+        assert_eq!(
+            persistent_keys(&store).unwrap(),
+            HashSet::from([MarketKey::spot("BTCUSDT")])
+        );
+    }
+    #[test]
+    fn more_than_200_rules_share_spot_feed_and_keep_recovery_and_cooldown() {
+        use crate::alerts::{Clock, Context, Direction, Mode, Observation};
+        let store = Store::open(
+            std::env::temp_dir().join(format!("souldesk-market-alerts-{}", uuid::Uuid::new_v4())),
+        )
+        .unwrap();
+        let service = Service {
+            feed: market::Feed::new(NetworkConfig::Direct).0,
+            spot: market::Feed::for_market(NetworkConfig::Direct, "spot").0,
+            charts: Default::default(),
+            subscriptions: Default::default(),
+            network_ready: Default::default(),
+        };
+        service
+            .spot
+            .state
+            .lock()
+            .unwrap()
+            .catalog
+            .push(market::Contract {
+                symbol: "BTCUSDT".into(),
+                base_asset: "BTC".into(),
+                quote_asset: "USDT".into(),
+                market: "spot".into(),
+                contract_type: "SPOT".into(),
+                status: "TRADING".into(),
+                tick_size: "0.01".into(),
+            });
+        let key = MarketKey::spot("BTCUSDT");
+        for i in 0..205 {
+            let rule = Rule {
+                condition: Default::default(),
+                notification_channel: Default::default(),
+                id: uuid::Uuid::new_v4().to_string(),
+                revision: 1,
+                name: format!("现货 {i}"),
+                key: key.clone(),
+                direction: Direction::Up,
+                threshold: "100".into(),
+                mode: Mode::Repeat,
+                cooldown_ms: 1000,
+                enabled: true,
+                notification: false,
+                sound: false,
+            };
+            save_market_rule(&store, &service, rule, None).unwrap();
+        }
+        assert_eq!(alert_store::list_rules(&store).unwrap().len(), 205);
+        assert_eq!(
+            persistent_keys(&store).unwrap(),
+            HashSet::from([key.clone()])
+        );
+        let mut engine = alert_store::Engine::default();
+        let mut observe = |market_key: &MarketKey, price: &str, t: u64, generation, recovered| {
+            let now = 1_760_000_000_000 + t;
+            engine
+                .process(
+                    &store,
+                    &Observation {
+                        key: market_key.clone(),
+                        price: price.into(),
+                        source_utc_ms: now,
+                        received_mono_ms: t,
+                        generation,
+                        ordinal: t,
+                        recovered,
+                        valid: true,
+                    },
+                    Context {
+                        clock: Clock {
+                            utc_ms: now,
+                            mono_ms: t,
+                        },
+                        generation,
+                        source_now_utc_ms: now,
+                    },
+                )
+                .unwrap()
+        };
+        assert!(observe(
+            &MarketKey::binance("BTCUSDT", PriceKind::Last),
+            "100",
+            1,
+            1,
+            false
+        )
+        .is_empty());
+        assert!(observe(&key, "99", 2, 1, false).is_empty());
+        assert_eq!(observe(&key, "100", 3, 2, true).len(), 205);
+        assert!(observe(&key, "99", 4, 2, false).is_empty());
+        assert!(observe(&key, "100", 5, 2, false).is_empty());
+        assert_eq!(observe(&key, "100", 1200, 2, false).len(), 205);
+    }
     #[test]
     fn a_new_consumer_over_global_capacity_is_refused_before_persisting() {
         let store = Store::open(
@@ -60,6 +251,8 @@ mod tests {
         let (feed, _, _, _) = market::Feed::new(NetworkConfig::Direct);
         let service = Service {
             feed,
+            spot: market::Feed::for_market(NetworkConfig::Direct, "spot").0,
+            charts: Default::default(),
             subscriptions: Default::default(),
             network_ready: std::sync::atomic::AtomicBool::new(true),
         };
@@ -100,6 +293,8 @@ mod tests {
         save_watchlist(&store, "a", &["BTCUSDT".into()]).unwrap();
         save_watchlist(&store, "b", &["BTCUSDT".into(), "ETHUSDT".into()]).unwrap();
         let r = Rule {
+            condition: Default::default(),
+            notification_channel: Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             revision: 1,
             name: "独立规则".into(),
@@ -139,20 +334,88 @@ pub fn resolve_network(value: &Value) -> AppResult<NetworkConfig> {
         Ok(c)
     }
 }
-pub fn watchlist(store: &Store, instance: &str) -> AppResult<Vec<String>> {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct WatchItem {
+    market: String,
+    symbol: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    alias: String,
+}
+impl WatchItem {
+    fn legacy(symbol: &str) -> Self {
+        Self {
+            market: "usd_m".into(),
+            symbol: symbol.into(),
+            alias: String::new(),
+        }
+    }
+    fn decode(value: String) -> AppResult<Self> {
+        if value.starts_with('{') {
+            serde_json::from_str(&value).map_err(err)
+        } else {
+            Ok(Self::legacy(&value))
+        }
+    }
+    fn key(&self, price_kind: PriceKind) -> MarketKey {
+        MarketKey {
+            market: self.market.clone(),
+            ..MarketKey::binance(&self.symbol, price_kind)
+        }
+    }
+    fn keys(&self) -> impl Iterator<Item = MarketKey> + '_ {
+        [PriceKind::Last, PriceKind::Mark]
+            .into_iter()
+            .filter(|kind| self.market == "usd_m" || *kind == PriceKind::Last)
+            .map(|kind| self.key(kind))
+    }
+}
+fn watch_items(store: &Store, instance: &str) -> AppResult<Vec<WatchItem>> {
     let db = store.db.lock().map_err(err)?;
     let mut query = db
         .prepare("SELECT symbol FROM watchlist WHERE instance_id=?1 ORDER BY position")
         .map_err(err)?;
-    let rows = query.query_map([instance], |r| r.get(0)).map_err(err)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(err)
+    let rows = query
+        .query_map([instance], |r| r.get::<_, String>(0))
+        .map_err(err)?;
+    rows.map(|row| WatchItem::decode(row.map_err(err)?))
+        .collect()
+}
+pub fn watchlist(store: &Store, instance: &str) -> AppResult<Vec<String>> {
+    Ok(watch_items(store, instance)?
+        .into_iter()
+        .filter(|item| item.market == "usd_m")
+        .map(|item| item.symbol)
+        .collect())
 }
 pub fn save_watchlist(store: &Store, instance: &str, symbols: &[String]) -> AppResult<()> {
-    if symbols.len() > 20 || symbols.iter().collect::<HashSet<_>>().len() != symbols.len() {
-        return Err("INVALID_ARGUMENT: 自选最多20个不同合约".into());
+    let previous = watch_items(store, instance)?;
+    let mut items = symbols
+        .iter()
+        .map(|symbol| {
+            previous
+                .iter()
+                .find(|item| item.market == "usd_m" && item.symbol == *symbol)
+                .cloned()
+                .unwrap_or_else(|| WatchItem::legacy(symbol))
+        })
+        .collect::<Vec<_>>();
+    items.extend(previous.into_iter().filter(|item| item.market == "spot"));
+    save_watch_items(store, instance, &items)
+}
+fn save_watch_items(store: &Store, instance: &str, items: &[WatchItem]) -> AppResult<()> {
+    let distinct = items
+        .iter()
+        .map(|item| (&item.market, &item.symbol))
+        .collect::<HashSet<_>>();
+    if items.len() > 20 || distinct.len() != items.len() {
+        return Err("INVALID_ARGUMENT: 自选最多20个不同标的".into());
     }
-    for s in symbols {
-        MarketKey::binance(s, PriceKind::Last).validate()?;
+    for item in items {
+        item.key(PriceKind::Last).validate()?;
+        if item.alias.chars().count() > 32 || item.alias.chars().any(char::is_control) {
+            return Err("INVALID_ARGUMENT: 显示别名无效".into());
+        }
     }
     let mut db = store.db.lock().map_err(err)?;
     let tx = db.transaction().map_err(err)?;
@@ -168,10 +431,16 @@ pub fn save_watchlist(store: &Store, instance: &str, symbols: &[String]) -> AppR
     }
     tx.execute("DELETE FROM watchlist WHERE instance_id=?1", [instance])
         .map_err(err)?;
-    for (p, s) in symbols.iter().enumerate() {
+    for (p, item) in items.iter().enumerate() {
+        // 沿用位置表及旧版纯合约值，扩展市场或别名的条目使用结构化数据。
+        let value = if item.market == "usd_m" && item.alias.is_empty() {
+            item.symbol.clone()
+        } else {
+            serde_json::to_string(item).map_err(err)?
+        };
         tx.execute(
             "INSERT INTO watchlist(instance_id,symbol,position) VALUES(?1,?2,?3)",
-            params![instance, s, p],
+            params![instance, value, p],
         )
         .map_err(err)?;
     }
@@ -186,11 +455,24 @@ fn ensure_capacity(
     for sub in subscriptions.values() {
         keys.extend(sub.keys.iter().cloned());
     }
-    let current = market::streams(&keys).len();
+    let count = |keys: &HashSet<MarketKey>, market_name| {
+        market::streams(
+            &keys
+                .iter()
+                .filter(|key| key.market == market_name)
+                .cloned()
+                .collect(),
+        )
+        .len()
+    };
+    let before = [count(&keys, "usd_m"), count(&keys, "spot")];
     keys.extend(extra);
-    let next = market::streams(&keys).len();
-    if next > 900 && next > current {
-        return Err("LIMIT: 新增消费者会超过全局900行情流上限；未修改原自选、规则或连接，请先移除不需要的消费者".into());
+    if [count(&keys, "usd_m"), count(&keys, "spot")]
+        .into_iter()
+        .zip(before)
+        .any(|(next, current)| next > 900 && next > current)
+    {
+        return Err("LIMIT: 新增消费者会超过对应市场的行情流上限".into());
     }
     Ok(())
 }
@@ -221,9 +503,8 @@ pub fn persistent_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
             .prepare("SELECT DISTINCT symbol FROM watchlist")
             .map_err(err)?;
         for row in q.query_map([], |r| r.get::<_, String>(0)).map_err(err)? {
-            let s = row.map_err(err)?;
-            keys.insert(MarketKey::binance(&s, PriceKind::Last));
-            keys.insert(MarketKey::binance(&s, PriceKind::Mark));
+            let item = WatchItem::decode(row.map_err(err)?)?;
+            keys.extend(item.keys());
         }
     }
     for (r, state) in alert_store::list_rules(store)? {
@@ -236,7 +517,7 @@ pub fn persistent_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
 fn active_contract(service: &Service, key: &MarketKey) -> AppResult<()> {
     key.validate()?;
     if !service
-        .feed
+        .feed_for(&key.market)
         .state
         .lock()
         .map_err(err)?
@@ -244,9 +525,24 @@ fn active_contract(service: &Service, key: &MarketKey) -> AppResult<()> {
         .iter()
         .any(|c| c.symbol == key.symbol && c.status == "TRADING")
     {
-        return Err("DATA_UNAVAILABLE: 合约不在当前可交易目录，请等待目录刷新".into());
+        return Err("DATA_UNAVAILABLE: 标的不在当前可交易目录，请等待目录刷新".into());
     }
     Ok(())
+}
+
+fn save_market_rule(
+    store: &Store,
+    service: &Service,
+    rule: Rule,
+    expected: Option<u64>,
+) -> AppResult<Value> {
+    let subs = service.subscriptions.lock().map_err(err)?;
+    if rule.enabled {
+        active_contract(service, &rule.key)?;
+        ensure_capacity(store, &subs, [rule.key.clone()])?;
+    }
+    alert_store::save_rule(store, &rule, expected)?;
+    Ok(json!(rule))
 }
 
 pub async fn gateway(
@@ -257,6 +553,36 @@ pub async fn gateway(
     args: Value,
 ) -> AppResult<Value> {
     let core = app.state::<Core>();
+    if matches!(method, "market.candles" | "market.openInterest") {
+        let require = || {
+            widgets::require_capability(&core.store, &core.sessions, window, token, "market.chart")
+        };
+        require()?;
+        let request: crate::market_history::Request = serde_json::from_value(args).map_err(err)?;
+        request.key.validate()?;
+        let feed = core.business.feed_for(&request.key.market);
+        if !feed
+            .state
+            .lock()
+            .map_err(err)?
+            .catalog
+            .iter()
+            .any(|entry| entry.symbol == request.key.symbol)
+        {
+            return Err("DATA_UNAVAILABLE: 目录尚未确认该标的".into());
+        }
+        let config = feed.desired.borrow().network.clone();
+        let value = core
+            .business
+            .charts
+            .get(request, &config, method == "market.openInterest")
+            .await?;
+        require()?;
+        if feed.desired.borrow().network != config {
+            return Err("DATA_UNAVAILABLE: 网络配置已变化，请重试".into());
+        }
+        return Ok(value);
+    }
     let sessions = core.sessions.0.lock().map_err(err)?;
     let session = sessions
         .get(token)
@@ -276,8 +602,86 @@ pub async fn gateway(
         return Err(format!("CAPABILITY_DENIED: 未声明{capability}"));
     }
     let result = match method {
+        "market.preferences" => {
+            let patch = args
+                .as_object()
+                .filter(|value| {
+                    !value.is_empty()
+                        && value.keys().all(|key| {
+                            matches!(key.as_str(), "layout" | "rangeHours" | "maPeriods")
+                        })
+                })
+                .ok_or("INVALID_ARGUMENT: 行情设置字段无效")?;
+            let db = core.store.db.lock().map_err(err)?;
+            let saved: String = db
+                .query_row(
+                    "SELECT settings FROM widget_instances WHERE id=?1",
+                    [&session.instance],
+                    |row| row.get(0),
+                )
+                .map_err(err)?;
+            let mut settings: Value = serde_json::from_str(&saved).map_err(err)?;
+            settings
+                .as_object_mut()
+                .ok_or("STATE_INVALID: 组件设置无效")?
+                .extend(patch.clone());
+            widgets::validate_settings(&manifest.settings_schema, &settings)?;
+            if settings
+                .get("layout")
+                .is_some_and(|value| !matches!(value.as_str(), Some("list" | "grid")))
+                || settings.get("rangeHours").is_some_and(|value| {
+                    !matches!(value.as_i64(), Some(1 | 4 | 6 | 8 | 12 | 24 | 72 | 168))
+                })
+            {
+                return Err("INVALID_ARGUMENT: 行情布局或区间无效".into());
+            }
+            db.execute(
+                "UPDATE widget_instances SET settings=?1 WHERE id=?2",
+                params![settings.to_string(), session.instance],
+            )
+            .map_err(err)?;
+            Ok(settings)
+        }
         "market.catalog" => Ok(json!(core.business.feed.state.lock().map_err(err)?.catalog)),
+        "market.instruments" => {
+            let mut result = core
+                .business
+                .feed
+                .state
+                .lock()
+                .map_err(err)?
+                .catalog
+                .clone();
+            result.extend(
+                core.business
+                    .spot
+                    .state
+                    .lock()
+                    .map_err(err)?
+                    .catalog
+                    .iter()
+                    .cloned(),
+            );
+            Ok(json!(result))
+        }
         "watchlist.get" => Ok(json!(watchlist(&core.store, &session.instance)?)),
+        "watchlist.getItems" => Ok(json!(watch_items(&core.store, &session.instance)?)),
+        "watchlist.setItems" => {
+            let items: Vec<WatchItem> = serde_json::from_value(args).map_err(err)?;
+            let previous = watch_items(&core.store, &session.instance)?;
+            for item in &items {
+                if !previous
+                    .iter()
+                    .any(|old| old.market == item.market && old.symbol == item.symbol)
+                {
+                    active_contract(&core.business, &item.key(PriceKind::Last))?;
+                }
+            }
+            let subs = core.business.subscriptions.lock().map_err(err)?;
+            ensure_capacity(&core.store, &subs, items.iter().flat_map(WatchItem::keys))?;
+            save_watch_items(&core.store, &session.instance, &items)?;
+            Ok(json!(items))
+        }
         "watchlist.set" => {
             let symbols: Vec<String> = serde_json::from_value(args).map_err(err)?;
             for symbol in &symbols {
@@ -291,8 +695,15 @@ pub async fn gateway(
             if keys.len() > 40 {
                 return Err("LIMIT: 单个订阅最多40个行情键".into());
             }
+            let previous = watch_items(&core.store, &session.instance)?;
             for key in &keys {
-                active_contract(&core.business, key)?;
+                key.validate()?;
+                if !previous
+                    .iter()
+                    .any(|item| item.market == key.market && item.symbol == key.symbol)
+                {
+                    active_contract(&core.business, key)?;
+                }
             }
             let mut subs = core.business.subscriptions.lock().map_err(err)?;
             if subs.values().filter(|s| s.owner == token).count() >= 4 {
@@ -331,16 +742,7 @@ pub async fn gateway(
                 .filter(|s| s.owner == token)
                 .ok_or("SESSION_EXPIRED: 订阅已失效")?;
             sub.sequence += 1;
-            let mut snapshot = core.business.feed.snapshot()?;
-            snapshot["quotes"].as_array_mut().unwrap().retain(|q| {
-                serde_json::from_value::<MarketKey>(q["key"].clone())
-                    .is_ok_and(|k| sub.keys.contains(&k))
-            });
-            snapshot["tickers"]
-                .as_object_mut()
-                .unwrap()
-                .retain(|s, _| sub.keys.iter().any(|k| k.symbol == *s));
-            snapshot.as_object_mut().unwrap().remove("catalog");
+            let snapshot = core.business.snapshot(&sub.keys)?;
             Ok(json!({"subscriptionId":id,"sequence":sub.sequence,"data":snapshot}))
         }
         "alerts.list" => Ok(json!(alert_store::list_rules(&core.store)?
@@ -349,21 +751,12 @@ pub async fn gateway(
             .collect::<Vec<_>>())),
         "alerts.save" => {
             let rule: Rule = serde_json::from_value(args["rule"].clone()).map_err(err)?;
-            if rule.enabled {
-                active_contract(&core.business, &rule.key)?;
-                ensure_capacity(
-                    &core.store,
-                    &*core.business.subscriptions.lock().map_err(err)?,
-                    [rule.key.clone()],
-                )?;
-            }
-            if alert_store::list_rules(&core.store)?.len() >= 200
-                && args["expectedRevision"].is_null()
-            {
-                return Err("LIMIT: 规则最多200条".into());
-            }
-            alert_store::save_rule(&core.store, &rule, args["expectedRevision"].as_u64())?;
-            Ok(json!(rule))
+            save_market_rule(
+                &core.store,
+                &core.business,
+                rule,
+                args["expectedRevision"].as_u64(),
+            )
         }
         "alerts.delete" => {
             alert_store::remove_rule(
@@ -381,7 +774,7 @@ pub async fn gateway(
         "alerts.retry" => {
             let channel = match args["channel"].as_str() {
                 Some("notification") => Channel::Notification,
-                Some("sound") => Channel::Sound,
+                Some("sound") => return Err("INVALID_ARGUMENT: 行情铃声由灵动通知设置管理".into()),
                 _ => return Err("INVALID_ARGUMENT: 递送渠道无效".into()),
             };
             alert_store::retry_delivery(
@@ -416,13 +809,13 @@ fn market_log_status(feed: &market::Feed) -> AppResult<String> {
     .map_err(err)
 }
 
-pub fn start(
+pub fn start_feed(
     app: &AppHandle,
+    feed: Arc<market::Feed>,
     rx: tokio::sync::watch::Receiver<market::Desired>,
     tx: tokio::sync::mpsc::Sender<market::Input>,
     mut inputs: tokio::sync::mpsc::Receiver<market::Input>,
 ) {
-    let feed = app.state::<Core>().business.feed.clone();
     let market_app = app.clone();
     let runner = feed.clone();
     tauri::async_runtime::spawn(async move {
@@ -472,8 +865,12 @@ pub fn start(
                         if let Err(e) = core.store.log(
                             "alert",
                             &format!(
-                                "事件 {} {} {:?} {:?}",
-                                event.id, event.key.symbol, event.key.price_kind, event.reason
+                                "事件 {} {} {} {:?} {:?}",
+                                event.id,
+                                event.key.market,
+                                event.key.symbol,
+                                event.key.price_kind,
+                                event.reason
                             ),
                         ) {
                             core.report(e);
@@ -482,12 +879,14 @@ pub fn start(
                 }
                 Err(e) => {
                     core.report(format!("警报状态写入失败，停止行情代次：{e}"));
-                    core.business.feed.desired.send_modify(|d| d.reconnect += 1);
+                    feed.desired.send_modify(|d| d.reconnect += 1);
                     feed.generation.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
     });
+}
+pub fn start(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -498,7 +897,9 @@ pub fn start(
             timer.tick().await;
             let core = handle.state::<Core>();
             if core.quitting.load(Ordering::Relaxed) {
-                core.business.feed.cancel.cancel();
+                for feed in core.business.feeds() {
+                    feed.cancel.cancel();
+                }
                 break;
             }
             let refresh = || -> AppResult<()> {
@@ -509,14 +910,20 @@ pub fn start(
                 for sub in subs.values() {
                     keys.extend(sub.keys.iter().cloned());
                 }
-                core.business.feed.desired.send_if_modified(|d| {
-                    if d.keys != keys {
-                        d.keys = keys;
+                for feed in core.business.feeds() {
+                    let market_keys = keys
+                        .iter()
+                        .filter(|key| key.market == feed.market)
+                        .cloned()
+                        .collect::<HashSet<_>>();
+                    feed.desired.send_if_modified(|d| {
+                        if d.keys == market_keys {
+                            return false;
+                        }
+                        d.keys = market_keys;
                         true
-                    } else {
-                        false
-                    }
-                });
+                    });
+                }
                 Ok(())
             };
             if let Err(e) = refresh() {
@@ -541,62 +948,61 @@ pub fn start(
             if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
                 break;
             }
-            let Some(source_now) = handle.state::<Core>().business.feed.source_now() else {
+            let core = handle.state::<Core>();
+            let Some(source_now) = core
+                .business
+                .feed
+                .source_now()
+                .or_else(|| core.business.spot.source_now())
+            else {
                 continue;
             };
-            let jobs =
-                match alert_store::pending_deliveries(&handle.state::<Core>().store, source_now) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        handle.state::<Core>().report(e);
-                        continue;
-                    }
-                };
-            for event in jobs {
-                for channel in [Channel::Notification, Channel::Sound] {
-                    match alert_store::claim_delivery(
-                        &handle.state::<Core>().store,
-                        &event.id,
-                        channel,
-                    ) {
-                        Ok(true) => {}
-                        Ok(false) => continue,
-                        Err(e) => {
-                            handle.state::<Core>().report(e);
-                            continue;
-                        }
-                    }
-                    let app = handle.clone();
-                    let event = event.clone();
-                    let id = event.id.clone();
-                    let outcome = tauri::async_runtime::spawn_blocking(move || match channel {
-                        Channel::Notification => crate::alert_notification(&app, &event),
-                        Channel::Sound => crate::independent_sound(),
-                    })
-                    .await;
-                    let detail = format!("事件 {id} 渠道 {channel:?} 结果 {outcome:?}");
-                    let saved = match outcome {
-                        Ok(result) => alert_store::finish_delivery(
-                            &handle.state::<Core>().store,
-                            &id,
-                            channel,
-                            result,
-                        ),
-                        Err(e) => alert_store::finish_uncertain(
-                            &handle.state::<Core>().store,
-                            &id,
-                            channel,
-                            &format!("发送任务中断，系统结果不确定：{e}"),
-                        ),
-                    };
-                    if let Err(e) = saved {
-                        handle.state::<Core>().report(e);
-                    }
-                    if let Err(e) = handle.state::<Core>().store.log("delivery", &detail) {
-                        handle.state::<Core>().report(e);
-                    }
-                }
-            }
+            deliver_pending(&handle, source_now).await;
         }
     });
+}
+
+pub(crate) async fn deliver_pending(handle: &AppHandle, source_now: u64) {
+    let jobs = match alert_store::pending_deliveries(&handle.state::<Core>().store, source_now) {
+        Ok(jobs) => jobs,
+        Err(error) => {
+            handle.state::<Core>().report(error);
+            return;
+        }
+    };
+    for event in jobs {
+        let channel = Channel::Notification;
+        match alert_store::claim_delivery(&handle.state::<Core>().store, &event.id, channel) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(e) => {
+                handle.state::<Core>().report(e);
+                continue;
+            }
+        }
+        let app = handle.clone();
+        let id = event.id.clone();
+        let outcome = tauri::async_runtime::spawn_blocking(move || {
+            crate::alert_notice::deliver(&app, &event)
+        })
+        .await;
+        let detail = format!("事件 {id} 渠道 {channel:?} 结果 {outcome:?}");
+        let saved = match outcome {
+            Ok(result) => {
+                alert_store::finish_delivery(&handle.state::<Core>().store, &id, channel, result)
+            }
+            Err(e) => alert_store::finish_uncertain(
+                &handle.state::<Core>().store,
+                &id,
+                channel,
+                &format!("发送任务中断，系统结果不确定：{e}"),
+            ),
+        };
+        if let Err(e) = saved {
+            handle.state::<Core>().report(e);
+        }
+        if let Err(e) = handle.state::<Core>().store.log("delivery", &detail) {
+            handle.state::<Core>().report(e);
+        }
+    }
 }

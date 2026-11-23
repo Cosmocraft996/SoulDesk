@@ -40,7 +40,7 @@ function moduleUrl(name) {
     : name === 'WidgetFrame' ? `import {useEffect,createElement} from 'react';export function WidgetFrame({instance}){useEffect(()=>{const f=globalThis.panelFixture;f.mounted.add(instance);f.mounts.push(instance);return()=>f.mounted.delete(instance);},[instance]);return createElement('div',{'data-instance':instance});}`
     : name === 'NetworkSettings' ? 'export const NetworkSettings=()=>null;'
     : name === 'UpdateSettings' ? 'export const UpdateSettings=()=>null;'
-    : readFileSync(new URL(`../src/${name}${name === 'panel-layout' ? '.ts' : '.tsx'}`, import.meta.url), 'utf8');
+    : readFileSync(new URL(`../src/${name}${name.endsWith('.ts') ? '' : name === 'panel-layout' ? '.ts' : '.tsx'}`, import.meta.url), 'utf8');
   let compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   compiled = compiled.replace(/from\s*(['"])([^'"]+)\1/g, (_all, _quote, specifier) => {
     const url = specifier.startsWith('./') ? moduleUrl(specifier.slice(2))
@@ -75,11 +75,22 @@ async function fixture({ legacy = false, active = null, locked = false, query = 
     panelShortcutRegistered: shortcutRegistered,
     diagnostics: { shortcut: 'Ctrl+Alt+Space' }, updates: {},
   };
+  const notificationPreferences = {
+    windows: true, island: true, maxVisible: 9, opacity: 100, volume: 100,
+    controls: { hidden: false, muted: false },
+    shortcuts: { visibility: { value: 'Alt+H', registered: true }, mute: { value: 'Alt+M', registered: true } },
+    marketTones: { up: '', down: '' }, marketToneDefaults: { up: '', down: '' }, marketToneGroups: [],
+  };
   if (legacy) delete state.panelGroups;
   const f = { state, mounted: new Set(), mounts: [], calls: [], fail: false, gate: undefined, outside, listeners: new Map(),
     async invoke(command, args) {
       f.calls.push([command, args]);
       if (command === 'snapshot') return { ...structuredClone(state), panelScroll: positions.get(state.panelGroups?.active ?? null) };
+      if (command === 'notification_settings') {
+        const { type, percent } = args.command;
+        if (type === 'opacity' || type === 'volume') notificationPreferences[type] = percent;
+        return structuredClone(notificationPreferences);
+      }
       if (command === 'panel_view' && args.update.event === 'scroll') { positions.set(args.update.group, args.update.position); return; }
       if (command === 'create_instance' && f.fail) throw Error('测试添加失败');
       if (command === 'set_shortcut') {
@@ -518,6 +529,31 @@ function edgePointer(node, type, { pointerType = 'mouse', buttons = 0 } = {}) {
   Object.defineProperties(event, { pointerType: { value: pointerType }, isPrimary: { value: true }, pointerId: { value: 1 } });
   node.dispatchEvent(event);
 }
+
+test('灵动通知滑杆可设置全透明和零音量，松开各自保存', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  try {
+    const opacity = document.querySelector('#island-opacity');
+    const volume = document.querySelector('#island-volume');
+    for (const slider of [opacity, volume]) {
+      assert.equal(slider.type, 'range');
+      assert.equal(slider.min, '0');
+      assert.equal(slider.max, '100');
+    }
+    const changes = () => f.calls.filter(([name, args]) => name === 'notification_settings' && args.command.type !== 'get').map(([, args]) => args.command);
+    const commit = slider => act(async () => slider.dispatchEvent(new Event('change', { bubbles: true })));
+    await input(opacity, '100');
+    assert.deepEqual(changes(), []);
+    await commit(opacity);
+    assert.equal(opacity.value, '100');
+    assert.equal(volume.value, '100');
+    await input(volume, '0');
+    await commit(volume);
+    assert.deepEqual(changes(), [{ type: 'opacity', percent: 0 }, { type: 'volume', percent: 0 }]);
+    assert.equal(opacity.value, '100');
+    assert.equal(volume.value, '0');
+  } finally { await f.close(); }
+});
 
 test('收起态挂件单击优先，停留后展开，按住经过和快速移出不展开', async () => {
   const f = await fixture({ query: '?edge=1&style=rocket&side=left' });

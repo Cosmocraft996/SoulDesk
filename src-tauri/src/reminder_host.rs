@@ -1,5 +1,7 @@
 //! 宿主通知、固定提醒能力与专用展示角色。
 use crate::{
+    alert_notice,
+    alerts::Direction,
     notification_sdk,
     reminder_engine::{Action, Clock, Demo, Engine, Surface, Target, HOST_NOTICE_OWNER},
     reminder_state::{LocalMinute, PhonePreset},
@@ -18,6 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
@@ -28,6 +31,12 @@ pub(crate) enum IslandCommand {
     Action { id: String, action: Action },
     Hover { id: String, entered: bool },
     Audio { id: String, state: String },
+    MarketMute { id: String, muted: bool },
+    MarketSound { id: String, tone: String },
+    MarketSoundStarted { id: String, tone: String },
+    Drag { id: String },
+    History { id: String },
+    Pending,
 }
 
 #[tauri::command]
@@ -40,15 +49,25 @@ pub(crate) async fn island_surface(
     if !label.starts_with("island-host-") {
         return Err("CAPABILITY_DENIED: 仅宿主灵动通知窗口可调用".into());
     }
+    let press = if matches!(&command, IslandCommand::Drag { .. }) {
+        crate::desktop_native::panel_edge_press()?
+    } else {
+        None
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let core = app.state::<Core>();
         let service = &core.reminders;
         let mut source_to_open = None;
+        let mut market_event_to_open = None;
+        let mut history_to_open = None;
+        let mut drag = false;
         let schedule = matches!(
             &command,
-            IslandCommand::Action { .. } | IslandCommand::Audio { .. }
+            IslandCommand::Action { .. }
+                | IslandCommand::Audio { .. }
+                | IslandCommand::MarketMute { .. }
         );
-        let result = (|| {
+        let result: AppResult<Value> = (|| {
             let _native = core.store.native_actions.lock().map_err(err)?;
             if service.stopped.load(Ordering::Acquire) || windows::hidden(&app)? {
                 return Err("SESSION_EXPIRED: 通知窗口已停用".into());
@@ -63,17 +82,16 @@ pub(crate) async fn island_surface(
                 return Err("SESSION_EXPIRED: 灵动通知窗口已被替换".into());
             }
             let mut engine = service.engine.lock().map_err(err)?;
-            let target = engine.target(Surface::Notice);
             let clock = service.clock()?;
             match command {
                 IslandCommand::Ready => windows::ready(&app, &label, HOST_NOTICE_OWNER)?,
                 IslandCommand::Painted { id } => {
-                    require_notice(target, &id)?;
+                    require_notice(engine.stack_target(), &id)?;
                     windows::ready(&app, &label, &id)?;
                 }
                 IslandCommand::Failed { message, id } => {
                     if let Some(id) = &id {
-                        require_notice(target, id)?;
+                        require_notice(engine.stack_target(), id)?;
                     }
                     windows::failed(
                         &app,
@@ -83,24 +101,72 @@ pub(crate) async fn island_surface(
                     )?;
                 }
                 IslandCommand::Action { id, action } => {
-                    let target = require_notice(target, &id)?;
-                    let source = engine.notification().map(|n| n.source.clone());
+                    let target = require_notice(engine.notice_target(&id), &id)?;
+                    let source = engine.notice(&id).map(|n| n.source.clone());
+                    let market_alert = engine
+                        .notice(&id)
+                        .is_some_and(|notice| notice.market_alert.is_some());
                     engine.act(&core.store, &target, &id, action, clock)?;
                     engine.show_queued(&core.store, clock)?;
                     if matches!(action, Action::OpenSource) {
-                        source_to_open = source;
+                        if market_alert {
+                            market_event_to_open = Some(id);
+                        } else {
+                            source_to_open = source;
+                        }
                     }
                 }
                 IslandCommand::Hover { id, entered } => {
-                    let target = require_notice(target, &id)?;
+                    let target = require_notice(engine.notice_target(&id), &id)?;
                     engine.hover(&core.store, &target, &id, entered, clock)?
                 }
                 IslandCommand::Audio { id, state } => {
-                    let target = require_notice(target, &id)?;
+                    let target = require_notice(engine.notice_target(&id), &id)?;
                     engine.audio(&core.store, &target, &id, &state, clock)?;
                     if state == "ended" {
                         engine.show_queued(&core.store, clock)?;
                     }
+                }
+                IslandCommand::MarketMute { id, muted } => {
+                    engine.mute_market_notice(&core.store, &id, muted, clock)?;
+                }
+                IslandCommand::MarketSound { id, tone } => {
+                    let alert = engine
+                        .audible_market()
+                        .filter(|notice| notice.id == id)
+                        .and_then(|notice| notice.market_alert.as_ref())
+                        .filter(|alert| engine.market_tone(alert.direction) == tone)
+                        .ok_or("SESSION_EXPIRED: 当前行情铃声已停止或替换")?;
+                    return alert_notice::market_sound(
+                        &app,
+                        &core.store.root,
+                        alert.direction,
+                        &tone,
+                    );
+                }
+                IslandCommand::MarketSoundStarted { id, tone } => {
+                    let current = engine
+                        .audible_market()
+                        .filter(|notice| notice.id == id)
+                        .and_then(|notice| notice.market_alert.as_ref());
+                    if !current.is_some_and(|alert| engine.market_tone(alert.direction) == tone) {
+                        return Err("SESSION_EXPIRED: 当前行情铃声已停止或替换".into());
+                    }
+                    core.store.log("market-audio", &id)?;
+                }
+                IslandCommand::Drag { id } => {
+                    require_notice(engine.notice_target(&id), &id)?;
+                    drag = true;
+                }
+                IslandCommand::History { id } => {
+                    require_notice(engine.notice_target(&id), &id)?;
+                    history_to_open = Some(id);
+                }
+                IslandCommand::Pending => {
+                    if engine.stack_target().is_none() || engine.pending().is_empty() {
+                        return Err("SESSION_EXPIRED: 当前没有排队通知".into());
+                    }
+                    history_to_open = Some("pending".to_owned());
                 }
             }
             Ok(Value::Null)
@@ -110,11 +176,39 @@ pub(crate) async fn island_surface(
                 windows::open_notification_source(app, &source)
             });
         }
+        if let Some(id) = history_to_open {
+            windows::dispatch(&app, move |app| windows::notification_history(app, &id));
+        }
         // 读取与悬停不等待窗口协调，窗口创建正在等待本页就绪。
         if schedule {
             service.schedule(&app);
         }
-        result
+        let result = result?;
+        if let Some(id) = market_event_to_open {
+            windows::serialized(&app, |app| {
+                crate::alert_notice::open(app, &id, crate::alerts::NotificationChannel::Island)
+            })?;
+            let closed = (|| {
+                let _native = core.store.native_actions.lock().map_err(err)?;
+                service.engine.lock().map_err(err)?.dismiss_opened_market(
+                    &core.store,
+                    &id,
+                    service.clock()?,
+                )
+            })();
+            service.schedule(&app);
+            closed?;
+        }
+        if drag {
+            let moved = match press {
+                Some(press) => {
+                    windows::serialized(&app, |app| windows::drag_island(app, &window, press))?
+                }
+                None => false,
+            };
+            return Ok(Value::Bool(moved));
+        }
+        Ok(result)
     })
     .await
     .map_err(err)?
@@ -130,9 +224,170 @@ fn require_notice(target: Option<Target>, id: &str) -> AppResult<Target> {
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum SettingsCommand {
     Get,
-    Channel { channel: Channel, enabled: bool },
-    Calls { enabled: bool },
-    Test { channel: Channel, sample: Demo },
+    History,
+    Channel {
+        channel: Channel,
+        enabled: bool,
+    },
+    Calls {
+        enabled: bool,
+    },
+    MarketSound {
+        enabled: bool,
+    },
+    MarketTone {
+        direction: Direction,
+        id: String,
+    },
+    PreviewMarketTone {
+        id: String,
+    },
+    MaxVisible {
+        count: usize,
+    },
+    Opacity {
+        percent: u8,
+    },
+    Volume {
+        percent: u8,
+    },
+    Toggle {
+        control: IslandControl,
+    },
+    Shortcut {
+        control: IslandControl,
+        value: String,
+    },
+    Test {
+        channel: Channel,
+        sample: Demo,
+    },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum IslandControl {
+    Visibility,
+    Mute,
+}
+
+impl IslandControl {
+    const ALL: [Self; 2] = [Self::Visibility, Self::Mute];
+
+    fn shortcut_preference(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Visibility => ("notification.island.visibility_shortcut", "Alt+H"),
+            Self::Mute => ("notification.island.mute_shortcut", "Alt+M"),
+        }
+    }
+
+    fn toggle(self, app: &AppHandle, expected_key: Option<Shortcut>) -> AppResult<()> {
+        let core = app.state::<Core>();
+        let service = &core.reminders;
+        if let Some(key) = expected_key {
+            if service.island_shortcuts.lock().map_err(err)?[self as usize] != Some(key) {
+                return Ok(());
+            }
+        }
+        let preferences =
+            reminder_store::IslandPreferences::read(&*core.store.db.lock().map_err(err)?)?;
+        let (setting, enabled) = match self {
+            Self::Visibility => (reminder_store::ISLAND_HIDDEN, !preferences.hidden),
+            Self::Mute => (reminder_store::ISLAND_MUTED, !preferences.muted),
+        };
+        core.store
+            .save_preference(setting, if enabled { "true" } else { "false" })?;
+        let mut engine = service.engine.lock().map_err(err)?;
+        engine.sync(&core.store, service.clock()?)?;
+        let preferences = engine.island_preferences();
+        app.emit_to(
+            "main",
+            "host:island-controls",
+            json!({"hidden":preferences.hidden,"muted":preferences.muted}),
+        )
+        .map_err(err)
+    }
+
+    pub(crate) fn dispatch(self, app: &AppHandle, expected_key: Option<Shortcut>) {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let core = app.state::<Core>();
+            let result = (|| {
+                let _native = core.store.native_actions.lock().map_err(err)?;
+                if !core.quitting.load(Ordering::Acquire) {
+                    self.toggle(&app, expected_key)?;
+                }
+                Ok::<_, String>(())
+            })();
+            core.reminders.schedule(&app);
+            if let Err(error) = result {
+                core.report(format!("灵动通知设置未能应用：{error}"));
+            }
+        });
+    }
+
+    fn configured_key(self, db: &rusqlite::Connection) -> AppResult<String> {
+        let (preference, fallback) = self.shortcut_preference();
+        Ok(reminder_store::preference(db, preference)?.unwrap_or_else(|| fallback.into()))
+    }
+
+    fn parse_key(value: &str) -> AppResult<Shortcut> {
+        value
+            .parse::<Shortcut>()
+            .ok()
+            .filter(|key| !key.mods.is_empty())
+            .ok_or_else(|| "快捷键需要 Ctrl、Alt、Shift 或 Win 与一个主键".into())
+    }
+
+    fn register(self, app: &AppHandle, key: Shortcut, value: &str) -> AppResult<()> {
+        let shortcuts = app.global_shortcut();
+        if shortcuts.is_registered(key) {
+            return Err(format!("快捷键 {value} 已被 SoulDesk 的其他功能占用"));
+        }
+        shortcuts
+            .on_shortcut(key, move |app, key, event| {
+                if event.state() == ShortcutState::Pressed {
+                    self.dispatch(app, Some(*key));
+                }
+            })
+            .map_err(|error| {
+                app.state::<Core>()
+                    .log_error(&format!("灵动通知快捷键 {value} 注册失败：{error}"));
+                format!("无法注册快捷键 {value}，请检查是否被其他应用占用")
+            })
+    }
+
+    fn set_key(self, app: &AppHandle, value: &str) -> AppResult<()> {
+        let core = app.state::<Core>();
+        let key = Self::parse_key(value)?;
+        let mut registered = core.reminders.island_shortcuts.lock().map_err(err)?;
+        let active = &mut registered[self as usize];
+        let rebind = *active != Some(key);
+        if rebind {
+            self.register(app, key, value).map_err(|error| {
+                if active.is_some() {
+                    format!("{error}。已保留原键")
+                } else {
+                    error
+                }
+            })?;
+        }
+        if let Err(error) = core
+            .store
+            .save_preference(self.shortcut_preference().0, value)
+        {
+            if rebind {
+                let _ = app.global_shortcut().unregister(key);
+            }
+            return Err(error);
+        }
+        if let Some(old) = active.replace(key).filter(|_| rebind) {
+            if let Err(error) = app.global_shortcut().unregister(old) {
+                core.report(format!("灵动通知旧快捷键释放失败：{error}"));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -152,6 +407,13 @@ pub(crate) async fn notification_settings(
             let _native = core.store.native_actions.lock().map_err(err)?;
             match command {
                 SettingsCommand::Get => {}
+                SettingsCommand::History => {
+                    let engine = service.engine.lock().map_err(err)?;
+                    return Ok(json!({
+                        "shown": reminder_store::island_history(&core.store)?,
+                        "pending": engine.pending().into_iter().map(reminder_store::island_pending_entry).collect::<Vec<_>>()
+                    }));
+                }
                 SettingsCommand::Channel { channel, enabled } => {
                     core.store.save_preference(channel.preference_key(), if enabled { "true" } else { "false" })?;
                     if channel == Channel::Island && !enabled {
@@ -161,6 +423,46 @@ pub(crate) async fn notification_settings(
                 SettingsCommand::Calls { enabled } => {
                     core.store.save_preference(reminder_store::WIDGET_CALLS, if enabled { "true" } else { "false" })?;
                 }
+                SettingsCommand::MarketSound { enabled } => {
+                    core.store.save_preference(reminder_store::MARKET_SOUND, if enabled { "true" } else { "false" })?;
+                    let mut engine = service.engine.lock().map_err(err)?;
+                    engine.sync(&core.store, service.clock()?)?;
+                }
+                SettingsCommand::MarketTone { direction, id } => {
+                    let id = alert_notice::tone_id(&id).ok_or("INVALID_ARGUMENT: 未知的行情铃声")?;
+                    alert_notice::read_tone(&alert_notice::tone_roots(&app, &core.store.root)?, id)?;
+                    let mut engine = service.engine.lock().map_err(err)?;
+                    core.store.save_preference(reminder_store::market_tone_key(direction), id)?;
+                    engine.set_market_tone(direction, id);
+                }
+                SettingsCommand::PreviewMarketTone { id } => {
+                    let roots = alert_notice::tone_roots(&app, &core.store.root)?;
+                    return alert_notice::read_tone(&roots, &id).map(alert_notice::encode_tone);
+                }
+                SettingsCommand::MaxVisible { count } => {
+                    if !reminder_store::ISLAND_VISIBLE_RANGE.contains(&count) {
+                        return Err("INVALID_ARGUMENT: 最大可见条数须为 1～20".into());
+                    }
+                    core.store.save_preference(reminder_store::ISLAND_MAX_VISIBLE, &count.to_string())?;
+                    let mut engine = service.engine.lock().map_err(err)?;
+                    let clock = service.clock()?;
+                    engine.sync(&core.store, clock)?;
+                    engine.show_queued(&core.store, clock)?;
+                }
+                SettingsCommand::Opacity { percent } | SettingsCommand::Volume { percent } => {
+                    if !reminder_store::ISLAND_PERCENT_RANGE.contains(&percent) {
+                        return Err("INVALID_ARGUMENT: 百分比须为 0%～100%".into());
+                    }
+                    let key = if matches!(command, SettingsCommand::Opacity { .. }) {
+                        reminder_store::ISLAND_OPACITY
+                    } else {
+                        reminder_store::ISLAND_VOLUME
+                    };
+                    core.store.save_preference(key, &percent.to_string())?;
+                    service.engine.lock().map_err(err)?.sync(&core.store, service.clock()?)?;
+                }
+                SettingsCommand::Toggle { control } => control.toggle(&app, None)?,
+                SettingsCommand::Shortcut { control, value } => control.set_key(&app, &value)?,
                 SettingsCommand::Test { channel, sample } => {
                     let clock = service.clock()?;
                     service.engine.lock().map_err(err)?.host_demo(
@@ -169,11 +471,25 @@ pub(crate) async fn notification_settings(
                     )?;
                 }
             }
+            let registered = service.island_shortcuts.lock().map_err(err)?;
             let db = core.store.db.lock().map_err(err)?;
+            let preferences = reminder_store::IslandPreferences::read(&db)?;
+            let shortcut = |control: IslandControl| -> AppResult<Value> {
+                Ok(json!({"value":control.configured_key(&db)?,"registered":registered[control as usize].is_some()}))
+            };
             Ok(json!({
                 "windows":Channel::Windows.enabled(&db)?,
                 "island":Channel::Island.enabled(&db)?,
-                "calls":reminder_store::preference(&db, reminder_store::WIDGET_CALLS)?.as_deref() == Some("true")
+                "calls":reminder_store::preference(&db, reminder_store::WIDGET_CALLS)?.as_deref() == Some("true"),
+                "maxVisible":preferences.max_visible,
+                "opacity":preferences.opacity,
+                "volume":preferences.volume,
+                "controls":{"hidden":preferences.hidden,"muted":preferences.muted},
+                "shortcuts":{"visibility":shortcut(IslandControl::Visibility)?,"mute":shortcut(IslandControl::Mute)?},
+                "marketSound":preferences.market_sound,
+                "marketTones":{"up":preferences.market_up_tone,"down":preferences.market_down_tone},
+                "marketToneDefaults":{"up":alert_notice::default_tone(Direction::Up),"down":alert_notice::default_tone(Direction::Down)},
+                "marketToneGroups":alert_notice::tone_groups(&alert_notice::tone_roots(&app, &core.store.root)?),
             }))
         })();
         service.schedule(&app);
@@ -249,6 +565,7 @@ pub(crate) struct Service {
     stopped: AtomicBool,
     sent: Mutex<[Option<Target>; 2]>,
     rendered: Mutex<std::collections::HashSet<String>>,
+    island_shortcuts: Mutex<[Option<Shortcut>; 2]>,
     pub(crate) island_window: Mutex<Option<IslandWindow>>,
 }
 impl Default for Service {
@@ -260,17 +577,50 @@ impl Default for Service {
             stopped: AtomicBool::new(false),
             sent: Mutex::new([None, None]),
             rendered: Mutex::new(Default::default()),
+            island_shortcuts: Mutex::new([None; 2]),
             island_window: Mutex::new(None),
         }
     }
 }
 impl Service {
+    pub(crate) fn register_island_shortcuts(&self, app: &AppHandle) -> AppResult<()> {
+        let core = app.state::<Core>();
+        let mut registered = self.island_shortcuts.lock().map_err(err)?;
+        for control in IslandControl::ALL {
+            let value = control.configured_key(&*core.store.db.lock().map_err(err)?)?;
+            match IslandControl::parse_key(&value)
+                .and_then(|key| control.register(app, key, &value).map(|()| key))
+            {
+                Ok(key) => registered[control as usize] = Some(key),
+                Err(error) => core.log_error(&error),
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn notice_snapshot(&self, target: &Target) -> AppResult<Value> {
         let engine = self.engine.lock().map_err(err)?;
-        require_notice(engine.target(Surface::Notice), &target.event)?;
-        let notice = engine.notification().ok_or("SESSION_EXPIRED: 通知已关闭")?;
+        require_notice(engine.stack_target(), &target.event)?;
+        let items = engine
+            .visible()
+            .map(|notice| json!({"notification":notice,"height":notice.kind.height()}))
+            .collect::<Vec<_>>();
+        let pending = engine.pending();
+        let market = engine.audible_market();
+        let preferences = engine.island_preferences();
         Ok(json!({
-            "notification":notice, "sampledAt":now_ms(), "displayed":false
+            "id": target.event, "items": items, "sampledAt": now_ms(),
+            "audible": engine.audible_call(),
+            "audibleMarket": market.map(|notice| &notice.id),
+            "audibleMarketTone": market.and_then(|notice| notice.market_alert.as_ref())
+                .map(|alert| engine.market_tone(alert.direction)),
+            "opacity": preferences.opacity,
+            "volume": preferences.volume,
+            "hidden": preferences.hidden,
+            "muted": preferences.muted,
+            "pendingCount": pending.len(),
+            "next": pending.first().map(|notice| reminder_store::island_pending_entry(notice)),
+            "gap": crate::reminder_engine::ISLAND_GAP, "moreHeight": crate::reminder_engine::ISLAND_MORE_HEIGHT,
         }))
     }
     fn clock(&self) -> AppResult<Clock> {
@@ -293,7 +643,12 @@ impl Service {
         if self.stopped.load(Ordering::Acquire) {
             return None;
         }
-        self.engine.lock().ok()?.target(surface)
+        let engine = self.engine.lock().ok()?;
+        if surface == Surface::Notice {
+            engine.stack_target()
+        } else {
+            engine.target(Surface::Rest)
+        }
     }
     pub fn current_window(&self, label: &str, instance: &str) -> bool {
         self.target(Surface::Rest)
@@ -349,6 +704,28 @@ impl Service {
             }
         }
     }
+
+    pub(crate) fn market_alert(
+        &self,
+        app: &AppHandle,
+        event: &crate::alerts::AlertEvent,
+    ) -> AppResult<()> {
+        let core = app.state::<Core>();
+        {
+            let _native = core.store.native_actions.lock().map_err(err)?;
+            if self.stopped.load(Ordering::Acquire) {
+                return Err("SESSION_EXPIRED: 提醒后台已退出".into());
+            }
+            self.engine.lock().map_err(err)?.market_alert(
+                &core.store,
+                event,
+                self.clock()?,
+                windows::hidden(app)?,
+            )?;
+        }
+        self.schedule(app);
+        Ok(())
+    }
     pub fn show_target(
         &self,
         app: &AppHandle,
@@ -364,21 +741,19 @@ impl Service {
         {
             return Err("SESSION_EXPIRED: 专用显示已停用".into());
         }
-        self.engine.lock().map_err(err)?.validate_target(
-            &core.store,
-            target,
-            &target.event,
-            self.clock()?,
-        )?;
-        show()?;
-        self.engine
-            .lock()
-            .map_err(err)?
-            .shown(&core.store, target, self.clock()?)?;
+        let mut engine = self.engine.lock().map_err(err)?;
         if target.surface == Surface::Notice {
+            if engine.stack_target().as_ref() != Some(target) {
+                return Err("SESSION_EXPIRED: 灵动通知已更新".into());
+            }
+            show()?;
+            engine.shown_stack(&core.store, target, self.clock()?)?;
             app.emit_to(label, "host:island-shown", &target.event)
                 .map_err(err)?;
         } else {
+            engine.validate_target(&core.store, target, &target.event, self.clock()?)?;
+            show()?;
+            engine.shown(&core.store, target, self.clock()?)?;
             self.rendered.lock().map_err(err)?.insert(label.into());
         }
         Ok(())
@@ -710,7 +1085,13 @@ mod tests {
         )
         .unwrap();
         let old = service.target(Surface::Notice).unwrap();
-        assert_eq!(service.notice_snapshot(&old).unwrap()["displayed"], false);
+        assert_eq!(
+            service.notice_snapshot(&old).unwrap()["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         service
             .engine
             .lock()
@@ -722,10 +1103,9 @@ mod tests {
         assert!(service.notice_snapshot(&old).is_err());
         let current = current.unwrap();
         assert!(require_notice(Some(current.clone()), &current.event).is_ok());
-        assert_eq!(
-            service.notice_snapshot(&current).unwrap()["notification"]["id"],
-            current.event
-        );
+        let snapshot = service.notice_snapshot(&current).unwrap();
+        assert_eq!(snapshot["id"], current.event);
+        assert_eq!(snapshot["items"].as_array().unwrap().len(), 2);
     }
     #[test]
     fn reminder_cached_window_expires_only_after_thirty_seconds_idle() {

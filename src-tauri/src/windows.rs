@@ -166,13 +166,13 @@ pub fn serialized<T>(
 pub fn dispatch(
     app: &AppHandle,
     action: impl FnOnce(&AppHandle) -> AppResult<()> + Send + 'static,
-) {
+) -> tauri::async_runtime::JoinHandle<()> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(error) = serialized(&handle, action) {
             handle.state::<Core>().report(error);
         }
-    });
+    })
 }
 
 fn html_drop_for_window(store: &crate::store::Store, label: &str) -> AppResult<bool> {
@@ -449,6 +449,12 @@ pub fn destroy_window(app: &AppHandle, label: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub(crate) const SILENT_STARTUP: &str = "silent_startup";
+
+pub(crate) fn silent_startup(store: &crate::store::Store) -> bool {
+    store.preference(SILENT_STARTUP).as_deref() != Some("false")
+}
+
 #[cfg(windows)]
 pub fn autostart_enabled() -> AppResult<bool> {
     use winreg::{
@@ -542,6 +548,25 @@ pub fn settings(app: &AppHandle) -> AppResult<()> {
     }
     show(app, true)?;
     app.emit_to("main", "host:navigate", "checks").map_err(err)
+}
+
+pub(crate) fn notification_history(app: &AppHandle, id: &str) -> AppResult<()> {
+    if app.get_webview_window("main").is_none() {
+        build(
+            app,
+            "main",
+            format!("index.html?tab=checks&notificationHistory={id}"),
+            1000.,
+            740.,
+        )?;
+    }
+    let window = main_window(app)?;
+    if window.is_minimized().map_err(err)? {
+        window.unminimize().map_err(err)?;
+    }
+    show(app, true)?;
+    app.emit_to("main", "host:notification-history", id)
+        .map_err(err)
 }
 
 pub fn instance(app: &AppHandle, id: &str) -> AppResult<serde_json::Value> {
@@ -791,6 +816,131 @@ pub(crate) fn reminder_reconcile(
     Ok(())
 }
 
+const ISLAND_WIDTH: u32 = 350;
+const ISLAND_POSITION: &str = "notification.island.position";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IslandPosition {
+    monitor: Option<String>,
+    monitor_origin: (i32, i32),
+    left: f64,
+    top: f64,
+}
+
+fn island_geometry(
+    area: WorkArea,
+    height: u32,
+    offset: Option<(f64, f64)>,
+) -> (i32, i32, u32, u32) {
+    let scaled = |size: u32| (f64::from(size) * area.scale_factor).round().max(1.) as u32;
+    let width = scaled(ISLAND_WIDTH).min(area.width);
+    let height = scaled(height).min(area.height);
+    let max_x = f64::from(area.width - width);
+    let max_y = f64::from(area.height - height);
+    let (x, y) = offset
+        .map(|(x, y)| (x * area.scale_factor, y * area.scale_factor))
+        .unwrap_or((max_x / 2., 12. * area.scale_factor));
+    (
+        area.left + x.clamp(0., max_x).round() as i32,
+        area.top + y.clamp(0., max_y).round() as i32,
+        width,
+        height,
+    )
+}
+
+fn saved_island_geometry(app: &AppHandle, height: u32) -> AppResult<(i32, i32, u32, u32)> {
+    let core = app.state::<Core>();
+    if let Some(position) = core
+        .store
+        .preference(ISLAND_POSITION)
+        .and_then(|value| serde_json::from_str::<IslandPosition>(&value).ok())
+    {
+        if let Some(monitor) = app
+            .available_monitors()
+            .map_err(err)?
+            .into_iter()
+            .find(|monitor| {
+                if let Some(name) = &position.monitor {
+                    monitor.name() == Some(name)
+                } else {
+                    (monitor.position().x, monitor.position().y) == position.monitor_origin
+                }
+            })
+        {
+            return Ok(island_geometry(
+                work_area(&monitor),
+                height,
+                Some((position.left, position.top)),
+            ));
+        }
+    }
+    Ok(island_geometry(area(app, false)?, height, None))
+}
+
+pub(crate) fn drag_island(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    press: native::EdgePress,
+) -> AppResult<bool> {
+    use crate::reminder_engine::Surface;
+    let core = app.state::<Core>();
+    if hidden(app)? {
+        return Ok(true);
+    }
+    let Some(target) = core.reminders.target(Surface::Notice) else {
+        return Ok(true);
+    };
+    let initial = window.outer_position().map_err(err)?;
+    let origin = window
+        .current_monitor()
+        .map_err(err)?
+        .or(app.primary_monitor().map_err(err)?)
+        .ok_or("未找到可用显示器")?;
+    let mut monitor = origin.clone();
+    let initial_scale = origin.scale_factor();
+    let mut position = None;
+    let attempt = native::drag_panel_edge(window, press, initial_scale, |start, pointer| {
+        if let Some(next) = app
+            .monitor_from_point(f64::from(pointer.0), f64::from(pointer.1))
+            .map_err(err)?
+        {
+            monitor = next;
+        }
+        let area = work_area(&monitor);
+        let attach_x = f64::from(start.0 - initial.x) / initial_scale;
+        let attach_y = f64::from(start.1 - initial.y) / initial_scale;
+        let left = f64::from(pointer.0 - area.left) / area.scale_factor - attach_x;
+        let top = f64::from(pointer.1 - area.top) / area.scale_factor - attach_y;
+        let (x, y, width, height) = island_geometry(area, target.height, Some((left, top)));
+        native::place_docked(window, x, y, width, height, false)?;
+        position = Some(IslandPosition {
+            monitor: monitor.name().cloned(),
+            monitor_origin: (monitor.position().x, monitor.position().y),
+            left: f64::from(x - area.left) / area.scale_factor,
+            top: f64::from(y - area.top) / area.scale_factor,
+        });
+        Ok(())
+    });
+    let dropped = matches!(&attempt, Ok(native::EdgeDrag::Dropped));
+    let result = match attempt {
+        Ok(native::EdgeDrag::Click) => return Ok(false),
+        Ok(native::EdgeDrag::Dropped) => match position.as_ref() {
+            Some(position) => core.store.save_preference(
+                ISLAND_POSITION,
+                &serde_json::to_string(position).map_err(err)?,
+            ),
+            None => Ok(()),
+        },
+        Ok(native::EdgeDrag::Cancelled) => Ok(()),
+        Err(error) => Err(error),
+    };
+    if position.is_some() && (!dropped || result.is_err()) {
+        let (x, y, width, height) = saved_island_geometry(app, target.height)?;
+        native::place_docked(window, x, y, width, height, false)?;
+    }
+    result.map(|()| true)
+}
+
 fn island_reconcile(
     app: &AppHandle,
     target: Option<crate::reminder_engine::Target>,
@@ -838,35 +988,41 @@ fn island_reconcile(
     let active = || service.target(Surface::Notice).as_ref() == Some(&target);
     let result = (|| {
         let w = if let Some(w) = window {
-            native::hide(&w)?;
-            w.set_size(LogicalSize::new(350., f64::from(target.height)))
-                .map_err(err)?;
             w
         } else {
             build(
                 app,
                 &label,
                 "island.html".into(),
-                350.,
+                f64::from(ISLAND_WIDTH),
                 f64::from(target.height),
             )?
         };
-        let area = area(app, false)?;
-        let size = w.outer_size().map_err(err)?;
-        w.set_position(tauri::PhysicalPosition::new(
-            area.left + (area.width as i32 - size.width as i32) / 2,
-            area.top + (if target.height == 160 { 100. } else { 80. } * area.scale_factor) as i32,
-        ))
-        .map_err(err)?;
         wait_ready_while(app, &label, &target.owner, Duration::ZERO, active)?;
-        app.emit_to(
-            &label,
-            "host:island-content",
-            service.notice_snapshot(&target)?,
-        )
-        .map_err(err)?;
+        let mut snapshot = service.notice_snapshot(&target)?;
+        let show_window = snapshot["hidden"] != true;
+        let click_through = snapshot["opacity"] == 0;
+        snapshot["marketAudioMuted"] =
+            serde_json::json!(core.integration.as_ref().is_some_and(|c| c.market_check()));
+        app.emit_to(&label, "host:island-content", snapshot)
+            .map_err(err)?;
         wait_ready_while(app, &label, &target.event, Duration::ZERO, active)?;
-        service.show_target(app, &target, &label, || native::show(&w))
+        let (x, y, width, height) = saved_island_geometry(app, target.height)?;
+        service.show_target(app, &target, &label, || {
+            w.set_ignore_cursor_events(click_through).map_err(err)?;
+            if w.outer_position().map_err(err)? != tauri::PhysicalPosition::new(x, y)
+                || w.outer_size().map_err(err)? != tauri::PhysicalSize::new(width, height)
+            {
+                native::place_docked(&w, x, y, width, height, false)?;
+            }
+            let visible = w.is_visible().map_err(err)?;
+            if show_window && !visible {
+                native::show(&w)?;
+            } else if !show_window && visible {
+                native::hide(&w)?;
+            }
+            Ok(())
+        })
     })();
     {
         let key = format!("{label}/{}", target.event);
@@ -1446,9 +1602,9 @@ pub fn show_panel_on_hover(app: &AppHandle) -> AppResult<bool> {
     Ok(true)
 }
 
-fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> AppResult<()> {
-    if let Err(error) = native::set_panel_layer(window, foreground) {
-        return match native::set_panel_layer(window, !foreground) {
+fn set_panel_layer(window: &WebviewWindow, foreground: bool, focus: bool) -> AppResult<()> {
+    if let Err(error) = native::set_panel_layer(window, foreground, focus) {
+        return match native::set_panel_layer(window, !foreground, false) {
             Ok(()) => Err(error),
             Err(restore) => Err(format!("{error}；恢复面板层级失败：{restore}")),
         };
@@ -1495,11 +1651,12 @@ pub fn show_panel(app: &AppHandle, focus: bool) -> AppResult<()> {
         if let Err(e) = native::slide_panel(&w, true, settings.slide_in_ms, settings.edge.side) {
             app.state::<Core>().report(e);
         }
+        native::maintain_panel_layer(&w, true, focus)?;
         set_panel_foreground(true);
     } else if !scene_is_foreground(panel_scene()) {
-        set_panel_layer(&w, true)?;
+        set_panel_layer(&w, true, focus)?;
     } else {
-        native::maintain_panel_layer(&w, true)?;
+        native::maintain_panel_layer(&w, true, focus)?;
         native::show(&w)?;
     }
     if focus {
@@ -1522,7 +1679,7 @@ pub fn collapse(app: &AppHandle) -> AppResult<()> {
         if !scene_is_foreground(panel_scene()) {
             return Ok(());
         }
-        set_panel_layer(&w, false)?;
+        set_panel_layer(&w, false, false)?;
     } else {
         if let Err(e) = native::slide_panel(&w, false, settings.slide_out_ms, settings.edge.side) {
             app.state::<Core>().report(e);
@@ -1954,6 +2111,25 @@ pub fn detail_capability(page: &str) -> AppResult<Option<&'static str>> {
     match page {
         "quotes" | "rules" | "history" => Ok(None),
         "pomodoro-scenes" | "pomodoro-settings" | "pomodoro-history" => Ok(Some("focus.pomodoro")),
+        page if page.starts_with("market-chart:") => {
+            let mut fields = page["market-chart:".len()..].split(':');
+            let market = fields.next().unwrap_or_default();
+            let symbol = fields.next().ok_or("行情详情缺少标的")?;
+            let price_kind = match fields.next() {
+                None | Some("last") => crate::alerts::PriceKind::Last,
+                Some("mark") => crate::alerts::PriceKind::Mark,
+                _ => return Err("行情详情价格来源无效".into()),
+            };
+            if fields.next().is_some() {
+                return Err("行情详情参数无效".into());
+            }
+            let key = crate::alerts::MarketKey {
+                market: market.into(),
+                ..crate::alerts::MarketKey::binance(symbol, price_kind)
+            };
+            key.validate()?;
+            Ok(Some("market.chart"))
+        }
         _ => Err("未知详情页".into()),
     }
 }
@@ -1962,17 +2138,49 @@ pub fn detail_at(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
     if hidden(app)? || instance(app, id)?["visible"] != true {
         return Err("请先显示组件".into());
     }
+    show_detail(app, id, page)
+}
+
+pub(crate) fn open_market_alert_chart(
+    app: &AppHandle,
+    key: &crate::alerts::MarketKey,
+) -> AppResult<()> {
+    key.validate()?;
+    let Some(instance) = instances(app)?
+        .into_iter()
+        .filter(|entry| entry["packageId"] == crate::alert_notice::MARKET_PACKAGE)
+        .max_by_key(|entry| entry["visible"] == true)
+    else {
+        show(app, true)?;
+        return Err("找不到行情组件实例，请从组件库添加后打开 K 线".into());
+    };
+    let id = instance["id"].as_str().ok_or("行情组件实例无效")?;
+    let price = match key.price_kind {
+        crate::alerts::PriceKind::Last => "last",
+        crate::alerts::PriceKind::Mark => "mark",
+    };
+    show_detail(
+        app,
+        id,
+        &format!("market-chart:{}:{}:{price}", key.market, key.symbol),
+    )
+}
+
+fn show_detail(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
     let label = format!("detail-{id}");
     let w = if let Some(w) = app.get_webview_window(&label) {
         w
     } else {
-        build(
-            app,
-            &label,
-            format!("index.html?detail={id}&page={page}"),
-            820.,
-            740.,
-        )?
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("detail", id)
+            .append_pair("page", page)
+            .finish();
+        let (width, height) = if page.starts_with("market-chart:") {
+            (1120., 760.)
+        } else {
+            (820., 740.)
+        };
+        build(app, &label, format!("index.html?{query}"), width, height)?
     };
     clamp(&w)?;
     w.show().map_err(err)?;
@@ -2041,11 +2249,21 @@ pub fn toggle(app: &AppHandle) -> AppResult<()> {
         restore(app)?;
         return show_panel(app, true);
     }
-    if scene_is_foreground(panel_scene()) {
-        collapse(app)
-    } else {
-        show_panel(app, true)
+    if !scene_is_foreground(panel_scene()) {
+        return show_panel(app, true);
     }
+    // 锁定面板可能仍被宿主记为前台，但 Windows 已取消实际置顶。
+    if panel_locked(app)?
+        && app
+            .get_webview_window("panel")
+            .as_ref()
+            .map(native::panel_is_topmost)
+            .transpose()?
+            == Some(false)
+    {
+        return show_panel(app, true);
+    }
+    collapse(app)
 }
 
 pub fn toggle_locked_panel(app: &AppHandle) -> AppResult<()> {
@@ -2144,6 +2362,26 @@ pub fn destroy_views(app: &AppHandle) -> AppResult<()> {
 #[cfg(test)]
 mod document_drop_tests {
     use super::*;
+
+    #[test]
+    fn island_geometry_places_default_near_top_and_keeps_saved_offsets_in_view() {
+        let area = WorkArea {
+            left: -1600,
+            top: 30,
+            width: 1600,
+            height: 900,
+            scale_factor: 1.25,
+        };
+        assert_eq!(island_geometry(area, 72, None), (-1019, 45, 438, 90));
+        assert_eq!(
+            island_geometry(area, 48, Some((50., 30.))),
+            (-1537, 68, 438, 60)
+        );
+        assert_eq!(
+            island_geometry(area, 800, Some((50., 300.))),
+            (-1537, 30, 438, 900)
+        );
+    }
 
     #[test]
     fn panel_waits_three_seconds_after_leaving_and_resets_on_return() {
@@ -2320,7 +2558,8 @@ pub fn monitor_changes(app: &AppHandle) -> AppResult<()> {
         repair(app)?;
     }
     if let Some(panel) = app.get_webview_window("panel") {
-        if let Err(error) = native::maintain_panel_layer(&panel, scene_is_foreground(panel_scene()))
+        if let Err(error) =
+            native::maintain_panel_layer(&panel, scene_is_foreground(panel_scene()), false)
         {
             app.state::<Core>().report(error);
         }

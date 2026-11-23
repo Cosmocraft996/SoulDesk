@@ -1,10 +1,11 @@
 //! 灵动通知、久坐与来电的核心协调；原生输入通过显式回调注入。
 use crate::{
+    alerts::Direction,
     notification_sdk::{self, Request},
     reminder_state::{
         IslandState, LocalMinute, PhoneLedger, PhonePreset, PhoneRule, SitConfig, SitUsage,
     },
-    reminder_store::{self, Channel, InstanceConfig, Source},
+    reminder_store::{self, Channel, InstanceConfig, IslandPreferences, Source},
     store::{err, AppResult, Store},
 };
 use rusqlite::{params, OptionalExtension};
@@ -14,6 +15,9 @@ use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
 pub(crate) const HOST_NOTICE_OWNER: &str = "host";
+const KIND_LIMIT: usize = 3;
+pub(crate) const ISLAND_GAP: u32 = 4;
+pub(crate) const ISLAND_MORE_HEIGHT: u32 = 36;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Clock {
@@ -28,10 +32,34 @@ pub(crate) enum NoticeKind {
     Success,
     Error,
     Warning,
+    MarketAlert,
     Reminder,
     AdvanceCountdown,
     Countdown,
     Call,
+}
+impl NoticeKind {
+    fn priority(self) -> u8 {
+        match self {
+            Self::Call => 0,
+            Self::Error => 1,
+            Self::Warning => 2,
+            Self::MarketAlert => 3,
+            Self::Reminder => 4,
+            Self::Countdown => 5,
+            Self::AdvanceCountdown => 6,
+            Self::Success => 7,
+            Self::Info => 8,
+        }
+    }
+
+    pub(crate) fn height(self) -> u32 {
+        match self {
+            Self::Reminder => 144,
+            Self::Call | Self::AdvanceCountdown => 72,
+            _ => 48,
+        }
+    }
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -76,6 +104,16 @@ impl Target {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct MarketNotice {
+    pub key: crate::alerts::MarketKey,
+    pub direction: crate::alerts::Direction,
+    pub price: String,
+    pub threshold: String,
+    triggered_at: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Notice {
     pub id: String,
     pub source: String,
@@ -89,12 +127,14 @@ pub(crate) struct Notice {
     pub mute: bool,
     pub phase: String,
     pub source_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub market_alert: Option<MarketNotice>,
     #[serde(skip)]
     pub source_revision: u64,
     #[serde(skip)]
     preview: bool,
     #[serde(skip)]
-    break_seconds: Option<u32>,
+    pub(crate) break_seconds: Option<u32>,
 }
 
 struct Receipt {
@@ -102,6 +142,12 @@ struct Receipt {
     request: Request,
     at: u64,
     result: AppResult<Value>,
+}
+
+struct ActiveNotice {
+    notice: Notice,
+    timer: IslandState,
+    shown: bool,
 }
 
 fn sdk_island_allowed(store: &Store, notice: &Notice) -> AppResult<bool> {
@@ -127,23 +173,102 @@ pub(crate) struct Rest {
 #[derive(Default)]
 pub(crate) struct Engine {
     configs: Vec<InstanceConfig>,
-    notice: Option<Notice>,
+    notices: Vec<ActiveNotice>,
     queued: VecDeque<Notice>,
     receipts: VecDeque<Receipt>,
     rest: Option<Rest>,
-    island: IslandState,
     usages: HashMap<String, (u64, SitUsage)>,
     last_cursor: Option<u64>,
     notice_generation: u64,
     rest_generation: u64,
     hidden: bool,
+    preferences: IslandPreferences,
     errors: HashMap<String, String>,
     configuration_errors: HashMap<String, String>,
     delivery: HashMap<String, String>,
 }
 impl Engine {
+    #[cfg(test)]
     pub fn notification(&self) -> Option<&Notice> {
-        self.notice.as_ref()
+        self.notices.first().map(|entry| &entry.notice)
+    }
+    pub(crate) fn notice(&self, id: &str) -> Option<&Notice> {
+        self.notices
+            .iter()
+            .map(|entry| &entry.notice)
+            .find(|notice| notice.id == id)
+    }
+    pub(crate) fn visible(&self) -> impl Iterator<Item = &Notice> + Clone {
+        self.notices.iter().map(|entry| &entry.notice)
+    }
+    pub(crate) fn pending(&self) -> Vec<&Notice> {
+        let mut queued = self.queued.iter().collect::<Vec<_>>();
+        queued.sort_by_key(|notice| notice.kind.priority());
+        queued
+    }
+    pub(crate) fn audible_call(&self) -> Option<&str> {
+        self.visible()
+            .find(|notice| notice.kind == NoticeKind::Call && !notice.mute)
+            .map(|notice| notice.id.as_str())
+    }
+    pub(crate) fn island_preferences(&self) -> IslandPreferences {
+        self.preferences
+    }
+    pub(crate) fn audible_market(&self) -> Option<&Notice> {
+        if !self.preferences.market_sound || self.audible_call().is_some() {
+            return None;
+        }
+        self.visible()
+            .filter(|notice| notice.market_alert.is_some() && !notice.mute)
+            .max_by_key(|notice| notice.market_alert.as_ref().map(|alert| alert.triggered_at))
+    }
+    pub(crate) fn market_tone(&self, direction: Direction) -> &'static str {
+        match direction {
+            Direction::Up => self.preferences.market_up_tone,
+            Direction::Down => self.preferences.market_down_tone,
+        }
+    }
+    pub(crate) fn set_market_tone(&mut self, direction: Direction, id: &'static str) {
+        let tone = match direction {
+            Direction::Up => &mut self.preferences.market_up_tone,
+            Direction::Down => &mut self.preferences.market_down_tone,
+        };
+        if *tone != id {
+            *tone = id;
+            self.stack_changed();
+        }
+    }
+    pub(crate) fn stack_target(&self) -> Option<Target> {
+        if self.hidden || self.notices.is_empty() {
+            return None;
+        }
+        let height = self
+            .visible()
+            .map(|notice| notice.kind.height())
+            .sum::<u32>()
+            + ISLAND_GAP * (self.notices.len() as u32 - 1)
+            + if self.queued.is_empty() {
+                0
+            } else {
+                ISLAND_GAP + ISLAND_MORE_HEIGHT
+            };
+        Some(Target {
+            surface: Surface::Notice,
+            owner: HOST_NOTICE_OWNER.into(),
+            event: format!("stack-{}", self.notice_generation),
+            generation: self.notice_generation,
+            height,
+        })
+    }
+    pub(crate) fn notice_target(&self, id: &str) -> Option<Target> {
+        let notice = self.notice(id).filter(|_| !self.hidden)?;
+        Some(Target {
+            surface: Surface::Notice,
+            owner: HOST_NOTICE_OWNER.into(),
+            event: notice.id.clone(),
+            generation: 0,
+            height: notice.kind.height(),
+        })
     }
     pub fn rest(&self) -> Option<&Rest> {
         self.rest.as_ref()
@@ -153,20 +278,7 @@ impl Engine {
             return None;
         }
         match surface {
-            Surface::Notice => {
-                let notice = self.notice.as_ref()?;
-                Some(Target {
-                    surface,
-                    owner: HOST_NOTICE_OWNER.into(),
-                    event: notice.id.clone(),
-                    generation: self.notice_generation,
-                    height: match notice.kind {
-                        NoticeKind::Reminder => 160,
-                        NoticeKind::Call | NoticeKind::AdvanceCountdown => 88,
-                        _ => 64,
-                    },
-                })
-            }
+            Surface::Notice => self.notice_target(&self.notices.first()?.notice.id),
             Surface::Rest => {
                 let rest = self.rest.as_ref()?;
                 Some(Target {
@@ -189,20 +301,25 @@ impl Engine {
         self.last_cursor = None;
     }
     pub(crate) fn cancel_notifications(&mut self) {
-        self.clear_notice();
-        self.queued.clear();
+        if !self.notices.is_empty() || !self.queued.is_empty() {
+            self.notices.clear();
+            self.queued.clear();
+            self.stack_changed();
+        }
     }
     pub fn cancel(&mut self, surface: Surface) {
         if surface == Surface::Notice {
-            self.clear_notice();
+            self.cancel_notifications();
         } else {
             self.clear_rest();
         }
     }
-    fn clear_notice(&mut self) {
-        self.notice = None;
-        self.island.clear();
+    fn stack_changed(&mut self) {
         self.notice_generation = self.notice_generation.wrapping_add(1);
+    }
+    fn remove_notice(&mut self, id: &str) {
+        self.notices.retain(|entry| entry.notice.id != id);
+        self.stack_changed();
     }
     fn clear_rest(&mut self) {
         if let Some(rest) = self.rest.take() {
@@ -214,28 +331,44 @@ impl Engine {
     }
     pub fn invalidate(&mut self, id: &str) {
         self.usages.remove(id);
+        let count = self.notices.len() + self.queued.len();
         self.queued.retain(|notice| notice.source != id);
-        if self
-            .notice
-            .as_ref()
-            .is_some_and(|notice| notice.source == id)
-        {
-            self.clear_notice();
+        self.notices.retain(|entry| entry.notice.source != id);
+        if count != self.notices.len() + self.queued.len() {
+            self.stack_changed();
         }
         if self.rest.as_ref().is_some_and(|rest| rest.source == id) {
             self.clear_rest();
         }
     }
-    fn sync(&mut self, store: &Store, clock: Clock) -> AppResult<()> {
-        let (scan, island_enabled) = {
+    pub(crate) fn sync(&mut self, store: &Store, clock: Clock) -> AppResult<()> {
+        let (scan, island_enabled, preferences) = {
             let db = store.db.lock().map_err(err)?;
             (
                 reminder_store::configurations(&db)?,
                 Channel::Island.enabled(&db)?,
+                IslandPreferences::read(&db)?,
             )
         };
-        if !island_enabled && (self.notice.is_some() || !self.queued.is_empty()) {
+        if !island_enabled {
             self.cancel_notifications();
+        }
+        if preferences != self.preferences {
+            if preferences.hidden && !self.preferences.hidden {
+                for entry in &mut self.notices {
+                    entry
+                        .timer
+                        .hover(&entry.notice.id, clock.monotonic_ms, false);
+                }
+            }
+            self.preferences = preferences;
+            if self.notices.len() > preferences.max_visible {
+                let overflow = self.notices.split_off(preferences.max_visible);
+                for entry in overflow.into_iter().rev() {
+                    self.queued.push_front(entry.notice);
+                }
+            }
+            self.stack_changed();
         }
         self.configs = scan.valid;
         self.configuration_errors = scan.failures;
@@ -244,25 +377,28 @@ impl Engine {
                 c.id == id && c.revision == revision && (preview || c.config["enabled"] == true)
             })
         };
-        let invalid_notice = if let Some(n) = &self.notice {
+        let mut invalid = Vec::new();
+        for entry in &self.notices {
+            let n = &entry.notice;
             let expired = n.target_at.is_some_and(|target| target <= clock.wall_ms);
-            if n.source_name.is_some() {
+            let unavailable = if n.source_name.is_some() {
                 expired || !sdk_island_allowed(store, n)?
             } else {
                 expired
                     || (n.source != HOST_NOTICE_OWNER
                         && !valid(&n.source, n.source_revision, n.preview))
+            };
+            if unavailable || entry.timer.expired(clock.monotonic_ms) {
+                invalid.push(n.id.clone());
             }
-        } else {
-            false
-        };
+        }
         let invalid_rest = self.rest.as_ref().is_some_and(|r| {
             !valid(&r.source, r.source_revision, false)
                 || clock.wall_ms < r.started_at
                 || clock.wall_ms >= r.deadline
         });
-        if invalid_notice {
-            self.clear_notice();
+        for id in invalid {
+            self.remove_notice(&id);
         }
         if invalid_rest {
             self.clear_rest();
@@ -275,9 +411,6 @@ impl Engine {
                     && c.config["enabled"] == true
             })
         });
-        if self.island.expire(clock.monotonic_ms) {
-            self.clear_notice();
-        }
         Ok(())
     }
     fn mark(
@@ -288,9 +421,25 @@ impl Engine {
         error: Option<String>,
         now: u64,
     ) -> AppResult<()> {
-        let value = json!({"state":state,"error":error,"at":now});
-        store.db.lock().map_err(err)?.execute("INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![format!("reminder.delivery/{id}"),value.to_string()]).map_err(err)?;
+        Self::save_delivery(
+            &*store.db.lock().map_err(err)?,
+            id,
+            state,
+            error.as_deref(),
+            now,
+        )?;
         self.remember(id, state, error);
+        Ok(())
+    }
+    fn save_delivery(
+        db: &rusqlite::Connection,
+        id: &str,
+        state: &str,
+        error: Option<&str>,
+        now: u64,
+    ) -> AppResult<()> {
+        let value = json!({"state":state,"error":error,"at":now});
+        db.execute("INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![format!("reminder.delivery/{id}"),value.to_string()]).map_err(err)?;
         Ok(())
     }
     fn remember(&mut self, id: &str, state: &str, error: Option<String>) {
@@ -303,7 +452,7 @@ impl Engine {
     }
     fn publish(&mut self, store: &Store, notice: Notice, clock: Clock) -> AppResult<()> {
         let id = notice.source.clone();
-        let result = self.publish_saved(store, notice, clock);
+        let result = self.publish_saved(store, notice, clock, None);
         if let Err(error) = &result {
             if !error.starts_with("DATA_UNAVAILABLE:") {
                 self.remember(
@@ -315,7 +464,22 @@ impl Engine {
         }
         result
     }
-    fn publish_saved(&mut self, store: &Store, notice: Notice, clock: Clock) -> AppResult<()> {
+    fn has_space(&self, kind: NoticeKind, replacing: Option<&str>) -> bool {
+        let visible = self
+            .visible()
+            .filter(|notice| Some(notice.id.as_str()) != replacing);
+        visible.clone().count() < self.preferences.max_visible
+            && (kind == NoticeKind::MarketAlert
+                || visible.filter(|notice| notice.kind == kind).count() < KIND_LIMIT)
+    }
+
+    fn publish_saved(
+        &mut self,
+        store: &Store,
+        notice: Notice,
+        clock: Clock,
+        replacing: Option<&str>,
+    ) -> AppResult<()> {
         let enabled = Channel::Island.enabled_in(store)?;
         if self.hidden || !enabled {
             let message = if self.hidden {
@@ -332,35 +496,58 @@ impl Engine {
             )?;
             return Err(format!("DATA_UNAVAILABLE: {message}"));
         }
-        let old_source = self.notice.as_ref().map(|old| old.source.clone());
+        let has_space = self.has_space(notice.kind, replacing);
+        if !has_space
+            && notice.kind != NoticeKind::MarketAlert
+            && self
+                .queued
+                .iter()
+                .filter(|notice| notice.kind != NoticeKind::MarketAlert)
+                .count()
+                >= notification_sdk::QUEUE_LIMIT
         {
-            // 替换与排队必须共同提交，失败不能留下“已替换但旧来电仍显示”的状态。
-            let mut db = store.db.lock().map_err(err)?;
-            let tx = db.transaction().map_err(err)?;
-            for (id, state) in old_source
-                .as_deref()
-                .map(|id| (id, "replaced"))
-                .into_iter()
-                .chain(std::iter::once((notice.source.as_str(), "queued")))
-            {
-                let value = json!({"state":state,"error":Value::Null,"at":clock.wall_ms});
-                tx.execute("INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![format!("reminder.delivery/{id}"),value.to_string()]).map_err(err)?;
-            }
-            tx.commit().map_err(err)?;
+            return Err("LIMIT: 灵动通知队列已满".into());
         }
-        if let Some(id) = old_source {
-            self.remember(&id, "replaced", None);
+        self.mark(store, &notice.source, "queued", None, clock.wall_ms)?;
+        if let Some(id) = replacing {
+            self.remove_notice(id);
         }
-        self.remember(&notice.source, "queued", None);
-        self.notice_generation = self.notice_generation.wrapping_add(1);
-        self.island.publish(
+        if has_space {
+            self.activate(notice, clock);
+        } else {
+            self.queued.push_back(notice);
+            self.stack_changed();
+        }
+        Ok(())
+    }
+
+    fn activate(&mut self, notice: Notice, clock: Clock) {
+        self.notices.push(Self::active(notice, clock));
+        self.notices
+            .sort_by_key(|entry| entry.notice.kind.priority());
+        self.stack_changed();
+    }
+
+    fn active(mut notice: Notice, clock: Clock) -> ActiveNotice {
+        notice.created_at = clock.wall_ms;
+        if notice.kind == NoticeKind::Countdown {
+            notice.duration = notice
+                .target_at
+                .unwrap_or(clock.wall_ms)
+                .saturating_sub(clock.wall_ms) as i64;
+        }
+        let mut timer = IslandState::default();
+        timer.publish(
             notice.id.clone(),
             notice.source.clone(),
             clock.monotonic_ms,
             notice.duration,
         );
-        self.notice = Some(notice);
-        Ok(())
+        ActiveNotice {
+            notice,
+            timer,
+            shown: false,
+        }
     }
 
     pub(crate) fn send(
@@ -429,6 +616,7 @@ impl Engine {
                     mute: true,
                     phase: String::new(),
                     source_name: None,
+                    market_alert: None,
                     source_revision: 0,
                     preview: false,
                     break_seconds: None,
@@ -453,15 +641,7 @@ impl Engine {
                 Channel::Island => {
                     self.sync(store, clock)?;
                     self.show_queued(store, clock)?;
-                    if self.notice.is_none() && self.queued.is_empty() {
-                        self.activate_sdk_notice(store, notice, clock)?;
-                    } else {
-                        if self.queued.len() >= notification_sdk::QUEUE_LIMIT {
-                            return Err("LIMIT: 灵动通知队列已满".into());
-                        }
-                        self.mark(store, &notice.source, "queued", None, clock.wall_ms)?;
-                        self.queued.push_back(notice);
-                    }
+                    self.publish(store, notice, clock)?;
                 }
             }
             Ok(json!({"status":"accepted","id":id,"channel":channel}))
@@ -475,43 +655,173 @@ impl Engine {
         result
     }
 
-    fn activate_sdk_notice(
+    pub(crate) fn market_alert(
         &mut self,
         store: &Store,
-        mut notice: Notice,
+        event: &crate::alerts::AlertEvent,
+        clock: Clock,
+        hidden: bool,
+    ) -> AppResult<()> {
+        self.hidden = hidden;
+        if hidden || !Channel::Island.enabled_in(store)? {
+            return Err(crate::alert_notice::ISLAND_SUPPRESSED.into());
+        }
+        self.sync(store, clock)?;
+        self.show_queued(store, clock)?;
+        if self.notice(&event.id).is_some()
+            || self.queued.iter().any(|notice| notice.id == event.id)
+        {
+            return Ok(());
+        }
+        let (instrument, _) = crate::alert_notice::content(event);
+        let movement = match event.direction {
+            crate::alerts::Direction::Up => "上涨至",
+            crate::alerts::Direction::Down => "下跌至",
+        };
+        let mut notice = Notice {
+            id: event.id.clone(),
+            source: HOST_NOTICE_OWNER.into(),
+            kind: NoticeKind::MarketAlert,
+            title: instrument,
+            message: format!("{movement} {}", event.observed_price),
+            preset: None,
+            target_at: None,
+            created_at: clock.wall_ms,
+            duration: -1,
+            mute: false,
+            phase: String::new(),
+            source_name: None,
+            market_alert: Some(MarketNotice {
+                key: event.key.clone(),
+                direction: event.direction,
+                price: event.observed_price.clone(),
+                threshold: event.threshold.clone(),
+                triggered_at: event.created_utc_ms,
+            }),
+            source_revision: 0,
+            preview: false,
+            break_seconds: None,
+        };
+        let same_instrument = |old: &Notice| {
+            old.market_alert.as_ref().is_some_and(|alert| {
+                alert.key.exchange == event.key.exchange
+                    && alert.key.market == event.key.market
+                    && alert.key.symbol == event.key.symbol
+            })
+        };
+        if let Some(index) = self
+            .notices
+            .iter()
+            .position(|entry| same_instrument(&entry.notice))
+        {
+            if self.notices[index]
+                .notice
+                .market_alert
+                .as_ref()
+                .is_some_and(|alert| alert.triggered_at > event.created_utc_ms)
+            {
+                return Ok(());
+            }
+            self.mark(store, HOST_NOTICE_OWNER, "queued", None, clock.wall_ms)?;
+            notice.mute = self.notices[index].notice.mute;
+            self.notices[index] = Self::active(notice, clock);
+            self.stack_changed();
+            return Ok(());
+        }
+        if let Some(index) = self.queued.iter().position(same_instrument) {
+            if self.queued[index]
+                .market_alert
+                .as_ref()
+                .is_some_and(|alert| alert.triggered_at > event.created_utc_ms)
+            {
+                return Ok(());
+            }
+            notice.mute = self.queued[index].mute;
+            self.queued[index] = notice;
+            self.stack_changed();
+            return Ok(());
+        }
+        self.publish_saved(store, notice, clock, None)
+    }
+
+    pub(crate) fn mute_market_notice(
+        &mut self,
+        store: &Store,
+        id: &str,
+        muted: bool,
         clock: Clock,
     ) -> AppResult<()> {
-        notice.created_at = clock.wall_ms;
-        if notice.kind == NoticeKind::Countdown {
-            notice.duration = notice
-                .target_at
-                .unwrap_or(clock.wall_ms)
-                .saturating_sub(clock.wall_ms) as i64;
+        self.sync(store, clock)?;
+        let notice = self
+            .notices
+            .iter_mut()
+            .map(|entry| &mut entry.notice)
+            .find(|notice| !self.hidden && notice.id == id && notice.market_alert.is_some())
+            .ok_or("SESSION_EXPIRED: 此行情通知已关闭或替换")?;
+        if notice.mute != muted {
+            notice.mute = muted;
+            self.stack_changed();
         }
-        self.publish(store, notice, clock)
+        Ok(())
+    }
+
+    pub(crate) fn dismiss_opened_market(
+        &mut self,
+        store: &Store,
+        id: &str,
+        clock: Clock,
+    ) -> AppResult<()> {
+        let matches = |notice: &Notice| notice.id == id && notice.market_alert.is_some();
+        if self.visible().chain(self.queued.iter()).any(matches) {
+            self.mark(store, HOST_NOTICE_OWNER, "dismissed", None, clock.wall_ms)?;
+            self.queued.retain(|notice| !matches(notice));
+            self.remove_notice(id);
+            self.show_queued(store, clock)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn show_queued(&mut self, store: &Store, clock: Clock) -> AppResult<()> {
-        while let Some(notice) = self.queued.front() {
-            let expired = clock.wall_ms < notice.created_at
-                || clock.wall_ms.saturating_sub(notice.created_at) >= notification_sdk::MAX_WAIT_MS
+        let mut index = 0;
+        while let Some(notice) = self.queued.get(index) {
+            let expired = (notice.kind != NoticeKind::MarketAlert
+                && (clock.wall_ms < notice.created_at
+                    || clock.wall_ms.saturating_sub(notice.created_at)
+                        >= notification_sdk::MAX_WAIT_MS))
                 || notice
                     .target_at
                     .is_some_and(|target| target <= clock.wall_ms);
-            if expired || !sdk_island_allowed(store, notice)? {
-                let notice = self.queued.pop_front().expect("已读取队首通知");
+            let allowed = if notice.source_name.is_some() {
+                sdk_island_allowed(store, notice)?
+            } else {
+                notice.source == HOST_NOTICE_OWNER
+                    || self.configs.iter().any(|config| {
+                        config.id == notice.source
+                            && config.revision == notice.source_revision
+                            && (notice.preview || config.config["enabled"] == true)
+                    })
+            };
+            if expired || !allowed {
+                let notice = self.queued.remove(index).expect("已读取排队通知");
+                self.stack_changed();
                 let state = if expired { "expired" } else { "not-shown" };
                 let _ = store.log(
                     "delivery",
                     &format!("组件通知 {} 来源 {} 状态 {state}", notice.id, notice.source),
                 );
-            } else if self.notice.is_some() {
-                break;
             } else {
-                let notice = self.queued.pop_front().expect("已读取队首通知");
-                self.activate_sdk_notice(store, notice, clock)?;
-                break;
+                index += 1;
             }
+        }
+        while let Some((index, _)) = self
+            .queued
+            .iter()
+            .enumerate()
+            .filter(|(_, notice)| self.has_space(notice.kind, None))
+            .min_by_key(|(_, notice)| notice.kind.priority())
+        {
+            let notice = self.queued.remove(index).expect("已读取可显示通知");
+            self.activate(notice, clock);
         }
         Ok(())
     }
@@ -543,6 +853,7 @@ impl Engine {
             mute,
             phase: "playing".into(),
             source_name: None,
+            market_alert: None,
             preview,
             break_seconds: None,
         }
@@ -557,8 +868,7 @@ impl Engine {
         self.hidden = hidden;
         self.sync(store, clock)?;
         if hidden {
-            self.clear_notice();
-            self.queued.clear();
+            self.cancel_notifications();
             self.clear_rest();
         }
         let sits = self
@@ -605,6 +915,7 @@ impl Engine {
                                 mute: true,
                                 phase: String::new(),
                                 source_name: None,
+                                market_alert: None,
                                 preview: false,
                                 break_seconds: Some(config.break_interval * 60),
                             };
@@ -718,7 +1029,11 @@ impl Engine {
         }
         let notice = Self::demo_notice(HOST_NOTICE_OWNER, 0, demo, clock);
         match channel {
-            Channel::Island => self.publish(store, notice, clock),
+            Channel::Island => {
+                self.sync(store, clock)?;
+                self.show_queued(store, clock)?;
+                self.publish(store, notice, clock)
+            }
             Channel::Windows => windows(&notice),
         }
     }
@@ -766,6 +1081,7 @@ impl Engine {
             mute: true,
             phase: String::new(),
             source_name: None,
+            market_alert: None,
             preview: false,
             break_seconds: None,
         }
@@ -798,7 +1114,12 @@ impl Engine {
         clock: Clock,
     ) -> AppResult<()> {
         self.sync(store, clock)?;
-        if self.target(target.surface).as_ref() != Some(target) || target.event != id {
+        let current = if target.surface == Surface::Notice {
+            self.notice_target(id)
+        } else {
+            self.target(Surface::Rest)
+        };
+        if current.as_ref() != Some(target) || target.event != id {
             return Err("SESSION_EXPIRED: 此通知或窗口代次已失效".into());
         }
         Ok(())
@@ -819,11 +1140,14 @@ impl Engine {
             self.clear_rest();
             return Ok(());
         }
-        let notice = self.notice.clone().ok_or("SESSION_EXPIRED: 通知已关闭")?;
+        let notice = self
+            .notice(id)
+            .cloned()
+            .ok_or("SESSION_EXPIRED: 通知已关闭")?;
         let rest_seconds = match action {
             Action::Answer if notice.kind == NoticeKind::Call => {
-                if let Some(notice) = self.notice.as_mut() {
-                    notice.phase = "playing".into();
+                if self.audible_call() != Some(id) {
+                    return Err("请先结束正在播放的来电".into());
                 }
                 return Ok(());
             }
@@ -837,17 +1161,18 @@ impl Engine {
                     .saturating_sub(clock.wall_ms) as i64;
                 if notice.duration <= 0 {
                     let saved = self.mark(store, &notice.source, "expired", None, clock.wall_ms);
-                    self.clear_notice();
+                    self.remove_notice(id);
                     saved?;
                     return Err("DATA_UNAVAILABLE: 倒计时已结束".into());
                 }
-                return self.publish(store, notice, clock);
+                return self.publish_saved(store, notice, clock, Some(id));
             }
             Action::Confirm
                 if notice.kind == NoticeKind::Reminder && notice.source_name.is_none() =>
             {
                 notice.break_seconds
             }
+            Action::OpenSource if notice.kind == NoticeKind::MarketAlert => return Ok(()),
             Action::OpenSource
                 if notice.kind == NoticeKind::Reminder && notice.source_name.is_some() =>
             {
@@ -872,7 +1197,7 @@ impl Engine {
                 usage.clear();
             }
         }
-        self.clear_notice();
+        self.remove_notice(id);
         Ok(())
     }
     pub fn hover(
@@ -884,22 +1209,74 @@ impl Engine {
         clock: Clock,
     ) -> AppResult<()> {
         self.validate_target(store, target, id, clock)?;
-        if target.surface != Surface::Notice || !self.island.hover(id, clock.monotonic_ms, entered)
+        if entered && self.preferences.hidden {
+            return Ok(());
+        }
+        if target.surface != Surface::Notice
+            || !self
+                .notices
+                .iter_mut()
+                .find(|entry| entry.notice.id == id)
+                .is_some_and(|entry| entry.timer.hover(id, clock.monotonic_ms, entered))
         {
             return Err("SESSION_EXPIRED: 通知已失效".into());
         }
         Ok(())
     }
     pub fn shown(&mut self, store: &Store, target: &Target, clock: Clock) -> AppResult<()> {
-        if self.target(target.surface).as_ref() != Some(target) {
+        let current = if target.surface == Surface::Notice {
+            self.notice_target(&target.event)
+        } else {
+            self.target(Surface::Rest)
+        };
+        if current.as_ref() != Some(target) {
             return Err("SESSION_EXPIRED: 通知窗口已被替换".into());
         }
-        let source = if target.surface == Surface::Notice {
-            self.notice.as_ref().unwrap().source.clone()
-        } else {
-            target.owner.clone()
-        };
-        self.mark(store, &source, "shown", None, clock.wall_ms)
+        if target.surface == Surface::Rest {
+            return self.mark(store, &target.owner, "shown", None, clock.wall_ms);
+        }
+        self.record_shown(store, Some(&target.event), clock)
+    }
+    fn record_shown(&mut self, store: &Store, id: Option<&str>, clock: Clock) -> AppResult<()> {
+        let pending = self
+            .notices
+            .iter_mut()
+            .filter(|entry| !entry.shown && id.is_none_or(|id| entry.notice.id == id))
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return Ok(());
+        }
+        {
+            let mut db = store.db.lock().map_err(err)?;
+            let tx = db.transaction().map_err(err)?;
+            for entry in &pending {
+                reminder_store::remember_island_notice(&tx, &entry.notice, clock.wall_ms)?;
+                Self::save_delivery(&tx, &entry.notice.source, "shown", None, clock.wall_ms)?;
+            }
+            tx.commit().map_err(err)?;
+        }
+        let sources = pending
+            .into_iter()
+            .map(|entry| {
+                entry.shown = true;
+                entry.notice.source.clone()
+            })
+            .collect::<Vec<_>>();
+        for source in sources {
+            self.remember(&source, "shown", None);
+        }
+        Ok(())
+    }
+    pub(crate) fn shown_stack(
+        &mut self,
+        store: &Store,
+        target: &Target,
+        clock: Clock,
+    ) -> AppResult<()> {
+        if self.stack_target().as_ref() != Some(target) {
+            return Err("SESSION_EXPIRED: 通知窗口已被替换".into());
+        }
+        self.record_shown(store, None, clock)
     }
     pub fn failed(
         &mut self,
@@ -909,18 +1286,39 @@ impl Engine {
         clock: Clock,
     ) -> AppResult<()> {
         self.sync(store, clock)?;
-        if self.target(target.surface).as_ref() != Some(target) {
+        let current = if target.surface == Surface::Notice {
+            self.stack_target()
+        } else {
+            self.target(Surface::Rest)
+        };
+        if current.as_ref() != Some(target) {
             return Ok(());
         }
-        let source = if target.surface == Surface::Notice {
-            self.notice.as_ref().unwrap().source.clone()
-        } else {
-            target.owner.clone()
-        };
-        self.mark(store, &source, "display-failed", Some(error), clock.wall_ms)?;
         if target.surface == Surface::Notice {
-            self.clear_notice();
+            let sources = self
+                .visible()
+                .map(|notice| notice.source.clone())
+                .collect::<Vec<_>>();
+            for source in sources {
+                self.mark(
+                    store,
+                    &source,
+                    "display-failed",
+                    Some(error.clone()),
+                    clock.wall_ms,
+                )?;
+            }
+            self.notices.clear();
+            self.stack_changed();
+            self.show_queued(store, clock)?;
         } else {
+            self.mark(
+                store,
+                &target.owner,
+                "display-failed",
+                Some(error),
+                clock.wall_ms,
+            )?;
             self.clear_rest();
         }
         Ok(())
@@ -935,10 +1333,12 @@ impl Engine {
     ) -> AppResult<()> {
         self.validate_target(store, target, id, clock)?;
         let notice = self
-            .notice
-            .as_ref()
+            .notice(id)
             .filter(|n| n.kind == NoticeKind::Call)
             .ok_or("INVALID_ARGUMENT: 当前不是语音来电")?;
+        if self.audible_call() != Some(id) {
+            return Err("SESSION_EXPIRED: 当前来电未获播放权限".into());
+        }
         let source = notice.source.clone();
         match state {
             "playing" => {
@@ -955,13 +1355,10 @@ impl Engine {
             }
             "ended" => {
                 self.mark(store, &source, "audio-ended", None, clock.wall_ms)?;
-                self.clear_notice();
+                self.remove_notice(id);
                 return Ok(());
             }
             _ => return Err("INVALID_ARGUMENT: 音频状态无效".into()),
-        }
-        if let Some(notice) = self.notice.as_mut() {
-            notice.phase = state.into();
         }
         Ok(())
     }
@@ -975,6 +1372,216 @@ mod tests {
         widgets,
     };
     use serde_json::{json, Value};
+
+    fn market_event(number: u64, market: &str, symbol: &str) -> crate::alerts::AlertEvent {
+        use crate::alerts::{
+            AlertEvent, Direction, MarketKey, NotificationChannel, PriceKind, Reason,
+        };
+        let key = if market == "spot" {
+            MarketKey::spot(symbol)
+        } else {
+            MarketKey::binance(symbol, PriceKind::Last)
+        };
+        AlertEvent {
+            id: format!("行情-{number}"),
+            rule_id: "测试规则".into(),
+            rule_name: "行情测试".into(),
+            direction: Direction::Up,
+            revision: 1,
+            sequence: number,
+            key,
+            threshold: "100".into(),
+            observed_price: "101".into(),
+            source_utc_ms: number,
+            created_utc_ms: number,
+            reason: Reason::Crossed,
+            notification: true,
+            notification_channel: NotificationChannel::Island,
+            sound: false,
+        }
+    }
+
+    #[test]
+    fn market_tone_preferences_restore_independently() {
+        use crate::alerts::Direction;
+
+        let (store, _) = fixture();
+        let mut engine = Engine::default();
+        engine.sync(&store, clock(1)).unwrap();
+        assert_eq!(engine.market_tone(Direction::Up), "aicoin-rise.mp3");
+        assert_eq!(engine.market_tone(Direction::Down), "aicoin-fall-2.mp3");
+
+        let event = market_event(1, "spot", "BTCUSDT");
+        engine
+            .market_alert(&store, &event, clock(2), false)
+            .unwrap();
+        let previous = engine.stack_target();
+        let tone = "tradingview/soft/trumpets.mp3";
+        store
+            .save_preference(reminder_store::market_tone_key(Direction::Up), tone)
+            .unwrap();
+        engine.set_market_tone(Direction::Up, tone);
+        assert!(previous != engine.stack_target());
+        assert_eq!(engine.audible_market().unwrap().id, event.id);
+        assert_eq!(engine.market_tone(Direction::Up), tone);
+
+        store
+            .save_preference(
+                reminder_store::market_tone_key(Direction::Down),
+                "../bad.mp3",
+            )
+            .unwrap();
+        let mut restarted = Engine::default();
+        restarted.sync(&store, clock(3)).unwrap();
+        assert_eq!(restarted.market_tone(Direction::Up), tone);
+        assert_eq!(restarted.market_tone(Direction::Down), "aicoin-fall-2.mp3");
+    }
+
+    #[test]
+    fn market_notices_retain_mute_on_replacement_and_resume_next_when_closed() {
+        let (store, _) = fixture();
+        let mut engine = Engine::default();
+        let first = market_event(1, "spot", "BTCUSDT");
+        let second = market_event(2, "usd_m", "BTCUSDT");
+        let mut replacement = market_event(3, "spot", "BTCUSDT");
+        replacement.direction = crate::alerts::Direction::Down;
+        replacement.observed_price = "99.5".into();
+        for event in [&first, &second] {
+            engine.market_alert(&store, event, clock(1), false).unwrap();
+        }
+        engine
+            .mute_market_notice(&store, &first.id, true, clock(2))
+            .unwrap();
+        for event in [&replacement, &first] {
+            engine.market_alert(&store, event, clock(3), false).unwrap();
+        }
+        assert_eq!(
+            engine
+                .visible()
+                .map(|notice| notice.id.as_str())
+                .collect::<Vec<_>>(),
+            [&replacement.id, &second.id].map(String::as_str)
+        );
+        assert_eq!(
+            engine.notice(&replacement.id).unwrap().message,
+            "下跌至 99.5"
+        );
+        assert!(engine.notice(&replacement.id).unwrap().mute);
+        assert_eq!(engine.audible_market().unwrap().id, second.id);
+        engine
+            .dismiss_opened_market(&store, &first.id, clock(4))
+            .unwrap();
+        assert!(engine.notice(&replacement.id).is_some());
+        engine
+            .mute_market_notice(&store, &replacement.id, false, clock(5))
+            .unwrap();
+        assert_eq!(engine.audible_market().unwrap().id, replacement.id);
+        store
+            .save_preference(reminder_store::MARKET_SOUND, "false")
+            .unwrap();
+        engine.sync(&store, clock(90_000)).unwrap();
+        assert!(engine.audible_market().is_none());
+        assert_eq!(engine.visible().count(), 2);
+        store
+            .save_preference(reminder_store::MARKET_SOUND, "true")
+            .unwrap();
+        engine.sync(&store, clock(90_100)).unwrap();
+        let target = engine.notice_target(&replacement.id).unwrap();
+        engine
+            .act(
+                &store,
+                &target,
+                &replacement.id,
+                Action::OpenSource,
+                clock(90_100),
+            )
+            .unwrap();
+        assert_eq!(engine.audible_market().unwrap().id, replacement.id);
+        engine
+            .dismiss_opened_market(&store, &replacement.id, clock(90_101))
+            .unwrap();
+        assert_eq!(engine.audible_market().unwrap().id, second.id);
+    }
+
+    #[test]
+    fn market_stack_defaults_to_nine_and_adjusting_limit_preserves_pending() {
+        let (store, _) = fixture();
+        let mut engine = Engine::default();
+        for number in 1..=10 {
+            let event = market_event(number, "spot", &format!("TOKEN{number}USDT"));
+            engine
+                .market_alert(&store, &event, clock(number), false)
+                .unwrap();
+        }
+        assert_eq!(engine.visible().count(), 9);
+        assert_eq!(engine.pending().len(), 1);
+        engine
+            .mute_market_notice(&store, "行情-9", true, clock(11))
+            .unwrap();
+        store
+            .save_preference(reminder_store::ISLAND_MAX_VISIBLE, "2")
+            .unwrap();
+        engine.sync(&store, clock(60_000)).unwrap();
+        engine.show_queued(&store, clock(60_000)).unwrap();
+        assert_eq!(engine.visible().count(), 2);
+        assert_eq!(engine.pending().len(), 8);
+        let replacement = market_event(20, "spot", "TOKEN9USDT");
+        engine
+            .market_alert(&store, &replacement, clock(60_001), false)
+            .unwrap();
+        assert_eq!(engine.pending().len(), 8);
+        assert!(engine
+            .pending()
+            .iter()
+            .any(|notice| notice.id == replacement.id && notice.mute));
+        store
+            .save_preference(reminder_store::ISLAND_MAX_VISIBLE, "12")
+            .unwrap();
+        engine.sync(&store, clock(60_002)).unwrap();
+        engine.show_queued(&store, clock(60_002)).unwrap();
+        assert_eq!(engine.visible().count(), 10);
+        assert!(engine.pending().is_empty());
+    }
+
+    #[test]
+    fn reminders_history_keeps_recent_distinct_notifications_after_restart() {
+        let (store, _) = fixture();
+        let mut engine = Engine::default();
+        for index in 0..201 {
+            engine
+                .host_demo(
+                    &store,
+                    Demo::Info,
+                    Channel::Island,
+                    clock(index),
+                    false,
+                    |_| unreachable!(),
+                )
+                .unwrap();
+            if index == 0 {
+                assert_eq!(reminder_store::island_history(&store).unwrap(), json!([]));
+            }
+            let target = engine.target(Surface::Notice).unwrap();
+            engine.shown(&store, &target, clock(index)).unwrap();
+            engine.shown(&store, &target, clock(index + 1000)).unwrap();
+            engine
+                .act(
+                    &store,
+                    &target,
+                    &target.event,
+                    Action::Dismiss,
+                    clock(index),
+                )
+                .unwrap();
+        }
+        let root = store.root.clone();
+        drop(store);
+        let reopened = Store::open(root).unwrap();
+        let history = reminder_store::island_history(&reopened).unwrap();
+        assert_eq!(history.as_array().unwrap().len(), 200);
+        assert_eq!(history[0]["at"], clock(200).wall_ms);
+        assert_eq!(history[199]["at"], clock(1).wall_ms);
+    }
     #[test]
     fn reminders_one_corrupt_config_cannot_cancel_a_healthy_current_notification() {
         let (s, sessions) = fixture();
@@ -1264,7 +1871,7 @@ mod tests {
         assert!(engine.notification().is_none());
     }
     #[test]
-    fn reminders_stale_surface_and_action_cannot_operate_replacement_notice() {
+    fn reminders_card_actions_keep_their_identity_across_stack_updates() {
         let (s, sessions) = fixture();
         let island = add(&s, Source::Island);
         enable(&s, &sessions, &island, Source::Island);
@@ -1275,15 +1882,81 @@ mod tests {
         let target = engine.target(Surface::Notice).unwrap();
         engine.demo(&s, &island, Demo::Reminder, clock(1)).unwrap();
         let new = engine.notification().unwrap().id.clone();
+        engine
+            .act(&s, &target, &old, Action::Dismiss, clock(2))
+            .unwrap();
         assert!(engine
             .act(&s, &target, &old, Action::Dismiss, clock(2))
             .is_err());
-        let mut forged = target;
-        forged.generation += 1;
         assert!(engine
-            .act(&s, &forged, &new, Action::Dismiss, clock(2))
+            .act(&s, &target, &new, Action::Dismiss, clock(2))
             .is_err());
         assert_eq!(engine.notification().unwrap().id, new);
+    }
+    #[test]
+    fn reminders_stack_caps_same_kind_and_total_then_promotes_by_priority() {
+        let (s, _) = fixture();
+        s.save_preference(reminder_store::ISLAND_MAX_VISIBLE, "6")
+            .unwrap();
+        let mut engine = Engine::default();
+        for (index, demo) in [
+            Demo::Info,
+            Demo::Info,
+            Demo::Info,
+            Demo::Info,
+            Demo::Warning,
+            Demo::Success,
+            Demo::Success,
+            Demo::Error,
+            Demo::Call,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            engine
+                .host_demo(
+                    &s,
+                    demo,
+                    Channel::Island,
+                    clock(index as u64),
+                    false,
+                    |_| unreachable!(),
+                )
+                .unwrap();
+        }
+        let kinds = |engine: &Engine| {
+            engine
+                .visible()
+                .map(|notice| notice.kind)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            kinds(&engine),
+            [
+                NoticeKind::Warning,
+                NoticeKind::Success,
+                NoticeKind::Success,
+                NoticeKind::Info,
+                NoticeKind::Info,
+                NoticeKind::Info
+            ]
+        );
+        assert_eq!(
+            engine
+                .pending()
+                .iter()
+                .map(|notice| notice.kind)
+                .collect::<Vec<_>>(),
+            [NoticeKind::Call, NoticeKind::Error, NoticeKind::Info]
+        );
+        assert_eq!(engine.stack_target().unwrap().height, 48 * 6 + 4 * 6 + 36);
+        let priority = engine.target(Surface::Notice).unwrap();
+        engine
+            .act(&s, &priority, &priority.event, Action::Dismiss, clock(20))
+            .unwrap();
+        engine.show_queued(&s, clock(20)).unwrap();
+        assert_eq!(engine.notification().unwrap().kind, NoticeKind::Call);
+        assert_eq!(engine.pending().len(), 2);
     }
     #[test]
     fn reminders_host_owns_overlay_and_removed_legacy_demo_does_not_resume() {

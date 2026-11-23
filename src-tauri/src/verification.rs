@@ -380,7 +380,8 @@ async fn check(
     )?;
     windows::show(app, true)?;
     if !auto {
-        report.stage("等待一次 Ctrl+Alt+Space 实际按键")?;
+        let shortcut = crate::panel_shortcut(&app.state::<Core>().store);
+        report.stage(&format!("等待一次 {shortcut} 实际按键"))?;
         wait_for(
             || app.state::<Core>().shortcut_hits.load(Ordering::Relaxed) > 0,
             180,
@@ -671,9 +672,11 @@ async fn check_g2(
     for (name, notification, sound) in [
         ("静默后台规则", false, false),
         ("后台仅通知", !runtime, false),
-        ("后台仅声音", false, !runtime),
+        ("旧版声音字段兼容", false, true),
     ] {
         let rule = Rule {
+            condition: Default::default(),
+            notification_channel: Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             revision: 1,
             name: name.into(),
@@ -693,7 +696,7 @@ async fn check_g2(
     report.stage(if runtime {
         "零视图真实行情驱动规则；开发模式不播放提醒"
     } else {
-        "零视图真实行情驱动规则；请观察通知与声音"
+        "零视图真实行情驱动规则；请观察 Windows 通知"
     })?;
     wait_for(
         || {
@@ -717,7 +720,7 @@ async fn check_g2(
     if events.len() != 3
         || events.iter().any(|e| {
             !matches!(e["notification"].as_str(), Some("sent" | "suppressed"))
-                || !matches!(e["sound"].as_str(), Some("sent" | "suppressed"))
+                || e["sound"] != "suppressed"
         })
         || !app.webview_windows().is_empty()
         || foreground() != before
@@ -725,7 +728,7 @@ async fn check_g2(
         return Err(format!("零视图提醒或前台检查失败：{events:?}"));
     }
     report.record(
-        "G2零视图真实行情警报与独立递送",
+        "G2零视图真实行情警报与 Windows 通知",
         json!({"events":events,"views":0,"foregroundUnchanged":true,"actualDelivery":!runtime}),
     )?;
     report.stage("执行10次受控行情重连并核对单次事件不重播")?;
@@ -808,10 +811,7 @@ fn shortcut_conflict(app: &AppHandle) -> AppResult<Value> {
         RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
     };
     let core = app.state::<Core>();
-    let old = core
-        .store
-        .preference("shortcut")
-        .unwrap_or("Ctrl+Alt+Space".into());
+    let old = crate::panel_shortcut(&core.store);
     // 与调用线程绑定，整个作用域无await，确保在同一线程释放系统注册。
     struct Reservation;
     impl Drop for Reservation {
@@ -829,11 +829,7 @@ fn shortcut_conflict(app: &AppHandle) -> AppResult<Value> {
         .ok_or("已占用快捷键被错误接受")?;
     if !failure.contains("保留原键")
         || !app.global_shortcut().is_registered(old.as_str())
-        || core
-            .store
-            .preference("shortcut")
-            .unwrap_or("Ctrl+Alt+Space".into())
-            != old
+        || crate::panel_shortcut(&core.store) != old
     {
         return Err("快捷键冲突未保留旧注册及配置".into());
     }

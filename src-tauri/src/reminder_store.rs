@@ -1,5 +1,7 @@
 //! 三款专用后台的实例配置合同；本模块不启动采样、窗口或音频。
 use crate::{
+    alert_notice,
+    alerts::Direction,
     reminder_state::{PhonePreset, PhoneRule, SitConfig},
     store::{err, AppResult, Store},
     widgets,
@@ -163,6 +165,79 @@ impl Channel {
 
 pub(crate) const WINDOWS_DISABLED: &str = "NOTIFICATION_DISABLED: Windows 系统通知已关闭";
 
+pub(crate) const ISLAND_MAX_VISIBLE: &str = "notification.island.max_visible";
+pub(crate) const ISLAND_OPACITY: &str = "notification.island.opacity";
+pub(crate) const ISLAND_VOLUME: &str = "notification.island.volume";
+pub(crate) const ISLAND_HIDDEN: &str = "notification.island.hidden";
+pub(crate) const ISLAND_MUTED: &str = "notification.island.muted";
+pub(crate) const MARKET_SOUND: &str = "notification.island.market_sound";
+pub(crate) const ISLAND_VISIBLE_RANGE: std::ops::RangeInclusive<usize> = 1..=20;
+pub(crate) const ISLAND_PERCENT_RANGE: std::ops::RangeInclusive<u8> = 0..=100;
+
+pub(crate) fn market_tone_key(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Up => "notification.island.market_tone_up",
+        Direction::Down => "notification.island.market_tone_down",
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct IslandPreferences {
+    pub max_visible: usize,
+    pub opacity: u8,
+    pub volume: u8,
+    pub hidden: bool,
+    pub muted: bool,
+    pub market_sound: bool,
+    pub market_up_tone: &'static str,
+    pub market_down_tone: &'static str,
+}
+
+impl Default for IslandPreferences {
+    fn default() -> Self {
+        Self {
+            max_visible: 9,
+            opacity: 100,
+            volume: 100,
+            hidden: false,
+            muted: false,
+            market_sound: true,
+            market_up_tone: alert_notice::default_tone(Direction::Up),
+            market_down_tone: alert_notice::default_tone(Direction::Down),
+        }
+    }
+}
+
+impl IslandPreferences {
+    pub fn read(db: &Connection) -> AppResult<Self> {
+        let tone = |direction| -> AppResult<&'static str> {
+            Ok(preference(db, market_tone_key(direction))?
+                .as_deref()
+                .and_then(alert_notice::tone_id)
+                .unwrap_or_else(|| alert_notice::default_tone(direction)))
+        };
+        Ok(Self {
+            max_visible: preference(db, ISLAND_MAX_VISIBLE)?
+                .and_then(|value| value.parse().ok())
+                .filter(|value| ISLAND_VISIBLE_RANGE.contains(value))
+                .unwrap_or(Self::default().max_visible),
+            opacity: preference(db, ISLAND_OPACITY)?
+                .and_then(|value| value.parse().ok())
+                .filter(|value| ISLAND_PERCENT_RANGE.contains(value))
+                .unwrap_or(Self::default().opacity),
+            volume: preference(db, ISLAND_VOLUME)?
+                .and_then(|value| value.parse().ok())
+                .filter(|value| ISLAND_PERCENT_RANGE.contains(value))
+                .unwrap_or(Self::default().volume),
+            hidden: preference(db, ISLAND_HIDDEN)?.as_deref() == Some("true"),
+            muted: preference(db, ISLAND_MUTED)?.as_deref() == Some("true"),
+            market_sound: preference(db, MARKET_SOUND)?.as_deref() != Some("false"),
+            market_up_tone: tone(Direction::Up)?,
+            market_down_tone: tone(Direction::Down)?,
+        })
+    }
+}
+
 pub(crate) fn ensure_windows_enabled(store: &Store) -> AppResult<()> {
     if Channel::Windows.enabled_in(store)? {
         Ok(())
@@ -179,6 +254,78 @@ pub(crate) fn preference(db: &Connection, key: &str) -> AppResult<Option<String>
     )
     .optional()
     .map_err(err)
+}
+
+const ISLAND_HISTORY_PREFIX: &str = "notification.island.history/";
+const ISLAND_HISTORY_LIMIT: u32 = 200;
+
+fn island_entry(notice: &crate::reminder_engine::Notice, at: u64) -> Value {
+    use crate::reminder_engine::{NoticeKind, HOST_NOTICE_OWNER};
+    let source =
+        notice
+            .source_name
+            .as_deref()
+            .unwrap_or(match (notice.source.as_str(), notice.kind) {
+                (HOST_NOTICE_OWNER, _) => "SoulDesk",
+                (_, NoticeKind::Call) => "来电提醒",
+                (_, NoticeKind::Reminder) if notice.break_seconds.is_some() => "久坐提醒",
+                _ => "灵动通知",
+            });
+    json!({
+        "id": notice.id, "kind": notice.kind, "title": notice.title,
+        "message": notice.message, "source": source, "at": at,
+    })
+}
+
+pub(crate) fn island_pending_entry(notice: &crate::reminder_engine::Notice) -> Value {
+    island_entry(notice, notice.created_at)
+}
+
+pub(crate) fn remember_island_notice(
+    db: &Connection,
+    notice: &crate::reminder_engine::Notice,
+    shown_at: u64,
+) -> AppResult<()> {
+    let value = island_entry(notice, shown_at);
+    if db
+        .execute(
+            "INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO NOTHING",
+            params![
+                format!("{ISLAND_HISTORY_PREFIX}{}", notice.id),
+                value.to_string()
+            ],
+        )
+        .map_err(err)?
+        != 0
+    {
+        db.execute(
+            "DELETE FROM app_settings WHERE rowid IN (
+                SELECT rowid FROM app_settings WHERE key GLOB ?1
+                ORDER BY rowid DESC LIMIT -1 OFFSET ?2
+            )",
+            params![format!("{ISLAND_HISTORY_PREFIX}*"), ISLAND_HISTORY_LIMIT],
+        )
+        .map_err(err)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn island_history(store: &Store) -> AppResult<Value> {
+    let db = store.db.lock().map_err(err)?;
+    let mut query = db
+        .prepare("SELECT value FROM app_settings WHERE key GLOB ?1 ORDER BY rowid DESC LIMIT ?2")
+        .map_err(err)?;
+    let rows = query
+        .query_map(
+            params![format!("{ISLAND_HISTORY_PREFIX}*"), ISLAND_HISTORY_LIMIT],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(err)?;
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.push(serde_json::from_str(&row.map_err(err)?).map_err(err)?);
+    }
+    Ok(Value::Array(entries))
 }
 
 pub(crate) fn migrate_notification_channel(store: &Store) -> AppResult<()> {

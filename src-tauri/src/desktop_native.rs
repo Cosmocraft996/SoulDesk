@@ -485,6 +485,10 @@ fn is_topmost(h: HWND) -> bool {
     unsafe { GetWindowLongPtrW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 }
 }
 
+pub(crate) fn panel_is_topmost(window: &WebviewWindow) -> Result<bool, String> {
+    Ok(is_topmost(handle(window)? as HWND))
+}
+
 fn verify_attachment(h: HWND, pinned: bool) -> Result<(), String> {
     unsafe {
         attachment_valid(
@@ -639,7 +643,11 @@ fn place_panel_above_desktop(panel: HWND) -> Result<(), String> {
     Ok(())
 }
 
-pub fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), String> {
+pub fn set_panel_layer(
+    window: &WebviewWindow,
+    foreground: bool,
+    activate_on_retry: bool,
+) -> Result<(), String> {
     let raw = handle(window)?;
     let (send, receive) = std::sync::mpsc::sync_channel(1);
     window
@@ -651,6 +659,10 @@ pub fn set_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), S
                     (|| {
                         move_panel_to_slot(panel, HWND_TOPMOST, 0)?;
                         if !is_topmost(panel) {
+                            // 显式打开允许尝试激活目标，再重新申请置顶。
+                            if activate_on_retry {
+                                SetForegroundWindow(panel);
+                            }
                             // 窗口消息可能改写第一次请求。仅在实际仍未置顶时绕过该消息补一次。
                             move_panel_to_slot(panel, HWND_TOPMOST, SWP_NOSENDCHANGING)?;
                         }
@@ -687,11 +699,15 @@ pub fn check_panel_desktop_slot(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn maintain_panel_layer(window: &WebviewWindow, foreground: bool) -> Result<(), String> {
+pub fn maintain_panel_layer(
+    window: &WebviewWindow,
+    foreground: bool,
+    activate_on_retry: bool,
+) -> Result<(), String> {
     let panel = handle(window)? as HWND;
     if foreground {
         if !is_topmost(panel) {
-            set_panel_layer(window, true)?;
+            set_panel_layer(window, true, activate_on_retry)?;
         }
     } else if unsafe { IsWindowVisible(panel) } != 0 {
         place_panel_above_desktop(panel)?;

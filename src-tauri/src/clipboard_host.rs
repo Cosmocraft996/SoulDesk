@@ -242,9 +242,7 @@ impl Service {
                 shortcut: s.state["shortcut"].as_str().unwrap_or("").into(),
             })
             .collect::<Vec<_>>();
-        let primary = store
-            .preference("shortcut")
-            .unwrap_or_else(|| "Ctrl+Alt+Space".into());
+        let primary = crate::panel_shortcut(store);
         let states = self
             .shortcuts
             .lock()
@@ -335,9 +333,7 @@ impl Service {
         if self.stopped.load(Ordering::Acquire) {
             return Route::Ignore;
         }
-        let primary = store
-            .preference("shortcut")
-            .unwrap_or_else(|| "Ctrl+Alt+Space".into());
+        let primary = crate::panel_shortcut(store);
         self.shortcuts
             .try_lock()
             .map(|r| r.route(event, &primary))
@@ -1424,7 +1420,7 @@ mod tests {
         assert_eq!(
             service.shortcut_route(
                 &s,
-                "Ctrl+Alt+Space"
+                crate::panel_shortcut(&s)
                     .parse::<tauri_plugin_global_shortcut::Shortcut>()
                     .unwrap()
                     .id()

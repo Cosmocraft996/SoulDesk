@@ -1,59 +1,136 @@
-<!-- 由固定原模板派生，来源与散列见SOURCE_FILES.json。 -->
+<!-- 由固定原模板派生，来源与散列见 SOURCE_FILES.json。 -->
 <script setup>
-import{computed,ref,onMounted,onBeforeUnmount}from'vue';import MessageNotification from'./parts/Message.vue';import ReminderNotification from'./parts/Reminder.vue';import AdvanceCountdownNotification from'./parts/Advance.vue';import CountingNotification from'./parts/Counting.vue';import PhoneCallNotification from'./parts/Phone.vue';
-const props=defineProps({host:Object,snapshot:Object});const error=ref(''),elapsed=ref(0);let timer,pointerY=0;const notification=computed(()=>({...props.snapshot.notification,type:props.snapshot.notification.kind})),now=computed(()=>props.snapshot.sampledAt+elapsed.value);
-async function action(value){if(props.host.preview)return;error.value='';try{await props.host.request('island.action',{id:notification.value.id,action:value});}catch(e){error.value=e.message;}}
-async function hover(entered){if(props.host.preview)return;try{await props.host.request('island.hover',{id:notification.value.id,entered});}catch(e){error.value=e.message;}}
-function down(event){pointerY=event.clientY;}function up(event){if(event.clientY-pointerY< -35)void action('dismiss');}
-onMounted(() => {
-  if (!['advance-countdown', 'countdown'].includes(notification.value.type)) return;
-  const start = performance.now();
-  timer = setInterval(() => { elapsed.value = performance.now() - start; }, 10);
-});
-onBeforeUnmount(() => clearInterval(timer));
-</script>
-<template>
-  <div class="island" :class="notification.type" @mouseenter="hover(true)" @mouseleave="hover(false)" @pointerdown="down" @pointerup="up">
-    <CountingNotification v-if="notification.type==='countdown'" v-bind="notification" :now="now" />
-    <AdvanceCountdownNotification v-else-if="notification.type==='advance-countdown'" v-bind="notification" :now="now" @action="action" />
-    <ReminderNotification v-else-if="notification.type==='reminder'" :notification="notification" @action="action" />
-    <PhoneCallNotification v-else-if="notification.type==='call'" :key="notification.id" :host="host" :notification="notification" :displayed="snapshot.displayed" @action="action" @error="error=$event" />
-    <MessageNotification v-else :type="notification.type" :message="notification.message" :title="notification.title" :source="notification.sourceName" />
-    <span v-if="error" class="display-error" role="alert">{{ error }}</span>
-  </div></template>
-<style scoped lang="scss">
-$cubic-bezier: cubic-bezier(0, 1, 0.68, 1.05);
-.island {
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-  cursor: pointer;
-  border-radius: 42px;
-  display: flex;
-  font-size: 2px;
-  top: 0;
-  left: 8px;
-  right: 0;
-  margin: auto;
-  position: absolute;
-  height: calc(100% - 16px);
-  background-color: black;
-  will-change: width, height;
-  clip: auto;
-  overflow: hidden;
-  transition-property: width, height;
-  justify-content: flex-start;
-  box-shadow: (0px 4px 4px 4px rgba(0, 0, 0, 0.04), 0px 4px 6px rgba(0, 0, 0, 0.08));
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import MessageNotification from './parts/Message.vue';
+import ReminderNotification from './parts/Reminder.vue';
+import AdvanceCountdownNotification from './parts/Advance.vue';
+import CountingNotification from './parts/Counting.vue';
+import PhoneCallNotification from './parts/Phone.vue';
+import Icon from './Icon.vue';
 
-  .mask {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    z-index: 5;
-    left: 0;
-    top: 0;
-    background-color: black;
+const props = defineProps({ host: Object, notification: Object, height: Number, sampledAt: Number, audible: Boolean, audioMuted: Boolean, audioVolume: { type: Number, default: 1 }, audioError: String });
+const error = ref('');
+const elapsed = ref(0);
+const startAt = props.sampledAt;
+const now = computed(() => startAt + elapsed.value);
+const kind = computed(() => props.notification.kind);
+const market = computed(() => props.notification.marketAlert);
+let timer, drag;
+
+async function request(method, args = {}) {
+  error.value = '';
+  try {
+    return await props.host.request(`island.${method}`, { ...args, id: props.notification.id });
+  } catch (failure) {
+    error.value = failure?.message ?? String(failure);
   }
 }
 
-.island{width:326px;left:0;transition:transform .2s,height .2s}.island.info,.island.success,.island.error,.island.warning,.island.countdown{width:310px}.display-error{position:absolute;bottom:2px;color:#ff9090;font-size:10px;max-width:90%;overflow:hidden;white-space:nowrap}
+function startDrag(event) {
+  if (event.button !== 0 || !event.isPrimary) return;
+  drag = request('drag');
+}
+
+async function openNotice(event) {
+  const attempt = drag;
+  drag = undefined;
+  if (event.detail !== 0 && attempt && await attempt !== false) return;
+  if (market.value) await request('action', { action: 'open-source' });
+  else await request('history');
+}
+
+onMounted(() => {
+  if (!['advance-countdown', 'countdown'].includes(kind.value)) return;
+  const start = performance.now();
+  timer = setInterval(() => { elapsed.value = performance.now() - start; }, kind.value === 'countdown' ? 10 : 1000);
+});
+onBeforeUnmount(() => clearInterval(timer));
+</script>
+
+<template>
+  <article class="island" :class="kind" :style="{ height: `${height}px` }"
+    @mouseenter="request('hover', { entered: true })" @mouseleave="request('hover', { entered: false })">
+    <button class="history-hit" type="button" :aria-label="market ? '查看 K 线' : '查看通知历史'"
+      :title="market ? `${notification.title} · 警报价 ${market.threshold} · ${notification.message}` : undefined"
+      @pointerdown="startDrag" @click="openNotice" />
+    <div v-if="market" class="market-card">
+      <div class="market-instrument">
+        <strong>{{ market.key.symbol.replace(/USDT$/, '/USDT') }}</strong>
+        <small>{{ market.key.market === 'spot' ? '现货' : '永续' }} · {{ market.key.priceKind === 'mark' ? '标记价' : '成交价' }}</small>
+      </div>
+      <strong class="market-move" :class="market.direction">{{ notification.message }}</strong>
+    </div>
+    <CountingNotification v-else-if="kind === 'countdown'" v-bind="notification" :now="now" />
+    <AdvanceCountdownNotification v-else-if="kind === 'advance-countdown'" v-bind="notification" :now="now" @action="request('action', { action: $event })" />
+    <ReminderNotification v-else-if="kind === 'reminder'" :notification="notification" @action="request('action', { action: $event })" />
+    <PhoneCallNotification v-else-if="kind === 'call'" :host="host" :notification="notification" :audible="audible" :audio-muted="audioMuted" :audio-volume="audioVolume" @action="request('action', { action: $event })" @error="error = $event" />
+    <MessageNotification v-else :type="kind" :message="notification.message" :title="notification.title" :source="notification.sourceName" />
+    <button v-if="market" class="island-close island-mute" type="button"
+      aria-label="静音这条行情通知" :aria-pressed="notification.mute"
+      :title="notification.mute ? '恢复这条通知的声音' : '静音这条通知'"
+      @click="request('market-mute', { muted: !notification.mute })">
+      <Icon :type="notification.mute ? 'volume-off' : 'volume'" />
+    </button>
+    <button v-if="kind !== 'reminder' && kind !== 'call'" class="island-close" type="button" aria-label="关闭通知" @click="request('action', { action: 'dismiss' })">×</button>
+    <span v-if="error || audioError" class="display-error" role="alert">{{ error || audioError }}</span>
+  </article>
+</template>
+
+<style scoped>
+.island {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: min(326px, 100%);
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 42px;
+  background: #0a0a0a;
+  color: white;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+.island:is(.info, .success, .error, .warning, .countdown, .market-alert) { width: min(310px, 100%); }
+.island:not(.call, .reminder) { padding-right: 29px; }
+.island.market-alert { padding-right: 55px; }
+.market-card { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; padding: 0 4px 0 16px; }
+.market-instrument { flex: 1; min-width: 0; }
+.market-instrument :is(strong, small) { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.market-instrument strong { font-size: 13px; }
+.market-instrument small { font-size: 10px; color: #bfc4c5; }
+.market-move { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
+.market-move.up { color: #70df98; }
+.market-move.down { color: #ff878a; }
+.history-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: grab;
+}
+.history-hit:active { cursor: grabbing; }
+.history-hit:focus-visible { outline: 2px solid #9bc8ff; outline-offset: -3px; }
+.island-close, .island :deep(.notification-action) { position: relative; z-index: 4; }
+.island-close {
+  position: absolute;
+  inset: 0 7px 0 auto;
+  margin-block: auto;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #252527;
+  color: #ddd;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.island-close:hover { background: #454549; color: white; }
+.island-mute { right: 33px; display: grid; place-items: center; font-size: 14px; }
+.island-mute[aria-pressed="true"] { background: #393a3d; color: #fff; }
+.display-error { position: absolute; z-index: 5; left: 16px; bottom: 1px; color: #ff9090; font-size: 10px; max-width: 85%; overflow: hidden; white-space: nowrap; pointer-events: none; }
 </style>

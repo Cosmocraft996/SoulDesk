@@ -20,6 +20,10 @@ pub struct Config {
     pub mode: String,
 }
 impl Config {
+    pub fn market_check(&self) -> bool {
+        self.mode == "widgetjs"
+            && std::env::args().any(|arg| arg == "--widgetjs-check-package=market")
+    }
     pub fn panel_shortcut_enabled(&self) -> bool {
         // 人工验收需要真实开关面板；自动专项仍不占用正常程序的快捷键。
         !self.standalone_check() || self.mode == "widgetjs-manual"
@@ -140,6 +144,8 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
 }
 fn rule(name: &str) -> Rule {
     Rule {
+        condition: Default::default(),
+        notification_channel: Default::default(),
         id: uuid::Uuid::new_v4().to_string(),
         revision: 1,
         name: name.into(),
@@ -1508,7 +1514,7 @@ async fn execute_panel(
         let scene = windows::panel_scene();
         let id = distant.clone();
         until(|| Ok(session_count(app, &id) == 1), 10).await?;
-        window(app, move |app| {
+        let drop_native_topmost = move |app: &AppHandle| -> AppResult<()> {
             // 模拟 Windows 取消原生置顶，但应用的面板展示意图仍为前台。
             if unsafe {
                 SetWindowPos(
@@ -1531,22 +1537,37 @@ async fn execute_panel(
             if crate::desktop_native::describe(&panel)["topmost"] != false {
                 return Err("测试未成功取消面板的原生置顶".into());
             }
-            windows::monitor_changes(app)
-        })
-        .await?;
-        crate::desktop_native::check_attachment(&panel, true)?;
-        check(
-            report,
-            "foreground-panel-recovers-lost-native-topmost",
-            windows::panel_scene() == scene
-                && app
-                    .get_webview_window("panel")
-                    .and_then(|w| crate::desktop_native::handle(&w).ok())
-                    == Some(handle)
-                && session_count(app, &distant) == 1
-                && store.preference("panel_locked").as_deref() == Some("true"),
-            Value::Null,
-        )?;
+            Ok(())
+        };
+        for (name, action) in [
+            (
+                "foreground-panel-recovers-lost-native-topmost",
+                windows::monitor_changes as fn(&AppHandle) -> AppResult<()>,
+            ),
+            (
+                "tray-toggle-restores-locked-panel-after-losing-topmost",
+                windows::toggle,
+            ),
+        ] {
+            window(app, move |app| {
+                drop_native_topmost(app)?;
+                action(app)
+            })
+            .await?;
+            crate::desktop_native::check_attachment(&panel, true)?;
+            check(
+                report,
+                name,
+                windows::panel_scene() == scene
+                    && app
+                        .get_webview_window("panel")
+                        .and_then(|w| crate::desktop_native::handle(&w).ok())
+                        == Some(handle)
+                    && session_count(app, &distant) == 1
+                    && store.preference("panel_locked").as_deref() == Some("true"),
+                Value::Null,
+            )?;
+        }
     }
     window(app, windows::destroy_views).await?;
     report["status"] = json!("passed");
@@ -1638,6 +1659,9 @@ async fn execute_widgetjs(app: &AppHandle, c: &Config, report: &mut Value) -> Ap
     }
     if std::env::args().any(|arg| arg == "--widgetjs-check-package=preview-all") {
         return execute_widgetjs_previews(app, c, report).await;
+    }
+    if c.market_check() {
+        return execute_market_panel(app, c, report).await;
     }
     let core = app.state::<Core>();
     let mut seed: Value =
@@ -2900,6 +2924,549 @@ async fn execute_asset_permissions(
 async fn install_external_fixture(app: &AppHandle, id: &str) -> AppResult<()> {
     let bytes = presets::find(id)?.ok_or("缺少隔离验收包")?.archive()?;
     crate::packages::install_verified(app, bytes, None, |_| Ok(())).await?;
+    Ok(())
+}
+
+async fn execute_market_panel(app: &AppHandle, c: &Config, report: &mut Value) -> AppResult<()> {
+    let package = "local.souldesk.market";
+    let (_, zip) = presets::catalog()?
+        .into_iter()
+        .find(|(manifest, _)| manifest["id"] == package)
+        .ok_or("缺少行情验收包")?;
+    crate::packages::install(app, &zip).await?;
+    check(
+        report,
+        "market-zip-hidden-preview",
+        true,
+        json!({"package":package,"zip":zip}),
+    )?;
+    save(c, report)?;
+    let core = app.state::<Core>();
+    until(|| Ok(app.get_webview_window("edge").is_some()), 8).await?;
+    check(
+        report,
+        "startup-defaults",
+        windows::silent_startup(&core.store)
+            && app.get_webview_window("main").is_none()
+            && app.get_webview_window("panel").is_none()
+            && crate::panel_shortcut(&core.store) == "Shift+Space",
+        json!({"panelDefault":"Shift+Space","silent":true,"edgeRestored":true}),
+    )?;
+    crate::set_autostart(app.clone(), None, Some(false)).await?;
+    let changed = !windows::silent_startup(&core.store);
+    crate::set_autostart(app.clone(), None, Some(true)).await?;
+    check(
+        report,
+        "startup-silent-preference-persists",
+        changed && windows::silent_startup(&core.store),
+        json!({"writesOnlyIsolatedPreferences":true}),
+    )?;
+    let id = widgets::create_instance_at(&core.store, package, "desktop")?;
+    business::save_watchlist(&core.store, &id, &["BTCUSDT".into()])?;
+    let window_label = format!("float-{id}");
+    let target = id.clone();
+    window(app, move |app| windows::show_instance(app, &target)).await?;
+    let session = |label: &str| -> AppResult<Option<String>> {
+        Ok(core
+            .sessions
+            .0
+            .lock()
+            .map_err(err)?
+            .iter()
+            .find(|(_, s)| s.instance == id && s.window == label && s.preview.is_none())
+            .map(|(token, _)| token.clone()))
+    };
+    until(|| Ok(session(&window_label)?.is_some()), 15).await?;
+    let token = session(&window_label)?.ok_or("行情主组件未建立正式会话")?;
+    let request =
+        |method: &'static str, args| business::gateway(app, &window_label, &token, method, args);
+    let old = request("watchlist.getItems", Value::Null).await?;
+    check(
+        report,
+        "market-formal-session-and-legacy-watchlist",
+        old == json!([{"market":"usd_m","symbol":"BTCUSDT"}]),
+        old,
+    )?;
+    let prefs = request(
+        "market.preferences",
+        json!({"layout":"grid","rangeHours":8,"maPeriods":"7,14,60"}),
+    )
+    .await?;
+    check(
+        report,
+        "market-layout-range-and-ma-retained",
+        prefs["layout"] == "grid" && prefs["rangeHours"] == 8 && prefs["maPeriods"] == "7,14,60",
+        prefs,
+    )?;
+    let target = id.clone();
+    window(app, move |app| {
+        windows::detail_at(app, &target, "market-chart:usd_m:BTCUSDT")
+    })
+    .await?;
+    let detail_label = format!("detail-{id}");
+    until(|| Ok(session(&detail_label)?.is_some()), 15).await?;
+    check(
+        report,
+        "market-kline-dedicated-window",
+        session(&detail_label)?.is_some(),
+        json!({"window":detail_label}),
+    )?;
+    save(c, report)?;
+
+    let joined = until(
+        || {
+            for feed in [&core.business.feed, &core.business.spot] {
+                if !feed
+                    .state
+                    .lock()
+                    .map_err(err)?
+                    .catalog
+                    .iter()
+                    .any(|entry| entry.symbol == "BTCUSDT" && entry.status == "TRADING")
+                {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        },
+        15,
+    )
+    .await;
+    if joined.is_ok() {
+        let keys = [
+            MarketKey::spot("BTCUSDT"),
+            MarketKey::binance("BTCUSDT", PriceKind::Last),
+            MarketKey::binance("BTCUSDT", PriceKind::Mark),
+        ];
+        let ordered = json!([{"market":"spot","symbol":"BTCUSDT","alias":"现货隔离验证"},{"market":"usd_m","symbol":"BTCUSDT"}]);
+        let saved = request("watchlist.setItems", ordered.clone()).await?;
+        check(
+            report,
+            "market-spot-and-perpetual-same-symbol",
+            saved == ordered,
+            saved,
+        )?;
+        let (spot, perp, mark, oi) = tokio::join!(
+            request(
+                "market.candles",
+                json!({"key":keys[0],"interval":"5m","limit":48})
+            ),
+            request(
+                "market.candles",
+                json!({"key":keys[1],"interval":"5m","limit":48})
+            ),
+            request(
+                "market.candles",
+                json!({"key":keys[2],"interval":"5m","limit":48})
+            ),
+            request(
+                "market.openInterest",
+                json!({"key":keys[1],"interval":"5m","limit":48})
+            ),
+        );
+        let result = |value: AppResult<Value>| match value {
+            Ok(response) => {
+                json!({"rows":response["rows"].as_array().map(Vec::len),"key":response["key"]})
+            }
+            Err(error) => json!({"error":error}),
+        };
+        report["liveHistory"] = json!({"spot":result(spot),"perpetual":result(perp),"mark":result(mark),"openInterest":result(oi)});
+        let live = until(
+            || {
+                Ok(core.business.spot.snapshot()?["quotes"]
+                    .as_array()
+                    .is_some_and(|quotes| quotes.iter().any(|q| q["quality"] == "fresh"))
+                    && core.business.feed.fresh_mark_count()? > 0)
+            },
+            10,
+        )
+        .await;
+        let spot = core.business.spot.snapshot()?;
+        let perpetual = core.business.feed.snapshot()?;
+        report["liveQuotes"] = json!({"fresh":live.is_ok(),"spot":{"status":spot["status"],"error":spot["error"]},"perpetual":{"status":perpetual["status"],"error":perpetual["error"]}});
+    } else {
+        let spot = core.business.spot.snapshot()?;
+        let perpetual = core.business.feed.snapshot()?;
+        report["liveNetwork"] = json!({"online":false,"networkReady":core.business.network_ready.load(Ordering::Acquire),"spot":{"status":spot["status"],"error":spot["error"]},"perpetual":{"status":perpetual["status"],"error":perpetual["error"]}});
+    }
+    verify_market_alerts(app, &id, report).await?;
+    report["status"] = json!("passed");
+    report["scope"]=json!("market package, formal chart sessions, deterministic crossings and desktop notification activation; live public API results recorded separately");
+    save(c, report)?;
+    window(app, windows::quit).await?;
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn verify_market_alerts(
+    app: &AppHandle,
+    instance: &str,
+    report: &mut Value,
+) -> AppResult<()> {
+    use crate::{
+        alert_notice::{activation_event, toast_tag, TOAST_GROUP},
+        alerts::{Condition, NotificationChannel, Reason},
+        reminder_engine::{Action, Surface},
+        reminder_host::{
+            island_surface, notification_settings, IslandCommand, IslandControl, SettingsCommand,
+        },
+    };
+    use ::windows::{
+        core::{h, HSTRING},
+        UI::Notifications::ToastNotificationManager,
+    };
+
+    let core = app.state::<Core>();
+    let id = instance.to_owned();
+    window(app, move |app| windows::hide_instance(app, &id)).await?;
+    let label = format!("detail-{instance}");
+    let chart_ready = |page: &str| -> AppResult<bool> {
+        let Some(view) = app.get_webview_window(&label) else {
+            return Ok(false);
+        };
+        let correct_page = view
+            .url()
+            .map_err(err)?
+            .query_pairs()
+            .any(|(key, value)| key == "page" && value == page);
+        let has_session = core
+            .sessions
+            .0
+            .lock()
+            .map_err(err)?
+            .values()
+            .any(|session| {
+                session.window == label && session.instance == instance && session.preview.is_none()
+            });
+        Ok(correct_page && has_session)
+    };
+    let time = now_ms();
+    let mut simulated = alert_store::Engine::default();
+    let mut trigger =
+        |key: MarketKey, channel: NotificationChannel| -> AppResult<alerts::AlertEvent> {
+            let mut rule = Rule {
+                key,
+                condition: Condition::Cross,
+                threshold: "9000000000".into(),
+                notification_channel: channel,
+                notification: true,
+                ..rule("隔离验收 · 价格穿越")
+            };
+            rule.mode = alerts::Mode::Once;
+            alert_store::save_rule(&core.store, &rule, None)?;
+            let observe = |price: &str, offset: u64| {
+                (
+                    alerts::Observation {
+                        key: rule.key.clone(),
+                        price: price.into(),
+                        source_utc_ms: time + offset,
+                        received_mono_ms: offset,
+                        generation: 1,
+                        ordinal: offset + 1,
+                        recovered: offset == 0,
+                        valid: true,
+                    },
+                    alerts::Context {
+                        clock: alerts::Clock {
+                            utc_ms: time + offset,
+                            mono_ms: offset,
+                        },
+                        generation: 1,
+                        source_now_utc_ms: time + offset,
+                    },
+                )
+            };
+            let (baseline, context) = observe("8999999999", 0);
+            if !simulated
+                .process(&core.store, &baseline, context)?
+                .is_empty()
+            {
+                return Err("穿越规则误触发于首笔".into());
+            }
+            let (current, context) = observe("9000000000", 1);
+            simulated
+                .process(&core.store, &current, context)?
+                .into_iter()
+                .find(|event| event.reason == Reason::Crossed)
+                .ok_or_else(|| "精确触及警报价未产生穿越事件".into())
+        };
+    let windows_event = trigger(
+        MarketKey::binance("BTCUSDT", PriceKind::Mark),
+        NotificationChannel::Windows,
+    )?;
+    business::deliver_pending(app, time + 1).await;
+
+    let app_id = HSTRING::from(&app.config().identifier);
+    let tag = HSTRING::from(toast_tag(&windows_event.id));
+    let group = HSTRING::from(TOAST_GROUP);
+    let mut launch = None;
+    let toast_ready = until(
+        || {
+            let notifications = ToastNotificationManager::History()
+                .and_then(|history| history.GetHistoryWithId(&app_id))
+                .map_err(err)?;
+            for index in 0..notifications.Size().map_err(err)? {
+                let toast = notifications.GetAt(index).map_err(err)?;
+                if toast.Tag().map_err(err)? == tag && toast.Group().map_err(err)? == group {
+                    let root = toast
+                        .Content()
+                        .map_err(err)?
+                        .DocumentElement()
+                        .map_err(err)?;
+                    if root.GetAttribute(h!("activationType")).map_err(err)?
+                        != HSTRING::from("protocol")
+                    {
+                        return Err("Windows 通知没有设置协议激活".into());
+                    }
+                    launch = Some(root.GetAttribute(h!("launch")).map_err(err)?.to_string());
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        },
+        6,
+    )
+    .await;
+    ToastNotificationManager::History()
+        .and_then(|history| history.RemoveGroupedTagWithId(&tag, &group, &app_id))
+        .map_err(err)?;
+    toast_ready.map_err(|error| format!("Windows 通知未出现在操作中心：{error}"))?;
+    let id = launch
+        .as_deref()
+        .and_then(activation_event)
+        .filter(|id| *id == windows_event.id)
+        .ok_or("Windows 通知携带的事件标识无效")?
+        .to_owned();
+    window(app, move |app| {
+        crate::alert_notice::open(app, &id, NotificationChannel::Windows)
+    })
+    .await?;
+    let mark_page = "market-chart:usd_m:BTCUSDT:mark";
+    until(|| chart_ready(mark_page), 12).await?;
+    check(
+        report,
+        "market-windows-toast-and-chart",
+        true,
+        json!({"page":mark_page,"activation":"from-toast-uri"}),
+    )?;
+
+    let id = instance.to_owned();
+    window(app, move |app| windows::hide_instance(app, &id)).await?;
+    let main = window(app, windows::main_window).await?;
+    let settings = |command| notification_settings(app.clone(), main.clone(), command);
+    let defaults = settings(SettingsCommand::Get).await?;
+    check(
+        report,
+        "island-control-defaults",
+        defaults["opacity"] == 100
+            && defaults["volume"] == 100
+            && defaults["controls"] == json!({"hidden":false,"muted":false})
+            && defaults["shortcuts"]["visibility"]["value"] == "Alt+H"
+            && defaults["shortcuts"]["mute"]["value"] == "Alt+M",
+        defaults["shortcuts"].clone(),
+    )?;
+    settings(SettingsCommand::Opacity { percent: 65 }).await?;
+    settings(SettingsCommand::Toggle {
+        control: IslandControl::Visibility,
+    })
+    .await?;
+    let island = trigger(MarketKey::spot("BTCUSDT"), NotificationChannel::Island)?;
+    business::deliver_pending(app, time + 1).await;
+    until(
+        || {
+            Ok(crate::reminder_store::island_history(&core.store)?
+                .as_array()
+                .is_some_and(|entries| entries.iter().any(|entry| entry["id"] == island.id)))
+        },
+        8,
+    )
+    .await?;
+    let target = core
+        .reminders
+        .target(Surface::Notice)
+        .ok_or("灵动通知展示目标未建立")?;
+    let snapshot = core.reminders.notice_snapshot(&target)?;
+    if !snapshot["items"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["notification"]["id"] == island.id
+                && item["notification"]["kind"] == "market-alert"
+                && item["notification"]["marketAlert"]["direction"] == "up"
+                && item["height"] == 48
+        })
+    }) {
+        return Err("灵动通知堆叠中缺少本次警报".into());
+    }
+    let audio_log = core.store.root.join("logs/current.jsonl");
+    until(
+        || {
+            Ok(std::fs::read_to_string(&audio_log).is_ok_and(|text| {
+                text.lines().any(|line| {
+                    serde_json::from_str::<Value>(line).is_ok_and(|entry| {
+                        entry["category"] == "market-audio" && entry["message"] == island.id
+                    })
+                })
+            }))
+        },
+        8,
+    )
+    .await
+    .map_err(|error| format!("行情循环铃声未开始：{error}"))?;
+    let view = app
+        .webview_windows()
+        .into_values()
+        .find(|window| window.label().starts_with("island-host-"))
+        .ok_or("找不到灵动通知窗口")?;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let key = "Ctrl+Alt+Shift+F11";
+    settings(SettingsCommand::Shortcut {
+        control: IslandControl::Mute,
+        value: key.into(),
+    })
+    .await?;
+    let conflict = settings(SettingsCommand::Shortcut {
+        control: IslandControl::Visibility,
+        value: key.into(),
+    })
+    .await;
+    check(
+        report,
+        "island-shortcut-rebind-and-conflict",
+        conflict.is_err()
+            && app.global_shortcut().is_registered(key)
+            && settings(SettingsCommand::Get).await?["shortcuts"]["visibility"]["value"] == "Alt+H",
+        json!({"customMute":key}),
+    )?;
+    check(
+        report,
+        "island-hidden-notice-starts-audio",
+        !view.is_visible().map_err(err)?
+            && snapshot["hidden"] == true
+            && snapshot["muted"] == false
+            && snapshot["opacity"] == 65
+            && snapshot["audibleMarket"] == island.id,
+        json!({"rendererStartedLoopWhileHidden":true,"systemOutputMuted":true}),
+    )?;
+    IslandControl::Mute.dispatch(app, Some(key.parse().map_err(err)?));
+    until(
+        || {
+            let current = core
+                .reminders
+                .target(Surface::Notice)
+                .ok_or("全局静音后行情卡片消失")?;
+            let snapshot = core.reminders.notice_snapshot(&current)?;
+            Ok(snapshot["muted"] == true
+                && snapshot["hidden"] == true
+                && snapshot["audibleMarket"] == island.id)
+        },
+        3,
+    )
+    .await?;
+    let clear = settings(SettingsCommand::Opacity { percent: 0 }).await?;
+    let quiet = settings(SettingsCommand::Volume { percent: 0 }).await?;
+    settings(SettingsCommand::Volume { percent: 35 }).await?;
+    settings(SettingsCommand::Toggle {
+        control: IslandControl::Visibility,
+    })
+    .await?;
+    until(|| view.is_visible().map_err(err), 3).await?;
+    let active = core
+        .reminders
+        .target(Surface::Notice)
+        .ok_or("完全透明时丢失了通知")?;
+    let zero_opacity = core.reminders.notice_snapshot(&active)?;
+    settings(SettingsCommand::Opacity { percent: 65 }).await?;
+    let restored = settings(SettingsCommand::Get).await?;
+    let unmuted = settings(SettingsCommand::Toggle {
+        control: IslandControl::Mute,
+    })
+    .await?;
+    check(
+        report,
+        "island-visibility-opacity-mute-independent",
+        restored["controls"] == json!({"hidden":false,"muted":true})
+            && unmuted["controls"] == json!({"hidden":false,"muted":false})
+            && clear["opacity"] == 0
+            && quiet["volume"] == 0
+            && zero_opacity["opacity"] == 0
+            && zero_opacity["volume"] == 35
+            && zero_opacity["audibleMarket"] == island.id
+            && unmuted["opacity"] == 65
+            && unmuted["volume"] == 35,
+        json!({"sameWindow":view.label(),"opacity":65,"volume":35}),
+    )?;
+    island_surface(
+        app.clone(),
+        view.clone(),
+        IslandCommand::MarketMute {
+            id: island.id.clone(),
+            muted: true,
+        },
+    )
+    .await?;
+    let muted_target = core
+        .reminders
+        .target(Surface::Notice)
+        .ok_or("静音后行情卡片消失")?;
+    let muted = core.reminders.notice_snapshot(&muted_target)?;
+    check(
+        report,
+        "market-island-audio-start-and-mute",
+        muted["audibleMarket"].is_null()
+            && muted["items"].as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["notification"]["id"] == island.id && item["notification"]["mute"] == true
+                })
+            }),
+        json!({"rendererStartedLoop":true, "systemOutputMuted":true}),
+    )?;
+    island_surface(
+        app.clone(),
+        view,
+        IslandCommand::Action {
+            id: island.id.clone(),
+            action: Action::OpenSource,
+        },
+    )
+    .await?;
+    let spot_page = "market-chart:spot:BTCUSDT:last";
+    until(|| chart_ready(spot_page), 12).await?;
+    check(
+        report,
+        "market-island-notice-and-chart",
+        core.reminders.target(Surface::Notice).is_none(),
+        json!({"page":spot_page,"activation":"island-action","dismissedAfterOpening":true}),
+    )?;
+
+    let events = alert_store::list_events(&core.store, 0, 20)?;
+    let matches_delivery = |id: &str, channel: &str| {
+        events.iter().any(|event| {
+            event["id"] == id
+                && event["reason"] == "crossed"
+                && event["notification"] == "sent"
+                && event["notificationAttempts"] == 1
+                && event["sound"]
+                    == if channel == "island" {
+                        "island"
+                    } else {
+                        "suppressed"
+                    }
+                && event["notificationChannel"].as_str().unwrap_or("windows") == channel
+        })
+    };
+    check(
+        report,
+        "market-alert-single-event-per-channel",
+        events.len() == 2
+            && matches_delivery(&windows_event.id, "windows")
+            && matches_delivery(&island.id, "island")
+            && windows::instance(app, instance)?["visible"] == false,
+        json!({"events":events.len(),"normalInstanceShown":false}),
+    )?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+async fn verify_market_alerts(_: &AppHandle, _: &str, _: &mut Value) -> AppResult<()> {
     Ok(())
 }
 

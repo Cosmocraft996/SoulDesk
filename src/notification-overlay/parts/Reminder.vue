@@ -1,6 +1,11 @@
 <!-- 由固定原模板派生，来源与散列见SOURCE_FILES.json。 -->
 <script setup>
-import IconPark from '../Icon.vue';const props=defineProps({notification:Object});const emit=defineEmits(['action']);const cancel=()=>emit('action','dismiss'),confirm=()=>emit('action',props.notification.sourceName ? 'open-source' : 'confirm');
+import IconPark from '../Icon.vue';
+const props = defineProps({ notification: Object });
+const emit = defineEmits(['action']);
+const hasSource = () => props.notification.sourceName;
+const cancel = () => emit('action', 'dismiss');
+const confirm = () => emit('action', hasSource() ? 'open-source' : 'confirm');
 </script>
 <template>
   <div class="message-notification">
@@ -17,12 +22,12 @@ import IconPark from '../Icon.vue';const props=defineProps({notification:Object}
       </div>
     </div>
     <div class="action">
-      <div role="button" tabindex="0" @keydown.enter="cancel" class="button cancel" @click="cancel">
-        {{ notification.sourceName ? '关闭' : '知道了' }}
-      </div>
-      <div role="button" tabindex="0" @keydown.enter="confirm" class="button confirm" @click="confirm">
-        {{ notification.sourceName ? '打开组件' : '休息一下' }}
-      </div>
+      <button type="button" class="button cancel notification-action" @click="cancel">
+        {{ hasSource() ? '关闭' : '知道了' }}
+      </button>
+      <button type="button" class="button confirm notification-action" @click="confirm">
+        {{ hasSource() ? '打开组件' : '休息一下' }}
+      </button>
     </div>
   </div>
 </template>
@@ -46,6 +51,8 @@ import IconPark from '../Icon.vue';const props=defineProps({notification:Object}
     width: 100%;
 
     .button {
+      border: 0;
+      cursor: pointer;
       flex: 1;
       height: 44px;
       font-size: 18px;

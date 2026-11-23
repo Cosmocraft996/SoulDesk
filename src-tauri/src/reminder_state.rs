@@ -246,12 +246,14 @@ impl IslandState {
             false
         }
     }
-    pub fn expire(&mut self, now: u64) -> bool {
-        if self
-            .current
+    pub fn expired(&self, now: u64) -> bool {
+        self.current
             .as_ref()
             .is_some_and(|event| event.deadline.is_some_and(|at| now >= at))
-        {
+    }
+    #[cfg(test)]
+    pub fn expire(&mut self, now: u64) -> bool {
+        if self.expired(now) {
             self.clear();
             true
         } else {

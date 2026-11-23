@@ -77,6 +77,7 @@ pub(crate) const CAPABILITIES: &[&str] = &[
     "assistant.web",
     "jobs.manage",
     "market.read",
+    "market.chart",
     "alerts.manage",
     LEGACY_CONTENT_READ,
     "content.live",
@@ -136,6 +137,7 @@ pub(crate) fn gateway(method: &str) -> Gateway {
     use Gateway::*;
     for (name, owner) in [
         ("view.openDetails", Details),
+        ("view.resizeMarket", Details),
         ("content.live", CoinLive),
         ("system.metrics", Metrics),
         ("server.request", Server),

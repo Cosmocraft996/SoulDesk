@@ -862,6 +862,8 @@ fn open_session_inner(
         )
         .map_err(err)?;
     let detail = window == format!("detail-{instance}");
+    // 只有宿主能以这个窗口标签打开已安装的行情详情，通知点击时可独立于面板显隐。
+    let market_detail = detail && package == crate::alert_notice::MARKET_PACKAGE;
     let keyboard = window == format!("keyboard-{instance}");
     let reminder = crate::reminder_host::surface_role(window, instance);
     let clipboard = crate::clipboard_surface::role(window, instance);
@@ -885,13 +887,14 @@ fn open_session_inner(
             )
             .unwrap_or_default()
             == "true";
-        if hidden
+        if hidden && !market_detail
             || !(keyboard
                 || reminder.is_some()
                 || clipboard.is_some()
                 || clipboard_tool.is_some()
                 || assistant
-                || job)
+                || job
+                || market_detail)
                 && !visible
             || !(detail
                 || keyboard
