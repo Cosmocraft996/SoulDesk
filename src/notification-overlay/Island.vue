@@ -10,6 +10,7 @@ import Icon from './Icon.vue';
 
 const props = defineProps({ host: Object, notification: Object, height: Number, sampledAt: Number, audible: Boolean, audioMuted: Boolean, audioVolume: { type: Number, default: 1 }, audioError: String });
 const error = ref('');
+const deletingRule = ref(false);
 const elapsed = ref(0);
 const startAt = props.sampledAt;
 const now = computed(() => startAt + elapsed.value);
@@ -18,12 +19,19 @@ const market = computed(() => props.notification.marketAlert);
 let timer, drag;
 
 async function request(method, args = {}) {
-  error.value = '';
+  if (method !== 'hover') error.value = '';
   try {
     return await props.host.request(`island.${method}`, { ...args, id: props.notification.id });
   } catch (failure) {
-    error.value = failure?.message ?? String(failure);
+    if (method !== 'hover') error.value = failure?.message ?? String(failure);
   }
+}
+
+async function deleteRule() {
+  if (deletingRule.value) return;
+  deletingRule.value = true;
+  await request('market-delete-rule');
+  deletingRule.value = false;
 }
 
 function startDrag(event) {
@@ -56,7 +64,7 @@ onBeforeUnmount(() => clearInterval(timer));
     <div v-if="market" class="market-card">
       <div class="market-instrument">
         <strong>{{ market.key.symbol.replace(/USDT$/, '/USDT') }}</strong>
-        <small>{{ market.key.market === 'spot' ? '现货' : '永续' }} · {{ market.key.priceKind === 'mark' ? '标记价' : '成交价' }}</small>
+        <small>{{ market.demo ? '测试 · ' : '' }}{{ market.key.market === 'spot' ? '现货' : '永续' }} · {{ market.key.priceKind === 'mark' ? '标记价' : '成交价' }}</small>
       </div>
       <strong class="market-move" :class="market.direction">{{ notification.message }}</strong>
     </div>
@@ -65,6 +73,12 @@ onBeforeUnmount(() => clearInterval(timer));
     <ReminderNotification v-else-if="kind === 'reminder'" :notification="notification" @action="request('action', { action: $event })" />
     <PhoneCallNotification v-else-if="kind === 'call'" :host="host" :notification="notification" :audible="audible" :audio-muted="audioMuted" :audio-volume="audioVolume" @action="request('action', { action: $event })" @error="error = $event" />
     <MessageNotification v-else :type="kind" :message="notification.message" :title="notification.title" :source="notification.sourceName" />
+    <button v-if="market" class="island-close island-delete" type="button"
+      :aria-label="market.demo ? '模拟删除警报规则' : '删除此价格警报规则'"
+      :title="market.demo ? '模拟删除警报规则' : '删除此价格警报规则'"
+      :disabled="deletingRule" @click="deleteRule">
+      <Icon type="trash" />
+    </button>
     <button v-if="market" class="island-close island-mute" type="button"
       aria-label="静音这条行情通知" :aria-pressed="notification.mute"
       :title="notification.mute ? '恢复这条通知的声音' : '静音这条通知'"
@@ -92,7 +106,7 @@ onBeforeUnmount(() => clearInterval(timer));
 }
 .island:is(.info, .success, .error, .warning, .countdown, .market-alert) { width: min(310px, 100%); }
 .island:not(.call, .reminder) { padding-right: 29px; }
-.island.market-alert { padding-right: 55px; }
+.island.market-alert { padding-right: 81px; }
 .market-card { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; padding: 0 4px 0 16px; }
 .market-instrument { flex: 1; min-width: 0; }
 .market-instrument :is(strong, small) { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -130,7 +144,11 @@ onBeforeUnmount(() => clearInterval(timer));
   cursor: pointer;
 }
 .island-close:hover { background: #454549; color: white; }
-.island-mute { right: 33px; display: grid; place-items: center; font-size: 14px; }
+.island-mute, .island-delete { display: grid; place-items: center; font-size: 14px; }
+.island-mute { right: 33px; }
+.island-delete { right: 59px; }
+.island-delete:hover { background: #5a272a; color: #ffd1d2; }
+.island-delete:disabled { opacity: .5; cursor: default; }
 .island-mute[aria-pressed="true"] { background: #393a3d; color: #fff; }
 .display-error { position: absolute; z-index: 5; left: 16px; bottom: 1px; color: #ff9090; font-size: 10px; max-width: 85%; overflow: hidden; white-space: nowrap; pointer-events: none; }
 </style>

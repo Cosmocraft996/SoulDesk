@@ -1,6 +1,6 @@
 //! 灵动通知、久坐与来电的核心协调；原生输入通过显式回调注入。
 use crate::{
-    alerts::Direction,
+    alerts::{Direction, MarketKey, PriceKind},
     notification_sdk::{self, Request},
     reminder_state::{
         IslandState, LocalMinute, PhoneLedger, PhonePreset, PhoneRule, SitConfig, SitUsage,
@@ -72,6 +72,14 @@ pub(crate) enum Demo {
     AdvanceCountdown,
     Countdown,
     Call,
+    CallSound,
+    MarketUp,
+    MarketDown,
+}
+impl Demo {
+    fn host_only(self) -> bool {
+        matches!(self, Self::CallSound | Self::MarketUp | Self::MarketDown)
+    }
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -109,6 +117,7 @@ pub(crate) struct MarketNotice {
     pub direction: crate::alerts::Direction,
     pub price: String,
     pub threshold: String,
+    pub demo: bool,
     triggered_at: u64,
 }
 
@@ -219,8 +228,10 @@ impl Engine {
             return None;
         }
         self.visible()
-            .filter(|notice| notice.market_alert.is_some() && !notice.mute)
-            .max_by_key(|notice| notice.market_alert.as_ref().map(|alert| alert.triggered_at))
+            .filter(|notice| !notice.mute)
+            .filter_map(|notice| notice.market_alert.as_ref().map(|alert| (notice, alert)))
+            .max_by_key(|(_, alert)| (!alert.demo, alert.triggered_at))
+            .map(|(notice, _)| notice)
     }
     pub(crate) fn market_tone(&self, direction: Direction) -> &'static str {
         match direction {
@@ -666,24 +677,34 @@ impl Engine {
         if hidden || !Channel::Island.enabled_in(store)? {
             return Err(crate::alert_notice::ISLAND_SUPPRESSED.into());
         }
-        self.sync(store, clock)?;
-        self.show_queued(store, clock)?;
-        if self.notice(&event.id).is_some()
-            || self.queued.iter().any(|notice| notice.id == event.id)
-        {
-            return Ok(());
-        }
         let (instrument, _) = crate::alert_notice::content(event);
-        let movement = match event.direction {
+        let notice = Self::market_notice(
+            event.id.clone(),
+            instrument,
+            MarketNotice {
+                key: event.key.clone(),
+                direction: event.direction,
+                price: event.observed_price.clone(),
+                threshold: event.threshold.clone(),
+                demo: false,
+                triggered_at: event.created_utc_ms,
+            },
+            clock,
+        );
+        self.publish_market_notice(store, notice, clock)
+    }
+
+    fn market_notice(id: String, title: String, alert: MarketNotice, clock: Clock) -> Notice {
+        let movement = match alert.direction {
             crate::alerts::Direction::Up => "上涨至",
             crate::alerts::Direction::Down => "下跌至",
         };
-        let mut notice = Notice {
-            id: event.id.clone(),
+        Notice {
+            id,
             source: HOST_NOTICE_OWNER.into(),
             kind: NoticeKind::MarketAlert,
-            title: instrument,
-            message: format!("{movement} {}", event.observed_price),
+            title,
+            message: format!("{movement} {}", alert.price),
             preset: None,
             target_at: None,
             created_at: clock.wall_ms,
@@ -691,22 +712,31 @@ impl Engine {
             mute: false,
             phase: String::new(),
             source_name: None,
-            market_alert: Some(MarketNotice {
-                key: event.key.clone(),
-                direction: event.direction,
-                price: event.observed_price.clone(),
-                threshold: event.threshold.clone(),
-                triggered_at: event.created_utc_ms,
-            }),
+            market_alert: Some(alert),
             source_revision: 0,
             preview: false,
             break_seconds: None,
-        };
+        }
+    }
+
+    fn publish_market_notice(
+        &mut self,
+        store: &Store,
+        mut notice: Notice,
+        clock: Clock,
+    ) -> AppResult<()> {
+        self.sync(store, clock)?;
+        self.show_queued(store, clock)?;
+        if self.notice(&notice.id).is_some() || self.queued.iter().any(|old| old.id == notice.id) {
+            return Ok(());
+        }
+        let alert = notice.market_alert.as_ref().expect("行情通知必须包含报价");
         let same_instrument = |old: &Notice| {
-            old.market_alert.as_ref().is_some_and(|alert| {
-                alert.key.exchange == event.key.exchange
-                    && alert.key.market == event.key.market
-                    && alert.key.symbol == event.key.symbol
+            old.market_alert.as_ref().is_some_and(|previous| {
+                previous.demo == alert.demo
+                    && previous.key.exchange == alert.key.exchange
+                    && previous.key.market == alert.key.market
+                    && previous.key.symbol == alert.key.symbol
             })
         };
         if let Some(index) = self
@@ -718,7 +748,7 @@ impl Engine {
                 .notice
                 .market_alert
                 .as_ref()
-                .is_some_and(|alert| alert.triggered_at > event.created_utc_ms)
+                .is_some_and(|previous| previous.triggered_at > alert.triggered_at)
             {
                 return Ok(());
             }
@@ -732,7 +762,7 @@ impl Engine {
             if self.queued[index]
                 .market_alert
                 .as_ref()
-                .is_some_and(|alert| alert.triggered_at > event.created_utc_ms)
+                .is_some_and(|previous| previous.triggered_at > alert.triggered_at)
             {
                 return Ok(());
             }
@@ -778,6 +808,33 @@ impl Engine {
             self.remove_notice(id);
             self.show_queued(store, clock)?;
         }
+        Ok(())
+    }
+
+    pub(crate) fn delete_market_rule(&mut self, store: &Store, id: &str) -> AppResult<()> {
+        let alert = self
+            .notice(id)
+            .filter(|_| !self.hidden && !self.preferences.hidden)
+            .and_then(|notice| notice.market_alert.as_ref())
+            .ok_or("SESSION_EXPIRED: 此行情通知已隐藏、关闭或替换")?;
+        if alert.demo {
+            self.remove_notice(id);
+            return Ok(());
+        }
+        let event = crate::alert_store::notification_event(store, id)?;
+        if event.notification_channel != crate::alerts::NotificationChannel::Island {
+            return Err("CAPABILITY_DENIED: 该事件的通知渠道不匹配".into());
+        }
+        crate::alert_store::remove_rule(store, &event.rule_id, event.revision).map_err(
+            |error| {
+                if error.starts_with("CONFLICT:") {
+                    "警报已修改或删除，请在 K 线中核对".into()
+                } else {
+                    error
+                }
+            },
+        )?;
+        self.remove_notice(id);
         Ok(())
     }
 
@@ -1001,6 +1058,9 @@ impl Engine {
         Ok(())
     }
     pub fn demo(&mut self, store: &Store, id: &str, demo: Demo, clock: Clock) -> AppResult<()> {
+        if demo.host_only() {
+            return Err("CAPABILITY_DENIED: 仅宿主设置可测试此通知".into());
+        }
         self.sync(store, clock)?;
         let revision = self
             .configs
@@ -1027,8 +1087,14 @@ impl Engine {
         if !channel.enabled_in(store)? {
             return Err("所选通知渠道已关闭".into());
         }
+        if demo.host_only() && channel != Channel::Island {
+            return Err("此样例仅用于测试灵动通知".into());
+        }
         let notice = Self::demo_notice(HOST_NOTICE_OWNER, 0, demo, clock);
         match channel {
+            Channel::Island if notice.market_alert.is_some() => {
+                self.publish_market_notice(store, notice, clock)
+            }
             Channel::Island => {
                 self.sync(store, clock)?;
                 self.show_queued(store, clock)?;
@@ -1039,8 +1105,43 @@ impl Engine {
     }
 
     fn demo_notice(id: &str, revision: u64, demo: Demo, clock: Clock) -> Notice {
-        if matches!(demo, Demo::Call) {
-            return Self::phone_notice(id, revision, PhonePreset::Squidward, clock, true, true);
+        if matches!(demo, Demo::Call | Demo::CallSound) {
+            let mut notice = Self::phone_notice(
+                id,
+                revision,
+                PhonePreset::Squidward,
+                clock,
+                true,
+                matches!(demo, Demo::Call),
+            );
+            if matches!(demo, Demo::CallSound) {
+                notice.title = "模拟来电测试".into();
+            }
+            return notice;
+        }
+        if matches!(demo, Demo::MarketUp | Demo::MarketDown) {
+            let (direction, key, price) = if matches!(demo, Demo::MarketUp) {
+                (Direction::Up, MarketKey::spot("BTCUSDT"), "67000")
+            } else {
+                (
+                    Direction::Down,
+                    MarketKey::binance("ETHUSDT", PriceKind::Last),
+                    "3000",
+                )
+            };
+            return Self::market_notice(
+                Uuid::new_v4().to_string(),
+                format!("测试行情 · {}", key.symbol),
+                MarketNotice {
+                    key,
+                    direction,
+                    price: price.into(),
+                    threshold: price.into(),
+                    demo: true,
+                    triggered_at: clock.wall_ms,
+                },
+                clock,
+            );
         }
         let kind = match demo {
             Demo::Info => NoticeKind::Info,
@@ -1050,7 +1151,7 @@ impl Engine {
             Demo::Reminder => NoticeKind::Reminder,
             Demo::AdvanceCountdown => NoticeKind::AdvanceCountdown,
             Demo::Countdown => NoticeKind::Countdown,
-            Demo::Call => unreachable!(),
+            Demo::Call | Demo::CallSound | Demo::MarketUp | Demo::MarketDown => unreachable!(),
         };
         Notice {
             id: Uuid::new_v4().to_string(),

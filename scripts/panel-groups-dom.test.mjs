@@ -555,6 +555,23 @@ test('灵动通知滑杆可设置全透明和零音量，松开各自保存', as
   } finally { await f.close(); }
 });
 
+test('灵动通知测试可发送上涨、下跌和有声来电样例', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  try {
+    const select = document.querySelector('#notification-sample');
+    const variants = ['market-up', 'market-down', 'call-sound'];
+    for (const sample of variants) {
+      await act(async () => {
+        select.value = sample;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await click(textButton(document, '测试灵动通知'));
+    }
+    const commands = f.calls.filter(([name, args]) => name === 'notification_settings' && args.command.type === 'test').map(([, args]) => args.command);
+    assert.deepEqual(commands, variants.map(sample => ({ type: 'test', channel: 'island', sample })));
+  } finally { await f.close(); }
+});
+
 test('收起态挂件单击优先，停留后展开，按住经过和快速移出不展开', async () => {
   const f = await fixture({ query: '?edge=1&style=rocket&side=left' });
   try {

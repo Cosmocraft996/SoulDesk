@@ -26,6 +26,7 @@ const samples = [
   ['info', '普通信息'], ['success', '成功'], ['warning', '警告'], ['error', '错误'],
   ['reminder', '双按钮提醒'], ['advance-countdown', '倒计时预告'],
   ['countdown', '实时倒计时'], ['call', '模拟来电（静音）'],
+  ['call-sound', '模拟来电（播放声音）'], ['market-up', '行情上涨'], ['market-down', '行情下跌'],
 ] as const;
 type Sample = typeof samples[number][0];
 type HistoryEntry = { id: string; kind: Sample | 'market-alert'; title: string; message: string; source: string; at?: number; shownAt?: number };

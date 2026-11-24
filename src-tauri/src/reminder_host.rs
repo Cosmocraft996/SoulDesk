@@ -32,6 +32,7 @@ pub(crate) enum IslandCommand {
     Hover { id: String, entered: bool },
     Audio { id: String, state: String },
     MarketMute { id: String, muted: bool },
+    MarketDeleteRule { id: String },
     MarketSound { id: String, tone: String },
     MarketSoundStarted { id: String, tone: String },
     Drag { id: String },
@@ -66,6 +67,7 @@ pub(crate) async fn island_surface(
             IslandCommand::Action { .. }
                 | IslandCommand::Audio { .. }
                 | IslandCommand::MarketMute { .. }
+                | IslandCommand::MarketDeleteRule { .. }
         );
         let result: AppResult<Value> = (|| {
             let _native = core.store.native_actions.lock().map_err(err)?;
@@ -102,15 +104,16 @@ pub(crate) async fn island_surface(
                 }
                 IslandCommand::Action { id, action } => {
                     let target = require_notice(engine.notice_target(&id), &id)?;
-                    let source = engine.notice(&id).map(|n| n.source.clone());
-                    let market_alert = engine
-                        .notice(&id)
-                        .is_some_and(|notice| notice.market_alert.is_some());
+                    let notice = engine.notice(&id);
+                    let source = notice.map(|n| n.source.clone());
+                    let market = notice
+                        .and_then(|n| n.market_alert.as_ref())
+                        .map(|alert| alert.demo.then(|| alert.key.clone()));
                     engine.act(&core.store, &target, &id, action, clock)?;
                     engine.show_queued(&core.store, clock)?;
                     if matches!(action, Action::OpenSource) {
-                        if market_alert {
-                            market_event_to_open = Some(id);
+                        if let Some(demo_key) = market {
+                            market_event_to_open = Some((id, demo_key));
                         } else {
                             source_to_open = source;
                         }
@@ -129,6 +132,12 @@ pub(crate) async fn island_surface(
                 }
                 IslandCommand::MarketMute { id, muted } => {
                     engine.mute_market_notice(&core.store, &id, muted, clock)?;
+                }
+                IslandCommand::MarketDeleteRule { id } => {
+                    engine.delete_market_rule(&core.store, &id)?;
+                    if let Err(error) = engine.show_queued(&core.store, clock) {
+                        core.report(error);
+                    }
                 }
                 IslandCommand::MarketSound { id, tone } => {
                     let alert = engine
@@ -184,9 +193,13 @@ pub(crate) async fn island_surface(
             service.schedule(&app);
         }
         let result = result?;
-        if let Some(id) = market_event_to_open {
+        if let Some((id, demo_key)) = market_event_to_open {
             windows::serialized(&app, |app| {
-                crate::alert_notice::open(app, &id, crate::alerts::NotificationChannel::Island)
+                if let Some(key) = &demo_key {
+                    windows::open_market_alert_chart(app, key)
+                } else {
+                    crate::alert_notice::open(app, &id, crate::alerts::NotificationChannel::Island)
+                }
             })?;
             let closed = (|| {
                 let _native = core.store.native_actions.lock().map_err(err)?;

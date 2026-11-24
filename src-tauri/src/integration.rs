@@ -3106,7 +3106,7 @@ async fn verify_market_alerts(
     use crate::{
         alert_notice::{activation_event, toast_tag, TOAST_GROUP},
         alerts::{Condition, NotificationChannel, Reason},
-        reminder_engine::{Action, Surface},
+        reminder_engine::{Action, Demo, Surface},
         reminder_host::{
             island_surface, notification_settings, IslandCommand, IslandControl, SettingsCommand,
         },
@@ -3461,6 +3461,159 @@ async fn verify_market_alerts(
             && matches_delivery(&island.id, "island")
             && windows::instance(app, instance)?["visible"] == false,
         json!({"events":events.len(),"normalInstanceShown":false}),
+    )?;
+
+    let deletion = trigger(MarketKey::spot("ETHUSDT"), NotificationChannel::Island)?;
+    business::deliver_pending(app, time + 1).await;
+    until(
+        || {
+            Ok(crate::reminder_store::island_history(&core.store)?
+                .as_array()
+                .is_some_and(|entries| entries.iter().any(|entry| entry["id"] == deletion.id)))
+        },
+        8,
+    )
+    .await?;
+    let view = app
+        .webview_windows()
+        .into_values()
+        .find(|window| window.label().starts_with("island-host-"))
+        .ok_or("找不到待删除警报的通知窗口")?;
+    let stale = island_surface(
+        app.clone(),
+        view.clone(),
+        IslandCommand::MarketDeleteRule {
+            id: island.id.clone(),
+        },
+    )
+    .await;
+    view.eval(r#"document.querySelector('button[aria-label="删除此价格警报规则"]')?.click()"#)
+        .map_err(err)?;
+    until(
+        || {
+            let rules = alert_store::list_rules(&core.store)?;
+            Ok(!rules.iter().any(|(rule, _)| rule.id == deletion.rule_id)
+                && core.reminders.target(Surface::Notice).is_none())
+        },
+        8,
+    )
+    .await?;
+    let rules = alert_store::list_rules(&core.store)?;
+    check(
+        report,
+        "market-island-delete-rule-button",
+        stale.is_err()
+            && rules
+                .iter()
+                .any(|(rule, _)| rule.id == windows_event.rule_id)
+            && rules.iter().any(|(rule, _)| rule.id == island.rule_id)
+            && alert_store::notification_event(&core.store, &deletion.id).is_ok(),
+        json!({"buttonClicked":true,"historyRetained":true,"otherRulesRetained":true}),
+    )?;
+
+    // K 线复用时用宿主事件切换页面，窗口 URL 只记录首次打开的页面。
+    let id = instance.to_owned();
+    window(app, move |app| windows::hide_instance(app, &id)).await?;
+    let test = |sample| {
+        settings(SettingsCommand::Test {
+            channel: crate::reminder_store::Channel::Island,
+            sample,
+        })
+    };
+    let snapshot = || {
+        let target = core
+            .reminders
+            .target(Surface::Notice)
+            .ok_or("测试通知没有显示目标")?;
+        core.reminders.notice_snapshot(&target)
+    };
+    test(Demo::MarketUp).await?;
+    test(Demo::MarketDown).await?;
+    let samples = snapshot()?;
+    let test_id = |direction: &str| -> AppResult<String> {
+        samples["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|item| &item["notification"])
+            .find(|notice| {
+                notice["marketAlert"]["demo"] == true
+                    && notice["marketAlert"]["direction"] == direction
+            })
+            .and_then(|notice| notice["id"].as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("缺少 {direction} 行情测试卡片"))
+    };
+    let up = test_id("up")?;
+    let down = test_id("down")?;
+    until(
+        || {
+            let history = crate::reminder_store::island_history(&core.store)?;
+            Ok(history.as_array().is_some_and(|entries| {
+                [&up, &down]
+                    .into_iter()
+                    .all(|id| entries.iter().any(|entry| entry["id"] == id.as_str()))
+            }))
+        },
+        8,
+    )
+    .await?;
+    island_surface(
+        app.clone(),
+        view.clone(),
+        IslandCommand::MarketMute {
+            id: up.clone(),
+            muted: true,
+        },
+    )
+    .await?;
+    view.eval(r#"document.querySelector(".island.market-alert:has(.market-move.up) button[aria-label='模拟删除警报规则']")?.click()"#).map_err(err)?;
+    until(
+        || {
+            Ok(snapshot()?["items"]
+                .as_array()
+                .is_some_and(|items| items.len() == 1 && items[0]["notification"]["id"] == down))
+        },
+        8,
+    )
+    .await?;
+    island_surface(
+        app.clone(),
+        view.clone(),
+        IslandCommand::Action {
+            id: down.clone(),
+            action: Action::OpenSource,
+        },
+    )
+    .await?;
+    until(|| chart_ready("market-chart:usd_m:ETHUSDT:last"), 12)
+        .await
+        .map_err(|error| format!("下跌测试卡片未打开 ETH 永续 K 线：{error}"))?;
+    check(
+        report,
+        "market-island-test-samples",
+        core.reminders.target(Surface::Notice).is_none()
+            && alert_store::notification_event(&core.store, &up).is_err()
+            && alert_store::notification_event(&core.store, &down).is_err()
+            && alert_store::list_rules(&core.store)?.len() == rules.len()
+            && alert_store::list_events(&core.store, 0, 20)?.len() == events.len() + 1,
+        json!({"upAndDown":true,"simulatedRemoval":true,"chartOpened":true,"realRulesUntouched":true}),
+    )?;
+    // 验收来电样例的可播放状态时保持物理音频输出静音。
+    settings(SettingsCommand::Toggle {
+        control: IslandControl::Mute,
+    })
+    .await?;
+    test(Demo::CallSound).await?;
+    let call = snapshot()?;
+    check(
+        report,
+        "island-call-sound-test-sample",
+        call["items"][0]["notification"]["kind"] == "call"
+            && call["items"][0]["notification"]["mute"] == false
+            && call["audible"].is_string()
+            && call["muted"] == true,
+        json!({"playbackSelected":true,"systemOutputMuted":true}),
     )?;
     Ok(())
 }
