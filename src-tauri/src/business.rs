@@ -771,6 +771,8 @@ pub async fn gateway(
             args["offset"].as_u64().unwrap_or(0),
             args["limit"].as_u64().unwrap_or(50).min(100) as u32
         )?)),
+        "alerts.historySettings" => alert_store::history_settings(&core.store, args.get("days")),
+        "alerts.historyClear" => Ok(json!({"cleared":alert_store::clear_history(&core.store)?})),
         "alerts.retry" => {
             let channel = match args["channel"].as_str() {
                 Some("notification") => Channel::Notification,
@@ -893,6 +895,7 @@ pub fn start(app: &AppHandle) {
         // 每次只检查当前订阅和连接状态，跳过休眠期间错过的刷新。
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut previous = String::new();
+        let mut last_history_cleanup: Option<std::time::Instant> = None;
         loop {
             timer.tick().await;
             let core = handle.state::<Core>();
@@ -901,6 +904,15 @@ pub fn start(app: &AppHandle) {
                     feed.cancel.cancel();
                 }
                 break;
+            }
+            if last_history_cleanup.is_none_or(|at| at.elapsed().as_secs() >= 60) {
+                last_history_cleanup = Some(std::time::Instant::now());
+                if let Err(error) = core
+                    .reminders
+                    .prune_alert_history(&core.store, crate::store::now_ms())
+                {
+                    core.report(error);
+                }
             }
             let refresh = || -> AppResult<()> {
                 let sessions = core.sessions.0.lock().map_err(err)?;

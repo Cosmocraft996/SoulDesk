@@ -718,6 +718,26 @@ impl Service {
         }
     }
 
+    pub(crate) fn prune_alert_history(
+        &self,
+        store: &crate::store::Store,
+        now: u64,
+    ) -> AppResult<()> {
+        let engine = self.engine.lock().map_err(err)?;
+        let active = engine
+            .visible()
+            .chain(engine.pending())
+            .filter_map(|notice| {
+                notice
+                    .market_alert
+                    .as_ref()
+                    .filter(|alert| !alert.demo)
+                    .map(|_| notice.id.as_str())
+            })
+            .collect::<Vec<_>>();
+        crate::alert_store::prune_history(store, now, &active)
+    }
+
     pub(crate) fn market_alert(
         &self,
         app: &AppHandle,

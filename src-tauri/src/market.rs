@@ -136,31 +136,41 @@ fn parse_market_frame(
         return Ok(None);
     }
     let data = value.get("data").unwrap_or(&value);
-    let event = data["e"].as_str().ok_or("PROTOCOL_CHANGED: 缺少事件类型")?;
-    if [
-        "EquityUpdate",
-        "CommodityUpdate",
-        "KR_EquityUpdate",
-        "HK_EquityUpdate",
-        "CN_EquityUpdate",
-        "FXUpdate",
-    ]
-    .contains(&event)
+    let stream_name = value["stream"].as_str();
+    let event = data["e"].as_str();
+    let known_session = matches!(
+        event,
+        Some(
+            "EquityUpdate"
+                | "CommodityUpdate"
+                | "KR_EquityUpdate"
+                | "HK_EquityUpdate"
+                | "CN_EquityUpdate"
+                | "TW_EquityUpdate"
+                | "FXUpdate"
+        )
+    );
+    if market == "usd_m"
+        && (stream_name == Some("tradingSession") || (stream_name.is_none() && known_session))
     {
-        if !matches!(
-            data["S"].as_str(),
-            Some("PRE_MARKET" | "REGULAR" | "AFTER_MARKET" | "OVERNIGHT" | "NO_TRADING")
-        ) || data["E"].as_u64().is_none()
+        // 交易时段是附属数据，未知类型或缺字段时只跳过本帧。
+        if !known_session
+            || !matches!(
+                data["S"].as_str(),
+                Some("PRE_MARKET" | "REGULAR" | "AFTER_MARKET" | "OVERNIGHT" | "NO_TRADING")
+            )
+            || data["E"].as_u64().is_none()
             || data["t"].as_u64().is_none()
             || data["T"].as_u64().is_none()
         {
-            return Err("PROTOCOL_CHANGED: 标的交易时段字段无效".into());
+            return Ok(None);
         }
         return Ok(Some(Parsed::Session {
-            event: event.into(),
+            event: event.expect("已识别交易时段类型").into(),
             value: json!({"session":data["S"],"start":data["t"],"end":data["T"],"time":data["E"]}),
         }));
     }
+    let event = event.ok_or("PROTOCOL_CHANGED: 缺少事件类型")?;
     let symbol = data["s"].as_str().ok_or("PROTOCOL_CHANGED: 行情缺少合约")?;
     // 当前合并市场协议明确带st；缺失时也不猜测市场身份。
     if event == "contractInfo" && data["st"] == 2 {
@@ -740,6 +750,18 @@ mod tests {
                     for index in 0..if burst { 12 } else { 2 } {
                         if !burst && index == 1 {
                             tokio::time::sleep(Duration::from_millis(250)).await;
+                            for event in ["TW_EquityUpdate", "New_EquityUpdate"] {
+                                let session = json!({"stream":"tradingSession", "data":{
+                                    "e":event,"E":base,"t":base,"T":base+1000,"S":"NO_TRADING"
+                                }});
+                                if ws
+                                    .send(Message::Text(session.to_string().into()))
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
                         }
                         let symbol = if !burst && index == 1 {
                             "ETHUSDT"
@@ -802,6 +824,13 @@ mod tests {
             .unwrap();
         assert_eq!(second.observation.key.symbol, "ETHUSDT");
         assert!(second.observation.recovered);
+        assert_eq!(second.observation.generation, first.observation.generation);
+        let snapshot = feed.snapshot().unwrap();
+        assert_eq!(
+            snapshot["sessions"]["TW_EquityUpdate"]["session"],
+            "NO_TRADING"
+        );
+        assert!(snapshot["sessions"]["New_EquityUpdate"].is_null());
         feed.desired.send_modify(|d| d.reconnect += 1);
         let third = tokio::time::timeout(Duration::from_secs(3), input.recv())
             .await

@@ -3,9 +3,13 @@ use crate::{
     alerts::{self, AlertEvent, Context, Observation, Rule, RuleState},
     store::{err, AppResult, Store},
 };
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+
+const HISTORY_DAYS_KEY: &str = "alerts.history.retention_days";
+const DEFAULT_HISTORY_DAYS: u32 = 3;
+const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
 
 pub fn save_rule(store: &Store, rule: &Rule, expected_revision: Option<u64>) -> AppResult<()> {
     rule.validate()?;
@@ -152,7 +156,7 @@ impl Engine {
 
 pub fn list_events(store: &Store, offset: u64, limit: u32) -> AppResult<Vec<Value>> {
     let db = store.db.lock().map_err(err)?;
-    let mut query=db.prepare("SELECT event,notification,sound,notification_attempts,sound_attempts,notification_error,sound_error FROM alert_events ORDER BY created DESC,rowid DESC LIMIT ?1 OFFSET ?2").map_err(err)?;
+    let mut query=db.prepare("SELECT event,notification,sound,notification_attempts,sound_attempts,notification_error,sound_error FROM alert_events WHERE coalesce(json_extract(event,'$.historyCleared'),0)=0 ORDER BY created DESC,rowid DESC LIMIT ?1 OFFSET ?2").map_err(err)?;
     let rows = query
         .query_map(params![limit.clamp(1, 100), offset], |r| {
             Ok((
@@ -178,6 +182,71 @@ pub fn list_events(store: &Store, offset: u64, limit: u32) -> AppResult<Vec<Valu
         Ok(value)
     })
     .collect()
+}
+
+fn history_days(db: &Connection) -> AppResult<Option<u32>> {
+    let value = crate::reminder_store::preference(db, HISTORY_DAYS_KEY)?;
+    let days = value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(DEFAULT_HISTORY_DAYS);
+    Ok((days > 0).then_some(days))
+}
+
+pub(crate) fn history_settings(store: &Store, days: Option<&Value>) -> AppResult<Value> {
+    let db = store.db.lock().map_err(err)?;
+    if let Some(value) = days {
+        let days = if value.is_null() {
+            0
+        } else {
+            value
+                .as_u64()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|&value| value > 0)
+                .ok_or("INVALID_ARGUMENT: 保留天数必须为正整数")?
+        };
+        db.execute(
+            "INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![HISTORY_DAYS_KEY, days.to_string()],
+        ).map_err(err)?;
+    }
+    Ok(json!({"days":history_days(&db)?}))
+}
+
+pub(crate) fn clear_history(store: &Store) -> AppResult<usize> {
+    // 报警事件也是通知动作的依据。先从日志清除，后台再按保留期限删除数据。
+    store.db.lock().map_err(err)?.execute(
+        "UPDATE alert_events SET event=json_set(event,'$.historyCleared',1) WHERE coalesce(json_extract(event,'$.historyCleared'),0)=0",
+        [],
+    ).map_err(err)
+}
+
+pub(crate) fn prune_history(store: &Store, now: u64, active: &[&str]) -> AppResult<()> {
+    let mut db = store.db.lock().map_err(err)?;
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(err)?;
+    let cutoff = |days: u32| now.saturating_sub(u64::from(days) * DAY_MS);
+    let visible_cutoff = history_days(&tx)?.map(cutoff).unwrap_or(0);
+    let cleared_cutoff = cutoff(DEFAULT_HISTORY_DAYS).max(visible_cutoff);
+    tx.execute(
+        "DELETE FROM alert_events
+         WHERE (created < ?1 OR (created < ?2 AND json_extract(event,'$.historyCleared')=1))
+           AND notification NOT IN ('pending','sending')
+           AND id NOT IN (SELECT value FROM json_each(?3))",
+        params![
+            visible_cutoff,
+            cleared_cutoff,
+            serde_json::to_string(active).map_err(err)?
+        ],
+    )
+    .map_err(err)?;
+    tx.execute(
+        "UPDATE alert_events SET event=json_set(event,'$.historyCleared',1)
+         WHERE created < ?1 AND coalesce(json_extract(event,'$.historyCleared'),0)=0",
+        [visible_cutoff],
+    )
+    .map_err(err)?;
+    tx.commit().map_err(err)
 }
 
 pub(crate) fn notification_event(store: &Store, id: &str) -> AppResult<AlertEvent> {
@@ -282,7 +351,7 @@ pub fn finish_uncertain(store: &Store, id: &str, channel: Channel, message: &str
 pub fn retry_delivery(store: &Store, id: &str, channel: Channel) -> AppResult<()> {
     // 用户主动重试失败、不确定或过期的同一事件；发送中、已发送及关闭的渠道不重播。
     let column = channel.column();
-    let sql=format!("UPDATE alert_events SET {column}='pending',{column}_error='用户主动重试' WHERE id=?1 AND {column} IN ('failed','unknown','expired') AND {column}_attempts<3");
+    let sql=format!("UPDATE alert_events SET {column}='pending',{column}_error='用户主动重试' WHERE id=?1 AND {column} IN ('failed','unknown','expired') AND {column}_attempts<3 AND coalesce(json_extract(event,'$.historyCleared'),0)=0");
     if store
         .db
         .lock()
@@ -571,5 +640,66 @@ mod tests {
         assert_eq!(events[0]["notification"], "unknown");
         assert_eq!(events[0]["sound"], "suppressed");
         assert!(!claim_delivery(&store, &event.id, Channel::Notification).unwrap());
+    }
+
+    #[test]
+    fn history_cleanup_protects_active_deliveries_and_keeps_rules_and_new_events() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-alert-history-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let r = Rule {
+            mode: Mode::Repeat,
+            ..rule()
+        };
+        save_rule(&store, &r, None).unwrap();
+        assert_eq!(history_settings(&store, None).unwrap(), json!({"days":3}));
+        assert!(history_settings(&store, Some(&json!(0))).is_err());
+
+        let mut engine = Engine::default();
+        let mut trigger = |t| {
+            let (q, c) = quote(&r, "100", t);
+            engine.process(&store, &q, c).unwrap().remove(0)
+        };
+        let old = trigger(0);
+        let active = trigger(20_000);
+        let pending = trigger(40_000);
+        let recent = trigger(4 * DAY_MS);
+        for event in [&old, &active, &recent] {
+            assert!(claim_delivery(&store, &event.id, Channel::Notification).unwrap());
+            finish_delivery(&store, &event.id, Channel::Notification, Ok(())).unwrap();
+        }
+        prune_history(&store, recent.created_utc_ms, &[&active.id]).unwrap();
+        assert!(notification_event(&store, &old.id).is_err());
+        assert!(notification_event(&store, &active.id).is_ok());
+        assert_eq!(list_events(&store, 0, 20).unwrap().len(), 1);
+
+        assert_eq!(clear_history(&store).unwrap(), 1);
+        assert!(list_events(&store, 0, 20).unwrap().is_empty());
+        assert!(notification_event(&store, &recent.id).is_ok());
+        assert!(claim_delivery(&store, &pending.id, Channel::Notification).unwrap());
+        finish_delivery(&store, &pending.id, Channel::Notification, Ok(())).unwrap();
+        let after_clear = trigger(4 * DAY_MS + 20_000);
+        assert_eq!(after_clear.sequence, 5);
+        assert_eq!(list_events(&store, 0, 20).unwrap()[0]["id"], after_clear.id);
+        assert_eq!(list_rules(&store).unwrap()[0].1.sequence, 5);
+        assert_eq!(
+            history_settings(&store, Some(&json!(7))).unwrap(),
+            json!({"days":7})
+        );
+        assert_eq!(
+            history_settings(&store, Some(&Value::Null)).unwrap(),
+            json!({"days":null})
+        );
+        drop(store);
+
+        let store = Store::open(root).unwrap();
+        assert_eq!(
+            history_settings(&store, None).unwrap(),
+            json!({"days":null})
+        );
+        prune_history(&store, recent.created_utc_ms + 8 * DAY_MS, &[]).unwrap();
+        assert!(notification_event(&store, &active.id).is_err());
+        assert!(notification_event(&store, &pending.id).is_err());
+        assert_eq!(list_events(&store, 0, 20).unwrap()[0]["id"], after_clear.id);
     }
 }

@@ -95,7 +95,7 @@ API Host仅接受用户专属`*.qweatherapi.com`的HTTPS默认端口，不含路
 |---|---|
 | `market.read` | `market.catalog`、`market.instruments`、`watchlist.get/set`、`watchlist.getItems/setItems`、`market.subscribe/unsubscribe/poll`、`market.preferences` |
 | `market.chart` | `market.candles/openInterest`、行情详情页、`view.resizeMarket` |
-| `alerts.manage` | `alerts.list/save/delete/history/retry` |
+| `alerts.manage` | `alerts.list/save/delete/history/historySettings/historyClear/retry` |
 
 行情键为 `{exchange:'binance',market:'usd_m',symbol:'BTCUSDT',priceKind:'last'|'mark'}`。价格、阈值和步长均为字符串。`watchlist.set` 替换本实例有序列表，最多20项，后台持续保留Last/Mark消费者；规则是独立宿主对象，不随实例删除。
 
@@ -119,9 +119,11 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `alerts.save` 参数为 `{rule,expectedRevision}`。新建 `revision=1`、`expectedRevision=null`，编辑传旧版本号，并把 `revision` 加 1。过期编辑明确冲突。`alerts.list` 返回 `{rule,state}` 列表。
 
-`condition` 默认 `reach`（到价），首次启用或触发参数变化后，第一笔有效报价已满足时提醒一次。选填 `cross`（穿越）时，`direction` 指定方向且 `cooldownMs` 须为 0。穿越在同一连接代次的连续有效报价中判断，首笔和重连后首笔仅建立基准。仅改名称或通知策略不重新武装。
+`condition` 默认 `reach`（到价），首次启用或触发参数变化后，第一笔有效报价已满足时提醒一次。重复到价在冷却结束后按新鲜报价继续判断，`cooldownMs:0` 按 5 秒执行。选填 `cross`（穿越）时，`direction` 指定方向且 `cooldownMs` 须为 0。穿越在同一连接代次的连续有效报价中判断，首笔和重连后首笔仅建立基准。仅改名称或通知策略保留触发状态。
 
 `notification: true` 开启弹窗，`notificationChannel` 默认 `windows`，也可选 `island`。灵动行情铃声由宿主设置统一管理，旧 `sound` 字段保留用于读取已有规则。`alerts.history` 使用 `offset/limit`（最多 100），返回触发原因及递送结果。灵动行情事件的 `sound: 'island'` 表示由灵动通知管理。`alerts.retry` 接收事件 ID 及 `channel: 'notification'`，对失败、结果不确定或过期的弹窗累计最多尝试 3 次。`sent` 表示系统调用成功或灵动队列已受理。
+
+`alerts.historySettings` 传 `{}` 读取全宿主保留设置，传 `{days:正整数}` 修改保留天数，传 `{days:null}` 关闭自动清理，返回 `{days}`。默认 3 天。`alerts.historyClear` 传 `{}` 清空当前触发历史并返回 `{cleared}`，规则和正在进行的通知递送继续有效。
 
 隐藏试加载只接收隔离配置和存储。组件应在 `host.preview` 为true时跳过真实行情/警报和公开内容，先完成静态界面初始化，再 `await host.ready()`。本地表单的提交事件已允许；内容安全策略仍禁止表单导航和网页直接请求外部接口，HTTPS图片仅向声明内容能力的包开放。确认交互使用HTML `dialog`；容器不开放原生alert/confirm/prompt。
 

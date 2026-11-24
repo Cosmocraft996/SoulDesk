@@ -312,12 +312,19 @@ pub fn evaluate(
             > CLOCK_SHIFT_TOLERANCE_MS
     });
     let mut next = state.clone();
+    let cooldown_ms =
+        if rule.condition == Condition::Reach && rule.mode == Mode::Repeat && rule.cooldown_ms == 0
+        {
+            5_000
+        } else {
+            rule.cooldown_ms
+        };
     // 重启后只用UTC截止和新的校正时间还原剩余冷却，旧单调时间与报价缓存不复用。
     if next.cooldown_until_mono_ms.is_none() {
         if let Some(deadline) = next.cooldown_until_utc_ms {
             let remaining = deadline
                 .saturating_sub(context.source_now_utc_ms)
-                .min(rule.cooldown_ms);
+                .min(cooldown_ms);
             next.cooldown_until_mono_ms = Some(
                 context
                     .clock
@@ -379,9 +386,9 @@ pub fn evaluate(
                 next.pending = true;
                 next.waiting_side = false;
             }
-        } else if next.pending {
+        } else if next.pending || (!next.waiting_side && !quote.recovered) {
             reason = Some(Reason::CooldownDue);
-        } else if next.waiting_side {
+        } else {
             reason = Some(if quote.recovered {
                 Reason::RecoveredMet
             } else {
@@ -401,14 +408,14 @@ pub fn evaluate(
             next.cooldown_until_utc_ms = Some(
                 context
                     .source_now_utc_ms
-                    .checked_add(rule.cooldown_ms)
+                    .checked_add(cooldown_ms)
                     .ok_or("CLOCK_INVALID: UTC冷却截止溢出")?,
             );
             next.cooldown_until_mono_ms = Some(
                 context
                     .clock
                     .mono_ms
-                    .checked_add(rule.cooldown_ms)
+                    .checked_add(cooldown_ms)
                     .ok_or("CLOCK_INVALID: 单调冷却截止溢出")?,
             );
         }
@@ -595,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn equality_and_continuous_met_are_symmetric_without_periodic_repeats() {
+    fn equality_and_continuous_met_repeat_only_after_cooldown_in_both_directions() {
         for (direction, waiting, met) in
             [(Direction::Up, "99", "101"), (Direction::Down, "101", "99")]
         {
@@ -605,10 +612,25 @@ mod tests {
             let hit = step(&r, &first.state, "100", 1);
             assert_eq!(hit.event.as_ref().unwrap().reason, Reason::Reached);
             assert_eq!(hit.state.sequence, 1);
-            let held = step(&r, &hit.state, met, 20_000);
+            let held = step(&r, &hit.state, met, 10_000);
             assert!(held.event.is_none());
-            assert_eq!(held.state.sequence, 1);
+            let due = step(&r, &held.state, met, 10_001);
+            assert_eq!(due.event.unwrap().reason, Reason::CooldownDue);
+            assert_eq!(due.state.sequence, 2);
         }
+    }
+    #[test]
+    fn legacy_zero_cooldown_repeat_uses_five_seconds_and_stays_due_after_restart() {
+        let r = Rule {
+            cooldown_ms: 0,
+            ..rule(Direction::Up)
+        };
+        let first = step(&r, &RuleState::default(), "100", 0);
+        assert_eq!(first.state.cooldown_until_utc_ms, Some(UTC + 5_000));
+        assert!(step(&r, &first.state, "101", 4_999).event.is_none());
+        let restored = serde_json::from_value(serde_json::to_value(first.state).unwrap()).unwrap();
+        let due = step(&r, &restored, "101", 5_000);
+        assert_eq!(due.event.unwrap().sequence, 2);
     }
     #[test]
     fn cooldown_oscillations_merge_into_one_post_deadline_fresh_event() {
@@ -627,7 +649,7 @@ mod tests {
             assert_eq!(due.event.as_ref().unwrap().reason, Reason::CooldownDue);
             assert_eq!(due.state.sequence, 2);
             assert!(!due.state.pending);
-            assert!(step(&r, &due.state, met, 20_000).event.is_none());
+            assert!(step(&r, &due.state, met, 19_999).event.is_none());
         }
     }
     #[test]
@@ -717,7 +739,7 @@ mod tests {
         );
     }
     #[test]
-    fn recovery_fires_unhandled_conditions_but_does_not_replay_processed_side() {
+    fn recovery_checks_the_first_fresh_price_and_repeats_only_once() {
         let r = rule(Direction::Up);
         let waiting = step(&r, &RuleState::default(), "99", 0).state;
         let quote = Observation {
@@ -741,10 +763,9 @@ mod tests {
             Reason::RecoveredMet
         );
         let handled = step(&r, &RuleState::default(), "100", 0).state;
-        assert!(evaluate(&r, &handled, &quote, context)
-            .unwrap()
-            .event
-            .is_none());
+        let resumed = evaluate(&r, &handled, &quote, context).unwrap();
+        assert_eq!(resumed.event.unwrap().reason, Reason::RecoveredMet);
+        assert!(step(&r, &resumed.state, "101", 20_001).event.is_none());
     }
     #[test]
     fn pending_recovery_generates_only_cooldown_due_and_once_stays_completed_after_restart() {

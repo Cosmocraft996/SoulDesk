@@ -3083,13 +3083,67 @@ async fn execute_market_panel(app: &AppHandle, c: &Config, report: &mut Value) -
         .await;
         let spot = core.business.spot.snapshot()?;
         let perpetual = core.business.feed.snapshot()?;
-        report["liveQuotes"] = json!({"fresh":live.is_ok(),"spot":{"status":spot["status"],"error":spot["error"]},"perpetual":{"status":perpetual["status"],"error":perpetual["error"]}});
+        report["liveQuotes"] = json!({"fresh":live.is_ok(),"spot":{"status":spot["status"],"error":spot["error"]},"perpetual":{"status":perpetual["status"],"error":perpetual["error"],"freshMarkCount":core.business.feed.fresh_mark_count()?}});
     } else {
         let spot = core.business.spot.snapshot()?;
         let perpetual = core.business.feed.snapshot()?;
         report["liveNetwork"] = json!({"online":false,"networkReady":core.business.network_ready.load(Ordering::Acquire),"spot":{"status":spot["status"],"error":spot["error"]},"perpetual":{"status":perpetual["status"],"error":perpetual["error"]}});
     }
     verify_market_alerts(app, &id, report).await?;
+    let retained_rules = alert_store::list_rules(&core.store)?;
+    let target = id.clone();
+    window(app, move |app| {
+        if let Some(detail) = app.get_webview_window(&format!("detail-{target}")) {
+            detail.destroy().map_err(err)?;
+        }
+        windows::restore_instance(app, &target)?;
+        windows::detail_at(app, &target, "history")
+    })
+    .await?;
+    until(|| Ok(session(&detail_label)?.is_some()), 15).await?;
+    let detail = app
+        .get_webview_window(&detail_label)
+        .ok_or("缺少触发历史窗口")?;
+    detail
+        .eval(
+            r#"{
+        const timer = setInterval(() => {
+            const settings = document.getElementById('history-settings');
+            if (!settings || settings.hidden) return;
+            clearInterval(timer);
+            const days = document.getElementById('history-days');
+            if (days.value !== '3' || !document.getElementById('history-auto').checked) return;
+            days.value = '7';
+            settings.requestSubmit();
+        }, 50);
+        setTimeout(() => clearInterval(timer), 5000);
+    }"#,
+        )
+        .map_err(err)?;
+    until(
+        || Ok(alert_store::history_settings(&core.store, None)?["days"] == 7),
+        10,
+    )
+    .await?;
+    detail
+        .eval(
+            r#"{
+        document.getElementById('history-clear').click();
+        document.querySelector('dialog[open] .actions button')?.click();
+    }"#,
+        )
+        .map_err(err)?;
+    until(
+        || Ok(alert_store::list_events(&core.store, 0, 20)?.is_empty()),
+        10,
+    )
+    .await?;
+    check(
+        report,
+        "market-alert-history-retention-and-manual-clear",
+        alert_store::list_rules(&core.store)? == retained_rules,
+        json!({"defaultDays":3,"savedDays":7,"manualClear":true,"rulesPreserved":true}),
+    )?;
     report["status"] = json!("passed");
     report["scope"]=json!("market package, formal chart sessions, deterministic crossings and desktop notification activation; live public API results recorded separately");
     save(c, report)?;
