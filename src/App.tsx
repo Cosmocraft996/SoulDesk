@@ -462,6 +462,7 @@ export function App() {
         <p className="muted">应用于管理窗口、侧边面板和桌面组件的宿主工具栏。</p>
       </section>
       <section className="settings-panel"><h2>组件外观</h2><label className="check"><input type="checkbox" checked={widgetBackdrop} disabled={busy || !data} onChange={e => { void run(() => action(e.target.checked ? 'enable-widget-backdrop' : 'disable-widget-backdrop')); }} />显示宿主衬底</label><p className="muted">为普通组件的透明区域铺上半透明主题底色。</p></section>
+      <section className="settings-panel"><h2>桌面格子</h2><p>在桌面原地分组文件和快捷方式，保留原路径。</p><div className="actions"><button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid'))}>打开格子管理</button><button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid-restore'))}>恢复 Windows 桌面图标</button></div></section>
       <NotificationSettings historyRequest={notificationHistory} />
       <section className="settings-panel"><h2>组件面板</h2><p>未锁定时，移出面板或失焦 3 秒后收起，点击外部立即收起。锁定时，点击外部会置底，点击挂件切换置顶和置底。快捷键或双击桌面空白处可锁定并展开，或解锁并收起。</p>{panelControls}</section>
       <section className="settings-panel">

@@ -10,6 +10,10 @@ default-run = "souldesk"
 name = "souldesk_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[features]
+desktop-grid-preview = []
+desktop-grid-winui-preview = ["desktop-grid-preview"]
+
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 
@@ -54,3 +58,4 @@ tauri-winrt-notification = "=0.8.1"
 
 [patch.crates-io]
 wry = { path = "vendor/wry-0.57.2" }
+tauri-runtime-wry = { path = "vendor/tauri-runtime-wry-2.12.3" }

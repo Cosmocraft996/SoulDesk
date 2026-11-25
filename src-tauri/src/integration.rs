@@ -38,6 +38,7 @@ impl Config {
                 | "widgetjs-resume"
                 | "widgetjs-manual"
                 | "official-gallery"
+                | "grid-preview"
                 | "market-isolation"
         )
     }
@@ -81,7 +82,8 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
         .iter()
         .enumerate()
         .filter(|(_, s)| {
-            s.starts_with("--desktop-integration") || s.as_str() == "--desktop-sandbox"
+            s.starts_with("--desktop-integration")
+                || matches!(s.as_str(), "--desktop-sandbox" | "--desktop-grid-preview")
         })
         .collect::<Vec<_>>();
     if flags.is_empty() {
@@ -102,6 +104,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
         "--desktop-integration-widgetjs-manual" => "widgetjs-manual",
         "--desktop-integration-official-gallery" => "official-gallery",
         "--desktop-sandbox" => "manual",
+        "--desktop-grid-preview" => "grid-preview",
         "--desktop-integration-market-isolation" => "market-isolation",
         _ => return Err("未知桌面隔离参数".into()),
     };
@@ -113,7 +116,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
     if !path.is_absolute() {
         return Err("隔离路径必须为绝对路径".into());
     }
-    let root = if mode == "manual" || mode == "widgetjs-manual" {
+    let root = if matches!(mode, "manual" | "widgetjs-manual" | "grid-preview") {
         path.clone()
     } else {
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -3775,7 +3778,10 @@ pub fn start(app: &AppHandle) {
     let Some(c) = app.state::<Core>().integration.clone() else {
         return;
     };
-    if c.mode == "manual" || c.mode == "widgetjs-manual" {
+    if matches!(
+        c.mode.as_str(),
+        "manual" | "widgetjs-manual" | "grid-preview"
+    ) {
         return;
     }
     if c.mode == "market-isolation" {
@@ -3835,6 +3841,7 @@ mod tests {
             "widgetjs",
             "widgetjs-resume",
             "official-gallery",
+            "grid-preview",
             "market-isolation",
         ] {
             let config = Config {

@@ -25,6 +25,7 @@ mod component_registry;
 mod content;
 mod content_cache;
 pub mod desktop_geometry;
+mod desktop_grid;
 #[cfg(windows)]
 mod desktop_input;
 #[cfg(windows)]
@@ -1011,7 +1012,11 @@ async fn window_action(
         label == "panel" && instance.is_none()
     } else if matches!(
         action.as_str(),
-        "enable-widget-backdrop" | "disable-widget-backdrop" | "set-app-theme"
+        "enable-widget-backdrop"
+            | "disable-widget-backdrop"
+            | "set-app-theme"
+            | "desktop-grid"
+            | "desktop-grid-restore"
     ) {
         label == "main" && instance.is_none()
     } else if label == "main" {
@@ -1044,6 +1049,13 @@ async fn window_action(
     };
     if !allowed {
         return Err("CAPABILITY_DENIED: 当前窗口无此展示权限".into());
+    }
+    if matches!(action.as_str(), "desktop-grid" | "desktop-grid-restore") {
+        return tauri::async_runtime::spawn_blocking(move || {
+            desktop_grid::launch(&app, action == "desktop-grid-restore")
+        })
+        .await
+        .map_err(|error| error.to_string())?;
     }
     let scene = windows::panel_scene();
     if action == "outside-panel" && !windows::scene_is_foreground(scene) {
@@ -1732,6 +1744,15 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         MenuItem::with_id(app, "island-mute", "切换灵动通知静音", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
+    let desktop_grid =
+        MenuItem::with_id(app, "desktop-grid", "桌面格子", cfg!(windows), None::<&str>)?;
+    let desktop_grid_restore = MenuItem::with_id(
+        app,
+        "desktop-grid-restore",
+        "恢复 Windows 桌面图标",
+        cfg!(windows),
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "退出 SoulDesk", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -1739,6 +1760,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &show,
             &panel,
             &assistant,
+            &desktop_grid,
+            &desktop_grid_restore,
             &island_visibility,
             &island_mute,
             &restore,
@@ -1788,6 +1811,16 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             };
             if let Some(control) = island_control {
                 control.dispatch(app, None);
+                return;
+            }
+            if matches!(action.as_str(), "desktop-grid" | "desktop-grid-restore") {
+                let app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) = desktop_grid::launch(&app, action == "desktop-grid-restore")
+                    {
+                        app.state::<Core>().log_error(&error);
+                    }
+                });
                 return;
             }
             if action == "quit" {
@@ -1847,8 +1880,14 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         updates::start(app.handle());
     }
     // 正常启动恢复桌面场景；显式隔离历史验收继续由其入口拥有。
-    app.state::<Core>().keyboard.start(app.handle())?;
-    app.state::<Core>().clipboard.start(app.handle())?;
+    if !core
+        .integration
+        .as_ref()
+        .is_some_and(|c| c.mode == "grid-preview")
+    {
+        core.keyboard.start(app.handle())?;
+        core.clipboard.start(app.handle())?;
+    }
     if app.state::<Core>().verification.is_none()
         && !hidden
         && !market_runtime::is_check(app.handle())
@@ -2002,6 +2041,20 @@ pub fn run() {
         return;
     }
     let integration = integration::parse(&args);
+    // 体验版直接启动同一份格子引擎，且只接受带标记的测试目录。
+    if cfg!(feature = "desktop-grid-preview") {
+        let Ok(Some(config)) = integration.as_ref() else {
+            std::process::exit(2);
+        };
+        if config.mode != "grid-preview" {
+            std::process::exit(2);
+        }
+        if let Err(error) = desktop_grid::preview(&config.root) {
+            let _ = std::fs::write(config.root.join("preview-startup-error.txt"), error);
+            std::process::exit(1);
+        }
+        std::process::exit(0);
+    }
     verification::capture_start();
     let panel_check = integration.is_ok_and(|c| c.is_some_and(|c| c.standalone_check()));
     let mut builder = tauri::Builder::default();

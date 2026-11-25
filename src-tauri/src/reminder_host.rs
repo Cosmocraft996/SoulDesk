@@ -598,12 +598,33 @@ impl IslandWindow {
     }
 }
 
+#[derive(Default)]
+struct WindowUpdate {
+    sent: Option<Target>,
+    in_flight: bool,
+}
+
+impl WindowUpdate {
+    fn queue(&mut self, desired: Option<&Target>) -> bool {
+        if self.in_flight || self.sent.as_ref() == desired {
+            return false;
+        }
+        self.in_flight = true;
+        true
+    }
+
+    fn finish(&mut self, sent: Option<Target>) {
+        self.sent = sent;
+        self.in_flight = false;
+    }
+}
+
 pub(crate) struct Service {
     engine: Mutex<Engine>,
     origin: Instant,
     busy: AtomicBool,
     stopped: AtomicBool,
-    sent: Mutex<[Option<Target>; 2]>,
+    window_updates: Mutex<[WindowUpdate; 2]>,
     rendered: Mutex<std::collections::HashSet<String>>,
     island_shortcuts: Mutex<[Option<Shortcut>; 2]>,
     pub(crate) island_window: Mutex<Option<IslandWindow>>,
@@ -615,7 +636,7 @@ impl Default for Service {
             origin: Instant::now(),
             busy: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
-            sent: Mutex::new([None, None]),
+            window_updates: Mutex::new(Default::default()),
             rendered: Mutex::new(Default::default()),
             island_shortcuts: Mutex::new([None; 2]),
             island_window: Mutex::new(None),
@@ -726,20 +747,22 @@ impl Service {
     }
     fn schedule(&self, app: &AppHandle) {
         for (index, surface) in [Surface::Notice, Surface::Rest].into_iter().enumerate() {
-            let desired = self.target(surface);
-            let changed = if let Ok(mut sent) = self.sent.lock() {
-                if sent[index] == desired {
-                    false
-                } else {
-                    sent[index] = desired.clone();
-                    true
-                }
+            let queued = if let Ok(mut updates) = self.window_updates.lock() {
+                updates[index].queue(self.target(surface).as_ref())
             } else {
                 false
             };
-            if changed {
+            if queued {
                 windows::dispatch(app, move |app| {
-                    windows::reminder_reconcile(app, surface, desired)
+                    let core = app.state::<Core>();
+                    let service = &core.reminders;
+                    // 拿到窗口协调锁后再读取最新目标，等待期间不会为每条提醒派发线程。
+                    let desired = service.target(surface);
+                    let result = windows::reminder_reconcile(app, surface, desired.clone());
+                    service.window_updates.lock().map_err(err)?[index].finish(desired);
+                    // 应用期间目标仍可能改变，补上一轮最新状态。
+                    service.schedule(app);
+                    result
                 });
             }
         }
@@ -1151,6 +1174,31 @@ pub(crate) async fn gateway(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reminder_window_updates_keep_one_job_when_the_window_lock_is_busy() {
+        let target = |generation| Target {
+            surface: Surface::Notice,
+            owner: "notice".into(),
+            event: format!("notice-{generation}"),
+            generation,
+            height: 180,
+        };
+        let mut update = WindowUpdate::default();
+        assert!(!update.queue(None));
+        assert!(update.queue(Some(&target(1))));
+        for generation in 2..=200 {
+            assert!(!update.queue(Some(&target(generation))));
+        }
+        update.finish(Some(target(200)));
+        assert!(!update.queue(Some(&target(200))));
+        assert!(update.queue(Some(&target(201))));
+        assert!(!update.queue(None));
+        update.finish(Some(target(201)));
+        assert!(update.queue(None));
+        update.finish(None);
+        assert!(!update.queue(None));
+    }
+
     #[test]
     fn reminder_cached_page_cannot_prepare_a_replaced_notice() {
         let store = Store::open(

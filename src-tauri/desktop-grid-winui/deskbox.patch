@@ -1,0 +1,3231 @@
+diff --git a/src/DeskBox/App.xaml.cs b/src/DeskBox/App.xaml.cs
+--- a/src/DeskBox/App.xaml.cs
++++ b/src/DeskBox/App.xaml.cs
+@@ -294,6 +294,10 @@
+         // headless window before dispatcher-init. Test hosts never construct
+         // App, so they never register an origin thread.
+         DeskBox.Platform.UiDispatch.MarkUiOriginThread();
++#if SOULDESK_GRID_PREVIEW
++        if (InitializeReferenceGrid())
++            return;
++#endif
+ 
+         // An unelevated relaunch (created by the elevated instance while it
+         // still held the single-instance mutex) waits here for its parent to
+@@ -1096,6 +1100,13 @@
+ 
+     protected override async void OnLaunched(LaunchActivatedEventArgs args)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (_referenceGrid is not null)
++        {
++            await ShowReferenceGridAsync();
++            return;
++        }
++#endif
+         if (_isLaunched)
+         {
+             Log("OnLaunched skipped: already launched");
+diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
+--- a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
++++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
+@@ -1143,6 +1143,13 @@
+         WidgetItem item,
+         Func<FrameworkElement, Windows.Foundation.Point> getPosition)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is { } preview)
++        {
++            ShowReferenceItemMenu(item, getPosition(Root), preview);
++            return;
++        }
++#endif
+         if (Win32Helper.GetCursorPos(out Win32Helper.POINT contextPoint))
+         {
+             _lastItemContextScreenPoint = (contextPoint.X, contextPoint.Y);
+@@ -1492,8 +1499,12 @@
+         // Copy so IM-style receivers can never resolve the drop to Move
+         // and delete the original (feedback 500); Windows 11 keeps Copy|Move
+         // plus the preference below.
++#if SOULDESK_GRID_PREVIEW
++        e.AllowedOperations = DataPackageOperation.Link | DataPackageOperation.Copy;
++#else
+         e.AllowedOperations = FileItemDragPackage.ResolveDragOutAllowedOperations(
+             _settingsService.Settings.FileWidget.ManagedDragOutAction);
++#endif
+         _activeDragAllowedOperations = e.AllowedOperations;
+         // TryPrepare always writes None; the user's drag-out setting is the
+         // actual preferred effect. It only reaches Windows 11 targets; on
+@@ -1501,6 +1512,9 @@
+         e.Data.RequestedOperation =
+             FileItemDragPackage.ResolveDragOutPreferredOperation(
+                 _settingsService.Settings.FileWidget.ManagedDragOutAction);
++#if SOULDESK_GRID_PREVIEW
++        e.Data.RequestedOperation = DataPackageOperation.Link;
++#endif
+         _sourceDragSession.Begin(_activeDragSessionId);
+         MaybeShowDragOutModifierTip(e.AllowedOperations);
+         // The OLE IDataObject cannot expose the in-app token to our own
+@@ -2555,6 +2569,14 @@
+ 
+     private void Root_DragOver(object sender, DragEventArgs e)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++        {
++            e.Handled = true;
++            ApplyReferenceDragOver(e);
++            return;
++        }
++#endif
+         ApplySurfaceDragOverFeedback(
+             e,
+             allowInternalReorderPreview: true);
+@@ -2562,6 +2584,14 @@
+ 
+     internal void ApplyHostEdgeDragOverFeedback(DragEventArgs e)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++        {
++            ApplyReferenceDragOver(e);
++            e.Handled = true;
++            return;
++        }
++#endif
+         ApplySurfaceDragOverFeedback(
+             e,
+             allowInternalReorderPreview: false);
+@@ -3048,6 +3078,13 @@
+     private async void Root_Drop(object sender, DragEventArgs e)
+     {
+         e.Handled = true;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++        {
++            await ApplyReferenceDropAsync(e);
++            return;
++        }
++#endif
+         // Rebuilding an item projection can reenter WinUI. Revoke DragOver's
+         // provisional Move before any projection or target state can change.
+         e.AcceptedOperation = DataPackageOperation.None;
+diff --git a/src/DeskBox/Controls/WidgetShell.xaml.cs b/src/DeskBox/Controls/WidgetShell.xaml.cs
+--- a/src/DeskBox/Controls/WidgetShell.xaml.cs
++++ b/src/DeskBox/Controls/WidgetShell.xaml.cs
+@@ -2861,8 +2861,9 @@
+         ToolTipService.SetToolTip(element, label);
+     }
+ 
+-    public void NotifyCompactDragMoved()
+-    {
++    public void NotifyWidgetDragMoved()
++    {
++        _hasTitleBarPressMoved = true;
+         StopCompactMarquee();
+         if (_pendingDragHandleClickAction != DragHandleClickAction.None)
+         {
+@@ -5425,10 +5426,10 @@
+ 
+     private void TitleBarGrid_PointerReleased(object sender, PointerRoutedEventArgs e)
+     {
+-        bool isTitleBarClick = _isTitleBarPressTrackingClick && !_hasTitleBarPressMoved;
++        bool tracksClick = _isTitleBarPressTrackingClick;
+         _isTitleBarPressTrackingClick = false;
+         TitlePointerReleased?.Invoke(this, e);
+-        if (isTitleBarClick && CanCollapseFromTitleBarClick)
++        if (tracksClick && !_hasTitleBarPressMoved && CanCollapseFromTitleBarClick)
+         {
+             RaiseTitleBarClickCollapse(e);
+         }
+diff --git a/src/DeskBox/DeskBox.csproj b/src/DeskBox/DeskBox.csproj
+--- a/src/DeskBox/DeskBox.csproj
++++ b/src/DeskBox/DeskBox.csproj
+@@ -14,6 +14,8 @@
+     <Platforms>x64;ARM64</Platforms>
+     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+     <UseWinUI>true</UseWinUI>
++    <DefineConstants Condition="'$(SoulDeskGridPreview)' == 'true'">$(DefineConstants);SOULDESK_GRID_PREVIEW;DISABLE_XAML_GENERATED_MAIN</DefineConstants>
++    <AssemblyName Condition="'$(SoulDeskGridPreview)' == 'true'">SoulDeskGridWinUI</AssemblyName>
+     <WindowsPackageType>None</WindowsPackageType>
+     <PublishSingleFile>false</PublishSingleFile>
+     <Nullable>enable</Nullable>
+@@ -327,14 +329,14 @@
+     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+   </PropertyGroup>
+ 
+-  <Target Name="BuildDeskBoxUpdater" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store' and '$(PublishAot)' != 'true'">
++  <Target Name="BuildDeskBoxUpdater" BeforeTargets="Build" Condition="'$(SoulDeskGridPreview)' != 'true' and '$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store' and '$(PublishAot)' != 'true'">
+     <MSBuild
+       Projects="..\DeskBox.Updater\DeskBox.Updater.csproj"
+       Targets="Build"
+       Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier)" />
+   </Target>
+ 
+-  <Target Name="CopyDeskBoxUpdater" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store' and '$(PublishAot)' != 'true'">
++  <Target Name="CopyDeskBoxUpdater" AfterTargets="Build" Condition="'$(SoulDeskGridPreview)' != 'true' and '$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store' and '$(PublishAot)' != 'true'">
+     <ItemGroup>
+       <DeskBoxUpdaterOutput Include="..\DeskBox.Updater\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\DeskBox.Updater.*" Condition="'$(RuntimeIdentifier)' != ''" />
+       <DeskBoxUpdaterOutput Include="..\DeskBox.Updater\bin\$(Platform)\$(Configuration)\$(TargetFramework)\DeskBox.Updater.*" Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != 'AnyCPU' and '$(Platform)' != ''" />
+@@ -343,7 +345,7 @@
+     <Copy SourceFiles="@(DeskBoxUpdaterOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+   </Target>
+ 
+-  <Target Name="PublishDeskBoxUpdater" AfterTargets="Publish" Condition="'$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store'">
++  <Target Name="PublishDeskBoxUpdater" AfterTargets="Publish" Condition="'$(SoulDeskGridPreview)' != 'true' and '$(DesignTimeBuild)' != 'true' and '$(DeskBoxDistribution)' != 'Store'">
+     <MSBuild
+       Projects="..\DeskBox.Updater\DeskBox.Updater.csproj"
+       Targets="Publish"
+diff --git a/src/DeskBox/Services/DeskBoxDataPathService.cs b/src/DeskBox/Services/DeskBoxDataPathService.cs
+--- a/src/DeskBox/Services/DeskBoxDataPathService.cs
++++ b/src/DeskBox/Services/DeskBoxDataPathService.cs
+@@ -56,7 +56,9 @@
+ 
+     private static string? ResolveConfiguredRoot()
+     {
+-#if DEBUG
++#if SOULDESK_GRID_PREVIEW
++        return ReferenceGridPreview.Root;
++#elif DEBUG
+         return Environment.GetEnvironmentVariable(DevelopmentRootEnvironmentVariable);
+ #elif DESKBOX_NATIVE_AOT
+         return Environment.GetEnvironmentVariable(AotPreviewRootEnvironmentVariable);
+diff --git a/src/DeskBox/Services/FileService.cs b/src/DeskBox/Services/FileService.cs
+--- a/src/DeskBox/Services/FileService.cs
++++ b/src/DeskBox/Services/FileService.cs
+@@ -1556,6 +1556,10 @@
+         Func<FileTransferItemError, Task<FileTransferItemAction>>? onItemError = null,
+         ICollection<FileTransferSkippedItem>? skippedItems = null)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return [];
++#endif
+         var operations = await Task.Run(() =>
+         {
+             cancellationToken.ThrowIfCancellationRequested();
+@@ -1728,6 +1732,10 @@
+     /// </summary>
+     public async Task RenameEntryAsync(string sourcePath, string destinationPath)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            throw new InvalidOperationException("隔离预览保留原文件名。");
++#endif
+         string normalizedSource = Path.GetFullPath(sourcePath);
+         string normalizedDestination = Path.GetFullPath(destinationPath);
+         if (string.Equals(normalizedSource, normalizedDestination, StringComparison.Ordinal))
+@@ -1758,6 +1766,10 @@
+         bool recycle = true,
+         IntPtr ownerHandle = default)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return false;
++#endif
+         string normalizedPath = Path.GetFullPath(path);
+         if (!File.Exists(normalizedPath) && !Directory.Exists(normalizedPath))
+         {
+@@ -1842,6 +1854,10 @@
+         bool recycle,
+         IntPtr ownerHandle)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++#endif
+         ArgumentNullException.ThrowIfNull(paths);
+         if (ownerHandle == IntPtr.Zero)
+         {
+@@ -1982,6 +1998,10 @@
+         CancellationToken cancellationToken,
+         Func<FileTransferItemError, Task<FileTransferItemAction>>? onItemError)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return new DirectoryMoveReport(0, []);
++#endif
+         if (string.IsNullOrWhiteSpace(sourceFolder) || string.IsNullOrWhiteSpace(destinationFolder))
+         {
+             return new DirectoryMoveReport(0, []);
+diff --git a/src/DeskBox/Services/WidgetGroupMenuBuilder.cs b/src/DeskBox/Services/WidgetGroupMenuBuilder.cs
+--- a/src/DeskBox/Services/WidgetGroupMenuBuilder.cs
++++ b/src/DeskBox/Services/WidgetGroupMenuBuilder.cs
+@@ -14,6 +14,11 @@
+     {
+         if (widgetManager is null)
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current is { Renderer: { } renderer } &&
++                config.Metadata.TryGetValue(ReferenceGridPreview.BoxKey, out string? source))
++                AppendReferenceGroup(flyout, renderer, source, config.Id, localizationService);
++#endif
+             return;
+         }
+ 
+@@ -267,6 +272,51 @@
+             };
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    private static void AppendReferenceGroup(MenuFlyout flyout, ReferenceGridRenderer renderer, string sourceId,
++        string activeTab, LocalizationService localization)
++    {
++        var state = renderer.State;
++        if (state.Boxes.FirstOrDefault(row => row.Box.Id == sourceId)?.Box is not { } source)
++            return;
++
++        flyout.Items.Add(new MenuFlyoutSeparator());
++        var join = new MenuFlyoutSubItem
++        {
++            Text = localization.T("Widget.Group.Join"),
++            Icon = new FontIcon { Glyph = "\uE8A1" }
++        };
++        foreach (var target in state.Boxes.Select(row => row.Box).Where(box => box.Id != sourceId))
++        {
++            string title = target.Tabs.Single(tab => tab.Id == target.Active).Name;
++            var item = new MenuFlyoutItem
++            {
++                Text = target.Tabs.Length > 1
++                    ? localization.Format("Widget.Group.TargetWithCount", title, target.Tabs.Length)
++                    : title,
++                IsEnabled = source.Tabs.Length + target.Tabs.Length <= state.MaximumTabs
++            };
++            item.Click += async (_, _) => await TryExecuteAsync(
++                () => renderer.SubmitBoxAsync("merge", sourceId, target: target.Id), "合并桌面格子");
++            join.Items.Add(item);
++        }
++        join.IsEnabled = join.Items.Any(item => item.IsEnabled);
++        flyout.Items.Add(join);
++
++        if (source.Tabs.Length > 1)
++        {
++            var detach = new MenuFlyoutItem
++            {
++                Text = localization.T("Widget.Group.RemoveCurrent"),
++                Icon = new FontIcon { Glyph = "\uE74D" }
++            };
++            detach.Click += async (_, _) => await TryExecuteAsync(
++                () => renderer.SubmitBoxAsync("detach", sourceId, activeTab), "拆出桌面格子标签");
++            flyout.Items.Add(detach);
++        }
++    }
++#endif
++
+     private static async Task TryExecuteAsync(
+         Func<Task<bool>> operation,
+         string description)
+diff --git a/src/DeskBox/Services/WidgetLayerService.cs b/src/DeskBox/Services/WidgetLayerService.cs
+--- a/src/DeskBox/Services/WidgetLayerService.cs
++++ b/src/DeskBox/Services/WidgetLayerService.cs
+@@ -1102,6 +1102,11 @@
+                    placeAtBottom: false);
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal static bool AttachReferenceGridToDesktop(IntPtr windowHandle) =>
++        TryAttachToDesktopIconLayer(windowHandle, showWindow: false);
++#endif
++
+     private static bool TryAttachToDesktopIconLayer(
+         IntPtr windowHandle,
+         bool placeAtBottom = true,
+@@ -1119,7 +1124,12 @@
+             return false;
+         }
+ 
++#if SOULDESK_GRID_PREVIEW
++        var grid = ReferenceGridPreview.Current;
++        IntPtr desktopIconView = grid is null ? FindDesktopIconView() : grid.Renderer?.DesktopOwner ?? IntPtr.Zero;
++#else
+         IntPtr desktopIconView = FindDesktopIconView();
++#endif
+         if (desktopIconView == IntPtr.Zero)
+         {
+             App.Log("[WidgetLayer] DesktopPinned attach skipped: desktop icon view not found");
+diff --git a/src/DeskBox/ViewModels/WidgetViewModel.Operations.cs b/src/DeskBox/ViewModels/WidgetViewModel.Operations.cs
+index 47a61e8..6020263 100644
+--- a/src/DeskBox/ViewModels/WidgetViewModel.Operations.cs
++++ b/src/DeskBox/ViewModels/WidgetViewModel.Operations.cs
+@@ -28,6 +28,16 @@ public partial class WidgetViewModel
+         IsLoading = true;
+         try
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current is { } reference &&
++                Config.Metadata.ContainsKey(ReferenceGridPreview.GroupKey) &&
++                (Config.MappedFolderPath is not { } mapped || !reference.CanReadMappedFolder(mapped)))
++            {
++                await RefreshReferenceGridAsync(cancellationToken);
++                IsInitialized = !_isDisposed;
++                return;
++            }
++#endif
+             EnsureFolderBackedConfig();
+             cancellationToken.ThrowIfCancellationRequested();
+             MappedFolderPath = Config.MappedFolderPath;
+@@ -60,6 +70,24 @@ public partial class WidgetViewModel
+         bool activateManualSortOnSuccess = false,
+         WidgetVisibleInsertionAnchor? preferredStackAnchor = null)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is { } workspace)
++        {
++            cancellationToken.ThrowIfCancellationRequested();
++            LastImportSkippedUndisplayableCount = 0;
++            if (!Config.Metadata.TryGetValue(ReferenceGridPreview.GroupKey, out string? group) || MappedFolderPath is not null)
++                return [];
++            if (workspace.Renderer is null || preferredManualIndex is not int visibleIndex)
++                return await workspace.AttachAsync(group, paths, preferredManualIndex, cancellationToken);
++            var requested = paths.ToArray();
++            var moving = requested.ToHashSet(StringComparer.OrdinalIgnoreCase);
++            var display = VisibleItems.ToArray();
++            var before = ReferenceDisplayPaths(display.Skip(visibleIndex)).FirstOrDefault(path => !moving.Contains(path));
++            var order = ReferenceDisplayPaths(display).Concat(Items.Select(item => item.Path))
++                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
++            return await workspace.AttachAsync(group, requested, visibleIndex, cancellationToken, before, order);
++        }
++#endif
+         var normalizedPaths = paths
+             .Where(path => !string.IsNullOrWhiteSpace(path))
+             .Distinct(StringComparer.OrdinalIgnoreCase)
+@@ -427,6 +455,13 @@ public partial class WidgetViewModel
+     [RelayCommand]
+     public void ToggleViewMode()
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(Config, "list", (ViewMode == ViewMode.Icon).ToString()) is { } request)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(request);
++            return;
++        }
++#endif
+         ViewMode = ViewMode == ViewMode.Icon ? ViewMode.List : ViewMode.Icon;
+         Config.ViewMode = ViewMode;
+         _settingsService.SaveDebounced();
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.Commands.cs b/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
+index ae01bba..5d71eac 100644
+--- a/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
++++ b/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
+@@ -95,6 +95,13 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void ShowWidgetCreateFlyout()
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null)
++        {
++            ShowFlyoutWithInteraction(CreateReferenceGridCreationMenu(), ContentWidgetShell.AddActionButton);
++            return;
++        }
++#endif
+         var localization = App.Current.LocalizationService;
+         var flyout = new MenuFlyout();
+ 
+@@ -159,6 +166,15 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void CloseButton_Click(object sender, RoutedEventArgs e)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (SubmitReferenceGridSetting("hidden", bool.TrueString))
++            return;
++        if (ReferenceGridPreview.Current is not null)
++        {
++            Close();
++            return;
++        }
++#endif
+         // A feature member inside a group is only the current Surface page.
+         // Closing hides the group and must not disable the global feature.
+         if (App.Current.WidgetManager?.GetWidgetGroupPresentation(_config.Id) is not null)
+@@ -269,6 +285,10 @@ public sealed partial class ContentWidgetWindow
+ 
+     private MenuFlyout CreateMoreFlyout()
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null)
++            return CreateReferenceGridMenu();
++#endif
+         var flyout = new MenuFlyout();
+ 
+         if (CurrentContent is GlanceWidgetContentAdapter glance)
+@@ -947,6 +967,10 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void SetPositionLocked(bool value)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (SubmitReferenceGridSetting("position-lock", value.ToString()))
++            return;
++#endif
+         if (_config.IsPositionLocked == value)
+         {
+             return;
+@@ -977,6 +1001,10 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void SetSizeLocked(bool value)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (SubmitReferenceGridSetting("size-lock", value.ToString()))
++            return;
++#endif
+         if (_config.IsSizeLocked == value)
+         {
+             return;
+@@ -1046,6 +1074,9 @@ public sealed partial class ContentWidgetWindow
+         var editor = new TextBox
+         {
+             Text = _titleViewModel.DisplayName,
++#if SOULDESK_GRID_PREVIEW
++            MaxLength = ReferenceGridPreview.Current?.Renderer is not null ? 64 : 0,
++#endif
+             PlaceholderText = localization.T("Widget.TitlePlaceholder"),
+             Width = Math.Clamp(titleWidth, 120, 220),
+             MaxWidth = 220,
+@@ -1113,7 +1144,15 @@ public sealed partial class ContentWidgetWindow
+         {
+             if (!string.IsNullOrEmpty(newName))
+             {
+-                await App.Current.WidgetManager!.RenameWidgetAsync(_config.Id, newName);
++#if SOULDESK_GRID_PREVIEW
++                if (ReferenceGridPreview.Current?.SubmitSettingAsync(_config, "name", newName) is { } reference)
++                {
++                    if (!await reference)
++                        throw new InvalidOperationException("格子引擎已经退出。");
++                }
++                else
++#endif
++                    await App.Current.WidgetManager!.RenameWidgetAsync(_config.Id, newName);
+                 _titleViewModel.RefreshDisplayName();
+             }
+ 
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.ContentSwitching.cs b/src/DeskBox/Views/ContentWidgetWindow.ContentSwitching.cs
+--- a/src/DeskBox/Views/ContentWidgetWindow.ContentSwitching.cs
++++ b/src/DeskBox/Views/ContentWidgetWindow.ContentSwitching.cs
+@@ -8,6 +8,20 @@
+ 
+ public sealed partial class ContentWidgetWindow
+ {
++#if SOULDESK_GRID_PREVIEW
++    internal void RefreshReferenceGroupTabs() => RefreshWidgetGroupPresentation();
++
++    internal async Task SwitchReferenceGroupAsync(WidgetConfig config, FileWidgetContentAdapter content,
++        WidgetContentDescriptor descriptor)
++    {
++        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
++        using var prepared = await PrepareContentSwitchAsync(config, content, descriptor, timeout.Token);
++        using var transition = prepared?.BeginTransition() ??
++            throw new InvalidOperationException("无法切换桌面格子标签。");
++        await transition.CompleteAsync(WidgetGroupSwitchOrigin.Picker, true, timeout.Token);
++        Title = config.Name + " · 桌面格子";
++    }
++#endif
+     internal int LiveMemberCount => _contentHost.LiveContentCount;
+ 
+     internal int CachedGroupContentCount => _cachedGroupContents.Count;
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.NativeDragDrop.cs b/src/DeskBox/Views/ContentWidgetWindow.NativeDragDrop.cs
+index 9549021..2cce823 100644
+--- a/src/DeskBox/Views/ContentWidgetWindow.NativeDragDrop.cs
++++ b/src/DeskBox/Views/ContentWidgetWindow.NativeDragDrop.cs
+@@ -64,6 +64,10 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void InstallNativeFileDropBridge(bool registerDropTarget = true)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return;
++#endif
+         _nativeFileDropSubclassProc ??= CallbackDepth.WrapSubclassProc(NativeFileDropSubclassProc);
+         if (!_isNativeFileDropSubclassInstalled)
+         {
+@@ -480,6 +484,11 @@ public sealed partial class ContentWidgetWindow
+         _lastXamlFileDropUtc = DateTimeOffset.UtcNow;
+         CancelPendingNativeFileDropFallback();
+         StopGroupFileDropTracking(disposeCachedBatch: true);
++#if SOULDESK_GRID_PREVIEW
++        // 内容或边缘都可能在胶囊展开时失去 Drop。根窗口使用同一处理器，事件只消费一次。
++        if (ReferenceGridPreview.Current?.Renderer is not null && CurrentContent is FileWidgetContentAdapter file)
++            _ = FileSurfaceContent.ApplyReferenceHostDropAsync(file.ViewModel, e);
++#endif
+     }
+ 
+     private void BeginGroupFileDropTracking(DataPackageView dataView)
+@@ -647,6 +656,15 @@ public sealed partial class ContentWidgetWindow
+         {
+             if (CurrentContent is FileWidgetContentAdapter file)
+             {
++#if SOULDESK_GRID_PREVIEW
++                if (ReferenceGridPreview.Current?.Renderer is not null)
++                {
++                    if (file.ViewModel.MappedFolderPath is null)
++                        await file.ViewModel.ImportPathsAsync(batch.Files.Where(item => !item.ForceManagedCopy)
++                            .Select(item => item.Path));
++                    return;
++                }
++#endif
+                 file.SetHostWindowHandle(HWnd);
+                 bool containsTemporaryFiles = batch.Files.Any(
+                     droppedFile => droppedFile.ForceManagedCopy);
+@@ -655,6 +673,10 @@ public sealed partial class ContentWidgetWindow
+                     containsTemporaryFiles);
+             }
+         }
++        catch (Exception error)
++        {
++            App.Log($"[DropDiagnostic] Group drop import failed: {error.Message}");
++        }
+         finally
+         {
+             batch.Dispose();
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.WindowInteraction.cs b/src/DeskBox/Views/ContentWidgetWindow.WindowInteraction.cs
+index 1ac39ca..ebbd346 100644
+--- a/src/DeskBox/Views/ContentWidgetWindow.WindowInteraction.cs
++++ b/src/DeskBox/Views/ContentWidgetWindow.WindowInteraction.cs
+@@ -33,6 +33,13 @@ public sealed partial class ContentWidgetWindow
+     {
+         if (CurrentContent is FileWidgetContentAdapter file)
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current is not null)
++            {
++                FileSurfaceContent.SetReferenceDropEffect(e, file.ViewModel);
++                return;
++            }
++#endif
+             // The transparent resize grid sits above the content along every
+             // window edge. Reuse the file surface's normal feedback there so
+             // the cursor does not briefly report a forbidden drop even though
+@@ -81,6 +88,13 @@ public sealed partial class ContentWidgetWindow
+     {
+         if (CurrentContent is FileWidgetContentAdapter file)
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current is not null)
++            {
++                await FileSurfaceContent.ApplyReferenceHostDropAsync(file.ViewModel, e);
++                return;
++            }
++#endif
+             file.HandleHostEdgeDrop(e);
+             return;
+         }
+@@ -164,6 +178,10 @@ public sealed partial class ContentWidgetWindow
+ 
+     private void TitleBarGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer?.State.DesktopLayer is not null)
++            App.Log($"桌面格子标题按下 来源={e.OriginalSource?.GetType().Name} 锁定={_config.IsPositionLocked} 过渡={IsCompactTransitionActive}");
++#endif
+         if (IsGroupNavigationInput(e.OriginalSource))
+         {
+             return;
+@@ -452,6 +470,26 @@ public sealed partial class ContentWidgetWindow
+ 
+     // ── Tray animation ─────────────────────────────────────────
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal void PrepareReferenceGrid()
++    {
++        // 先挂载 XAML，首帧准备好后再显示原生窗口。
++        SetReferenceGridCloak(true);
++        Activate();
++        ShowWithoutActivation(persistVisibility: false);
++    }
++
++    internal void SetReferenceGridVisible(bool visible) => SetReferenceGridCloak(!visible);
++
++    private void SetReferenceGridCloak(bool hidden)
++    {
++        int value = hidden ? 1 : 0;
++        int result = Win32Helper.TrySetDwmWindowAttribute(HWnd, Win32Helper.DWMWA_CLOAK, ref value);
++        if (result < 0)
++            System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(result);
++    }
++#endif
++
+     private void ShowWithoutActivation(bool persistVisibility)
+     {
+         AppWindow.Show();
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.xaml.cs b/src/DeskBox/Views/ContentWidgetWindow.xaml.cs
+index debda75..6a1818a 100644
+--- a/src/DeskBox/Views/ContentWidgetWindow.xaml.cs
++++ b/src/DeskBox/Views/ContentWidgetWindow.xaml.cs
+@@ -106,7 +106,12 @@ public sealed partial class ContentWidgetWindow : WidgetWindowBase, IDesktopWidg
+     // ── Abstract member overrides ──────────────────────────────
+ 
+     public override WidgetConfig Config => _config;
+-    protected override double WidgetOpacity => SettingsService.Settings.WidgetOpacity;
++    protected override double WidgetOpacity =>
++#if SOULDESK_GRID_PREVIEW
++        _config.Metadata.TryGetValue(ReferenceGridPreview.OpacityKey, out string? opacity) &&
++        int.TryParse(opacity, out int percent) ? Math.Clamp(percent, 35, 100) / 100d :
++#endif
++        SettingsService.Settings.WidgetOpacity;
+     protected override FrameworkElement RootElement => RootGrid;
+     protected override WidgetShell WidgetShellControl => ContentWidgetShell;
+     protected override string LogPrefix => "Content";
+@@ -638,7 +643,7 @@ public sealed partial class ContentWidgetWindow : WidgetWindowBase, IDesktopWidg
+     protected override void ApplySurfaceStyle()
+     {
+         bool isDark = RootGrid.ActualTheme == ElementTheme.Dark;
+-        double surfaceOpacity = Math.Clamp(SettingsService.Settings.WidgetOpacity, 0.0, 1.0);
++        double surfaceOpacity = Math.Clamp(WidgetOpacity, 0.0, 1.0);
+         var accentColor = App.Current.ThemeService?.GetEffectiveAccentColor()
+             ?? AccentColorHelper.DefaultAccentColor;
+         string materialType = WindowsCompatibilityService.ResolveWidgetMaterialType(
+@@ -701,6 +706,10 @@ public sealed partial class ContentWidgetWindow : WidgetWindowBase, IDesktopWidg
+     protected override void OnRootElementLoaded()
+     {
+         RootGrid.Focus(FocusState.Programmatic);
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is not null)
++            return;
++#endif
+         QueueNativeFileDropTargetRegistration();
+     }
+ 
+diff --git a/src/DeskBox/Views/WidgetWindowBase.Bounds.cs b/src/DeskBox/Views/WidgetWindowBase.Bounds.cs
+index 08cb9a3..7af9a69 100644
+--- a/src/DeskBox/Views/WidgetWindowBase.Bounds.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.Bounds.cs
+@@ -83,15 +83,20 @@ public abstract partial class WidgetWindowBase
+         // The display-area lookup can come back empty while the topology is in
+         // flux; falling back to the configured bounds keeps the widget instead
+         // of failing its construction.
+-        var workArea = DisplayArea.GetFromPoint(
+-            initCenter,
+-            DisplayAreaFallback.Nearest)?.WorkArea;
+-        var bounds = workArea is { } resolvedWorkArea
+-            ? WidgetPositioningService.ResolveBounds(
+-                config,
+-                resolvedWorkArea,
+-                WidgetPositioningService.GetAvailableWorkAreas())
+-            : initBounds;
++        var bounds = initBounds;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.DesktopBounds(config) is { } desktopBounds)
++            bounds = desktopBounds;
++        else
++#endif
++        {
++            var workArea = DisplayArea.GetFromPoint(
++                initCenter,
++                DisplayAreaFallback.Nearest)?.WorkArea;
++            if (workArea is { } resolvedWorkArea)
++                bounds = WidgetPositioningService.ResolveBounds(
++                    config, resolvedWorkArea, WidgetPositioningService.GetAvailableWorkAreas());
++        }
+         bounds = ExpandContentBoundsToHost(bounds);
+         ApplyWindowBounds(bounds.X, bounds.Y, bounds.Width, bounds.Height, persist: false);
+ 
+@@ -728,6 +733,13 @@ public abstract partial class WidgetWindowBase
+     /// </summary>
+     protected void CommitUserPlacementFromWindow(WidgetPlacementSource source)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is { Renderer: not null })
++        {
++            SaveReferenceGridPlacement(GetActualWindowBounds());
++            return;
++        }
++#endif
+         WidgetManager? manager = App.Current?.WidgetManager;
+         if (manager is null)
+         {
+@@ -749,10 +761,97 @@ public abstract partial class WidgetWindowBase
+             source);
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    private RectInt32? _referenceGridBounds;
++    private int _referencePlacementWrites;
++    private RectInt32? ReferenceContentBounds =>
++        _referenceGridBounds ?? ReferenceGridPreview.Current?.DesktopBounds(Config);
++
++    internal bool ReferencePlacementInProgress => IsDragging || IsResizing || _referencePlacementWrites != 0;
++
++    internal void ApplyReferenceGridBounds(RectInt32 previous, RectInt32 bounds, int width, int height)
++    {
++        RectInt32 currentPlacement = _referenceGridBounds ?? previous;
++        _referenceGridBounds = bounds;
++        if (BoundsEqual(currentPlacement, bounds))
++            return;
++
++        Config.Width = width;
++        Config.Height = height;
++        int dx = bounds.X - currentPlacement.X;
++        int dy = bounds.Y - currentPlacement.Y;
++        if (IsCompactBoundsStateActive)
++        {
++            RectInt32 compact = GetActualWindowBounds();
++            compact.X += dx;
++            compact.Y += dy;
++            CaptureCompactPlacement(compact, persist: false);
++            if (dx != 0 || dy != 0)
++                MoveWindowWithoutPersisting(compact);
++        }
++        else
++        {
++            if (Config.CompactPlacement is not null || _stableCompactBounds is not null)
++            {
++                RectInt32 compact = _stableCompactBounds ?? GetCompactBounds(currentPlacement);
++                compact.X += dx;
++                compact.Y += dy;
++                CaptureCompactPlacement(compact, persist: false);
++            }
++            var host = ExpandContentBoundsToHost(bounds);
++            if (!BoundsEqual(GetActualWindowBounds(), host))
++                ApplyWindowBounds(host.X, host.Y, host.Width, host.Height, persist: false);
++        }
++    }
++
++    private void SaveReferenceGridPlacement(RectInt32 actual, bool resize = false)
++    {
++        RectInt32 bounds;
++        if (IsCompactBoundsStateActive)
++        {
++            CaptureCompactPlacement(actual, persist: false);
++            var work = DisplayArea.GetFromPoint(new PointInt32(actual.X + actual.Width / 2,
++                actual.Y + actual.Height / 2), DisplayAreaFallback.Nearest).WorkArea;
++            double scale = WidgetPositioningService.GetDpiScale(work);
++            var size = new SizeInt32((int)Math.Round(Config.Width * scale), (int)Math.Round(Config.Height * scale));
++            var layout = ResolveCompactExpansionLayout(actual, size, requireFullSize: true);
++            bounds = layout.CanExpand ? layout.ExpandedBounds : new RectInt32(actual.X, actual.Y, size.Width, size.Height);
++        }
++        else
++        {
++            bounds = CollapseHostBoundsToContent(actual);
++            var work = DisplayArea.GetFromPoint(new PointInt32(bounds.X + bounds.Width / 2,
++                bounds.Y + bounds.Height / 2), DisplayAreaFallback.Nearest).WorkArea;
++            double scale = WidgetPositioningService.GetDpiScale(work);
++            Config.Width = Math.Round(bounds.Width / scale);
++            Config.Height = Math.Round(bounds.Height / scale);
++            UpdateConfigPhysicalPositionOnly(bounds.X, bounds.Y);
++        }
++        _referenceGridBounds = bounds;
++        if (App.Current?.CollectReferenceCoordinatedPlacement(Config, bounds) == true)
++            return;
++        double? capsuleWidth = resize && IsCompactBoundsStateActive ? Config.CompactWidth : null;
++        if (ReferenceGridPreview.Current?.SavePositionAsync(Config, bounds, resize, capsuleWidth) is { } reference)
++            _ = ObserveReferencePlacementAsync(reference);
++    }
++
++    private async Task ObserveReferencePlacementAsync(Task<bool> reference)
++    {
++        _referencePlacementWrites++;
++        try { await ReferenceGridPreview.ObserveBoxEditAsync(reference); }
++        finally { _referencePlacementWrites--; }
++    }
++#endif
++
+     // ── Display change restoration ─────────────────────────────
+ 
+     protected bool TryRestoreBoundsForCurrentTopology(bool allowHidden, bool updateConfig = true)
+     {
++#if SOULDESK_GRID_PREVIEW
++        // 桌面格子的显示器拓扑由 SoulDesk 引擎重新接管，界面只使用引擎已确认的位置。
++        if (ReferenceGridPreview.Current?.DesktopBounds(Config) is not null)
++            return true;
++#endif
+         if (IsClosing || IsHideAnimationRunning)
+         {
+             return true;
+diff --git a/src/DeskBox/Views/WidgetWindowBase.Collapse.cs b/src/DeskBox/Views/WidgetWindowBase.Collapse.cs
+index 1c50d67..78e1dd7 100644
+--- a/src/DeskBox/Views/WidgetWindowBase.Collapse.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.Collapse.cs
+@@ -222,6 +222,28 @@ public abstract partial class WidgetWindowBase
+ 
+     public bool IsCompactArrangementActive => _collapseInitialized && _targetCollapsed;
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal bool ReferenceCapsuleEligible => _collapseInitialized && EffectiveCollapseBehavior != WidgetCollapseBehavior.Expanded &&
++        !IsClosing && !IsPositionLocked;
++    internal bool ReferenceCapsuleReady => IsCompactArrangementActive &&
++        !_isBoundsInteractionActive && !IsCompactTransitionActive && !HasBlockingFlyoutOpen() && !IsPositionLocked;
++
++    internal RectInt32 ReferenceCapsuleBounds(RectInt32 expanded)
++    {
++        var former = _compactArrangementSizeOverride;
++        _compactArrangementSizeOverride = null;
++        try { return GetCompactBounds(expanded); }
++        finally { _compactArrangementSizeOverride = former; }
++    }
++
++    internal void ResetReferenceCapsule()
++    {
++        ClearCompactArrangementConstraint();
++        if (IsCompactArrangementActive && ReferenceContentBounds is { } bounds)
++            ApplyCompactArrangement(ReferenceCapsuleBounds(bounds), constrainSize: false);
++    }
++#endif
++
+     public void ApplyCompactArrangement(RectInt32 bounds, bool constrainSize)
+     {
+         if (!DispatcherQueue.HasThreadAccess)
+@@ -440,6 +462,13 @@ public abstract partial class WidgetWindowBase
+ 
+     protected void SetCollapseBehaviorOverride(WidgetCollapseBehavior behavior)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitBoxAsync(Config, "collapse-mode", collapseMode: behavior.ToString()) is { } reference)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(reference);
++            return;
++        }
++#endif
+         WidgetCollapseBehaviorNames.SetOverride(Config, behavior);
+         SettingsService.UpdateWidget(Config, notifySubscribers: false);
+         SettingsService.SaveDebounced(notifySubscribers: false);
+@@ -450,6 +479,26 @@ public abstract partial class WidgetWindowBase
+         App.Current?.WidgetManager?.RefreshCapsuleBarLayout();
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal void ApplyReferenceCollapse(WidgetCollapseBehavior behavior, bool collapsed, bool defaultChanged = false)
++    {
++        if (WidgetCollapseBehaviorNames.GetOverride(Config) != behavior || defaultChanged)
++        {
++            WidgetCollapseBehaviorNames.SetOverride(Config, behavior);
++            _isSmartPinnedOpen = false;
++            Config.IsCollapsed = collapsed;
++            ApplyCompactTooltips();
++            ApplyEffectiveCollapseBehavior(animate: true);
++        }
++        else if (Config.IsCollapsed != collapsed)
++        {
++            Config.IsCollapsed = collapsed;
++            if (EffectiveCollapseBehavior == WidgetCollapseBehavior.Click)
++                SetCollapsedState(collapsed, persistManualState: false, animate: true);
++        }
++    }
++#endif
++
+     /// <summary>
+     /// Per-widget expansion direction override. Null restores "follow global".
+     /// Direction is a transient expansion constraint: it takes effect on the
+@@ -457,12 +506,27 @@ public abstract partial class WidgetWindowBase
+     /// </summary>
+     protected void SetCompactExpansionDirectionOverride(string? direction)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(Config, "direction", direction) is { } reference)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(reference);
++            return;
++        }
++#endif
+         WidgetCompactExpansionDirectionPolicy.SetOverride(Config, direction);
+         SettingsService.UpdateWidget(Config, notifySubscribers: false);
+         SettingsService.SaveDebounced(notifySubscribers: false);
+         ApplyCompactExpansionDirectionChange();
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal void ApplyReferenceExpansionDirection(string? direction)
++    {
++        WidgetCompactExpansionDirectionPolicy.SetOverride(Config, direction);
++        ApplyCompactExpansionDirectionChange();
++    }
++#endif
++
+     private void ApplyCompactExpansionDirectionChange()
+     {
+         _compactExpansionAnchor = null;
+@@ -547,12 +611,28 @@ public abstract partial class WidgetWindowBase
+ 
+     protected void ResetCompactWidthOverride()
+     {
+-        if (_isDisplayTopologyTransitionActive || Config.CompactWidth is null)
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(Config, "reset-width") is { } reference)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(reference);
++            return;
++        }
++#endif
++        ApplyCompactWidthOverride(null);
++    }
++
++#if SOULDESK_GRID_PREVIEW
++    internal void ApplyReferenceCompactWidth(double? width) => ApplyCompactWidthOverride(width);
++#endif
++
++    private void ApplyCompactWidthOverride(double? width)
++    {
++        if (_isDisplayTopologyTransitionActive || Config.CompactWidth == width)
+         {
+             return;
+         }
+ 
+-        Config.CompactWidth = null;
++        Config.CompactWidth = width;
+         _stableCompactBounds = null;
+         ObserveCompactOverrides();
+         SettingsService.UpdateWidget(Config, notifySubscribers: false);
+@@ -3133,6 +3213,10 @@ public abstract partial class WidgetWindowBase
+         if (persistManualState && Config.IsCollapsed != collapsed)
+         {
+             Config.IsCollapsed = collapsed;
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current?.SubmitBoxAsync(Config, "collapse", collapsed: collapsed) is { } reference)
++                _ = ReferenceGridPreview.ObserveBoxEditAsync(reference);
++#endif
+             // Manual expand/collapse ends disconnect-collapse tracking
+             // (spec 5.7): reconnect must not auto-expand a surface the
+             // user touched while its home display was away.
+@@ -3278,6 +3362,10 @@ public abstract partial class WidgetWindowBase
+ 
+     private RectInt32 ResolvePersistedExpandedHostBounds()
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceContentBounds is { } desktopBounds)
++            return ExpandContentBoundsToHost(desktopBounds);
++#endif
+         RectInt32 persistedContentBounds =
+             WidgetPositioningService.ResolveBoundsForCurrentTopology(Config);
+         return ExpandContentBoundsToHost(persistedContentBounds);
+@@ -3771,6 +3859,10 @@ public abstract partial class WidgetWindowBase
+                 Config.CompactWidth = normalizedWidth;
+             }
+             CaptureCompactPlacement(bounds, persist: false);
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current is { Renderer: not null })
++                SaveReferenceGridPlacement(bounds, resize: true);
++#endif
+             SettingsService.UpdateWidget(Config, notifySubscribers: false);
+             SettingsService.SaveDebounced(notifySubscribers: false);
+             SynchronizeWidgetGroupLayout();
+@@ -3816,6 +3908,10 @@ public abstract partial class WidgetWindowBase
+             bounds.Width,
+             bounds.Height,
+             persist: true);
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is { Renderer: not null })
++            SaveReferenceGridPlacement(bounds, resize: true);
++#endif
+         // Resize keeps its specialized anchor capture above; this commit only
+         // updates the surface home / entry authority (usually a no-op for
+         // home since a resize rarely crosses displays).
+@@ -4122,10 +4218,16 @@ public abstract partial class WidgetWindowBase
+ 
+     protected RectInt32 ResolveWidgetBoundsForCurrentState(out bool placementFellBack)
+     {
+-        RectInt32 contentBounds =
+-            WidgetPositioningService.ResolveBoundsForCurrentTopology(
+-                Config,
+-                out placementFellBack);
++        RectInt32 contentBounds;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceContentBounds is { } desktopBounds)
++        {
++            contentBounds = desktopBounds;
++            placementFellBack = false;
++        }
++        else
++#endif
++            contentBounds = WidgetPositioningService.ResolveBoundsForCurrentTopology(Config, out placementFellBack);
+         RectInt32 compact = GetCompactBounds(contentBounds);
+         if (IsCompactBoundsStateActive)
+         {
+diff --git a/src/DeskBox/Views/WidgetWindowBase.Grouping.cs b/src/DeskBox/Views/WidgetWindowBase.Grouping.cs
+--- a/src/DeskBox/Views/WidgetWindowBase.Grouping.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.Grouping.cs
+@@ -274,6 +274,10 @@
+     {
+         WidgetGroupPresentation? presentation =
+             App.Current?.WidgetManager?.GetWidgetGroupPresentation(Config.Id);
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current is { Renderer: not null } grid)
++            presentation = grid.GroupPresentation(Config);
++#endif
+         _nativeGroupWheelEnabled =
+             presentation is { WheelSwitchEnabled: true } &&
+             presentation.Members.Count > 1;
+@@ -342,7 +346,13 @@
+         object? sender,
+         WidgetGroupMemberEventArgs e)
+     {
+-        if (App.Current?.WidgetManager is not { } manager)
++#if SOULDESK_GRID_PREVIEW
++        var reference = ReferenceGridPreview.Current?.SubmitBoxAsync(Config, "activate", e.WidgetId);
++#else
++        Task<bool>? reference = null;
++#endif
++        var manager = App.Current?.WidgetManager;
++        if (manager is null && reference is null)
+         {
+             return;
+         }
+@@ -352,9 +362,7 @@
+         {
+             // Selecting the currently visible member while another one is
+             // still loading is a valid request to cancel that pending switch.
+-            succeeded = await manager.SwitchWidgetGroupMemberAsync(
+-                e.WidgetId,
+-                e.Origin);
++            succeeded = await (reference ?? manager!.SwitchWidgetGroupMemberAsync(e.WidgetId, e.Origin));
+         }
+         catch (Exception ex)
+         {
+@@ -373,6 +381,13 @@
+         object? sender,
+         WidgetGroupMemberEventArgs e)
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitBoxAsync(Config, "detach", e.WidgetId) is { } reference)
++        {
++            await ReferenceGridPreview.ObserveBoxEditAsync(reference);
++            return;
++        }
++#endif
+         if (App.Current?.WidgetManager is { } manager)
+         {
+             try
+@@ -661,6 +676,14 @@
+         bool succeeded = false;
+         try
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current?.SubmitBoxAsync(Config, "reorder", e.SourceWidgetId,
++                    target: e.TargetWidgetId, expectedTabs: e.ExpectedMemberIds?.ToArray()) is { } reference)
++            {
++                succeeded = await reference;
++                return;
++            }
++#endif
+             if (App.Current?.WidgetManager is { } manager)
+             {
+                 succeeded = await manager.ReorderWidgetGroupMemberAsync(
+diff --git a/src/DeskBox/Views/WidgetWindowBase.Interaction.cs b/src/DeskBox/Views/WidgetWindowBase.Interaction.cs
+index 6bb1355..477ad36 100644
+--- a/src/DeskBox/Views/WidgetWindowBase.Interaction.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.Interaction.cs
+@@ -288,6 +288,29 @@ public abstract partial class WidgetWindowBase
+ 
+     // ── Drag logic ─────────────────────────────────────────────
+ 
++    private bool _sampleReferenceGridMouse;
++    private Win32Helper.POINT _lastReferenceGridPointer;
++
++    private bool TryGetReferenceGridPress(PointerRoutedEventArgs e, out Win32Helper.POINT point)
++    {
++        point = default;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer?.State.DesktopLayer is null ||
++            e.Pointer.PointerDeviceType != PointerDeviceType.Mouse)
++            return false;
++        if (RootElement.XamlRoot is not { } xamlRoot || !Win32Helper.ClientToScreen(HWnd, ref point))
++            return Win32Helper.GetCursorPos(out point);
++        // 按下事件到达时光标可能已经移动，用该事件自己的坐标固定拖动起点。
++        var pressed = e.GetCurrentPoint(RootElement).Position;
++        double scale = Win32Helper.GetDpiScaleForWindow(HWnd, xamlRoot);
++        point.X += (int)Math.Round(pressed.X * scale);
++        point.Y += (int)Math.Round(pressed.Y * scale);
++        return true;
++#else
++        return false;
++#endif
++    }
++
+     protected void BeginWindowDragCore(PointerRoutedEventArgs e, FrameworkElement captureElement)
+     {
+         CancelPendingTitleBarDragFrame();
+@@ -298,7 +321,9 @@ public abstract partial class WidgetWindowBase
+         SimplifyBackdropForInteraction();
+         HasMovedTitleBarDrag = false;
+         DisplayChangeWatcher?.SuppressRestore();
+-        if (!Win32Helper.TryGetPointerScreenPoint(HWnd, RootElement, e, out InitialPointerPt))
++        _sampleReferenceGridMouse = TryGetReferenceGridPress(e, out InitialPointerPt);
++        if (!_sampleReferenceGridMouse &&
++            !Win32Helper.TryGetPointerScreenPoint(HWnd, RootElement, e, out InitialPointerPt))
+         {
+             Win32Helper.GetCursorPos(out InitialPointerPt);
+         }
+@@ -307,7 +332,11 @@ public abstract partial class WidgetWindowBase
+         InitialWindowSize = new SizeInt32(initialBounds.Width, initialBounds.Height);
+         _isCoordinatedMoveDrag =
+             Win32Helper.IsKeyPressed(Windows.System.VirtualKey.Control) &&
+-            App.Current?.WidgetManager?.TryBeginCoordinatedMove(HWnd) == true;
++            (App.Current?.WidgetManager?.TryBeginCoordinatedMove(HWnd) == true
++#if SOULDESK_GRID_PREVIEW
++                || App.Current?.BeginReferenceCoordinatedMove(HWnd) == true
++#endif
++            );
+         if (!_isCoordinatedMoveDrag)
+         {
+             ElevateForInteraction();
+@@ -315,7 +344,22 @@ public abstract partial class WidgetWindowBase
+ 
+         bool movesCapsuleBar = !_isCoordinatedMoveDrag && BeginCompactArrangementDrag();
+         DragCaptureElement = captureElement;
++#if SOULDESK_GRID_PREVIEW
++        bool captured = captureElement.CapturePointer(e.Pointer);
++        if (_sampleReferenceGridMouse && captured)
++        {
++            // 移动 HWND 后，WinUI 输入桥有时不再转发 PointerMoved，拖动期间逐帧读取屏幕坐标。
++            _lastReferenceGridPointer = InitialPointerPt;
++            _titleBarDragFrameRegistration = WidgetCompactAnimationCoordinator.Register(ApplyPendingTitleBarDragFrame,
++                HWnd, paceToDisplay: true);
++        }
++        else
++            _sampleReferenceGridMouse = false;
++        if (ReferenceGridPreview.Current?.Renderer?.State.DesktopLayer is not null)
++            App.Log($"桌面格子开始拖动 捕获={captured} 指针={InitialPointerPt.X},{InitialPointerPt.Y} 窗口={InitialWindowPos.X},{InitialWindowPos.Y}");
++#else
+         captureElement.CapturePointer(e.Pointer);
++#endif
+         e.Handled = true;
+ 
+         if (!movesCapsuleBar && !_isCoordinatedMoveDrag)
+@@ -331,12 +375,15 @@ public abstract partial class WidgetWindowBase
+             return;
+         }
+ 
+-        if (!Win32Helper.TryGetPointerScreenPoint(HWnd, RootElement, e, out var currentPt) &&
+-            !Win32Helper.GetCursorPos(out currentPt))
+-        {
+-            e.Handled = true;
+-            return;
+-        }
++        if (!_sampleReferenceGridMouse &&
++            (Win32Helper.TryGetPointerScreenPoint(HWnd, RootElement, e, out var currentPt) ||
++             Win32Helper.GetCursorPos(out currentPt)))
++            QueueTitleBarDragFromPointer(currentPt);
++        e.Handled = true;
++    }
++
++    private void QueueTitleBarDragFromPointer(Win32Helper.POINT currentPt)
++    {
+         int deltaX = currentPt.X - InitialPointerPt.X;
+         int deltaY = currentPt.Y - InitialPointerPt.Y;
+         int dragDistanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+@@ -344,17 +391,17 @@ public abstract partial class WidgetWindowBase
+         if (!HasMovedTitleBarDrag)
+         {
+             if (dragDistanceSquared < 16)
+-            {
+-                e.Handled = true;
+                 return;
+-            }
+ 
+             HasMovedTitleBarDrag = true;
+-            WidgetShellControl.NotifyCompactDragMoved();
++#if SOULDESK_GRID_PREVIEW
++            if (ReferenceGridPreview.Current?.Renderer?.State.DesktopLayer is not null)
++                App.Log($"桌面格子收到拖动位移 {deltaX},{deltaY}");
++#endif
++            WidgetShellControl.NotifyWidgetDragMoved();
+         }
+ 
+         QueueTitleBarDragFrame(deltaX, deltaY);
+-        e.Handled = true;
+     }
+ 
+     private void QueueTitleBarDragFrame(int deltaX, int deltaY)
+@@ -374,10 +421,16 @@ public abstract partial class WidgetWindowBase
+ 
+     private void ApplyPendingTitleBarDragFrame()
+     {
+-        if (!IsDragging || _pendingTitleBarDragFrame is not { } frame)
+-        {
++        if (!IsDragging)
+             return;
++        if (_sampleReferenceGridMouse && Win32Helper.GetCursorPos(out var cursor) &&
++            (cursor.X != _lastReferenceGridPointer.X || cursor.Y != _lastReferenceGridPointer.Y))
++        {
++            _lastReferenceGridPointer = cursor;
++            QueueTitleBarDragFromPointer(cursor);
+         }
++        if (_pendingTitleBarDragFrame is not { } frame)
++            return;
+ 
+         // PointerMoved may arrive much faster than DWM can present frames,
+         // especially on Win10 with several Acrylic HWNDs. Consume only the
+@@ -401,6 +454,10 @@ public abstract partial class WidgetWindowBase
+     {
+         if (_isCoordinatedMoveDrag)
+         {
++#if SOULDESK_GRID_PREVIEW
++            if (App.Current?.UpdateReferenceCoordinatedMove(frame.DeltaX, frame.DeltaY) == true)
++                return;
++#endif
+             App.Current?.WidgetManager?.UpdateCoordinatedMove(
+                 HWnd,
+                 frame.DeltaX,
+@@ -439,6 +496,7 @@ public abstract partial class WidgetWindowBase
+ 
+     private void CancelPendingTitleBarDragFrame()
+     {
++        _sampleReferenceGridMouse = false;
+         _pendingTitleBarDragFrame = null;
+         _titleBarDragFrameRegistration?.Dispose();
+         _titleBarDragFrameRegistration = null;
+@@ -455,18 +513,29 @@ public abstract partial class WidgetWindowBase
+         _deferTitleBarDragConfigUpdates = false;
+         IsDragging = false;
+         bool hasMoved = HasMovedTitleBarDrag;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer?.State.DesktopLayer is not null)
++        {
++            var current = GetActualWindowBounds();
++            App.Log($"桌面格子结束拖动 已移动={hasMoved} 窗口={current.X},{current.Y}");
++        }
++#endif
+         DragCaptureElement?.ReleasePointerCapture(e.Pointer);
+         DragCaptureElement = null;
+ 
+         App.Current?.ResizeGuideOverlay.EndDrag();
+ 
+         if (_isCoordinatedMoveDrag &&
+-            App.Current?.WidgetManager?.CompleteCoordinatedMove(HWnd, hasMoved) == true)
++            (App.Current?.WidgetManager?.CompleteCoordinatedMove(HWnd, hasMoved) == true
++#if SOULDESK_GRID_PREVIEW
++                || App.Current?.CompleteReferenceCoordinatedMove(HWnd, hasMoved) == true
++#endif
++            ))
+         {
+             _isCoordinatedMoveDrag = false;
+-            App.Current.WidgetManager.CancelWidgetGroupDrag(Config.Id);
++            App.Current?.WidgetManager?.CancelWidgetGroupDrag(Config.Id);
+             HasMovedTitleBarDrag = false;
+-            App.Current.WidgetManager.RestoreTemporarilyRaisedWidgetsToDesktopLayer(
++            App.Current?.WidgetManager?.RestoreTemporarilyRaisedWidgetsToDesktopLayer(
+                 "coordinated-drag-ended");
+             e.Handled = true;
+             return;
+@@ -746,12 +815,16 @@ public abstract partial class WidgetWindowBase
+         App.Current?.ResizeGuideOverlay.EndDrag();
+ 
+         if (_isCoordinatedMoveDrag &&
+-            App.Current?.WidgetManager?.CompleteCoordinatedMove(HWnd, hasMoved) == true)
++            (App.Current?.WidgetManager?.CompleteCoordinatedMove(HWnd, hasMoved) == true
++#if SOULDESK_GRID_PREVIEW
++                || App.Current?.CompleteReferenceCoordinatedMove(HWnd, hasMoved) == true
++#endif
++            ))
+         {
+             _isCoordinatedMoveDrag = false;
+-            App.Current.WidgetManager.CancelWidgetGroupDrag(Config.Id);
++            App.Current?.WidgetManager?.CancelWidgetGroupDrag(Config.Id);
+             HasMovedTitleBarDrag = false;
+-            App.Current.WidgetManager.RestoreTemporarilyRaisedWidgetsToDesktopLayer(
++            App.Current?.WidgetManager?.RestoreTemporarilyRaisedWidgetsToDesktopLayer(
+                 "coordinated-drag-capture-lost");
+             e.Handled = true;
+             return;
+diff --git a/src/DeskBox/App.ReferenceGridPreview.cs b/src/DeskBox/App.ReferenceGridPreview.cs
+new file mode 100644
+index 0000000..85f3a01
+--- /dev/null
++++ b/src/DeskBox/App.ReferenceGridPreview.cs
+@@ -0,0 +1,418 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Controls.WidgetContents;
++using DeskBox.Models;
++using DeskBox.Services;
++using DeskBox.Views;
++using DeskBox.ViewModels;
++using Microsoft.UI.Dispatching;
++using Microsoft.UI.Xaml;
++using Microsoft.UI.Xaml.Media;
++using System.Text.Json;
++using Windows.Graphics;
++
++namespace DeskBox;
++
++public partial class App
++{
++    private ReferenceGridPreview? _referenceGrid;
++    private Mutex? _referenceGridMutex;
++    private readonly List<(ContentWidgetWindow Window, FileWidgetContentAdapter Content)> _referenceWindows = [];
++    private ReferenceWindow[] _referenceDefinitions = [];
++    private bool _replacingReferenceWindows;
++    private bool _pollingReferenceRenderer;
++    private static void RecordReferenceStartup(string stage) => ReferenceGridEntry.Record(stage);
++
++    internal IEnumerable<IntPtr> ReferenceGridWindowHandles() =>
++        _referenceWindows.Select(entry => entry.Window.WindowHandle);
++
++    internal FrameworkElement? ReferenceGridWindowRoot(IntPtr handle) => _referenceWindows
++        .FirstOrDefault(entry => entry.Window.WindowHandle == handle).Window?.Content as FrameworkElement;
++
++    private bool InitializeReferenceGrid()
++    {
++        _referenceGrid = ReferenceGridPreview.Initialize();
++        RecordReferenceStartup("workspace-ready");
++        _referenceGridMutex = new Mutex(true,
++            DeskBoxDataPathService.Current.SingleInstanceMutexName + "_SoulDeskReferenceGrid", out bool first);
++        if (!first)
++            Environment.Exit(3);
++        InitializeComponent();
++        RecordReferenceStartup("application-xaml-ready");
++
++        SettingsService = new SettingsService();
++        DeskBox.Services.SettingsService.ApplyDefaultPreferences(SettingsService.Settings);
++        SettingsService.Settings.DefaultManagedStorageRootPath = _referenceGrid.FixtureRoot;
++        if (_referenceGrid.Renderer is not null)
++        {
++            SettingsService.Settings.WidgetCollapseBehavior = ReadReferenceDefaultMode(_referenceGrid.Renderer.State);
++            UpdateReferenceStackRules(_referenceGrid.Renderer.State);
++        }
++        if (_referenceGrid.Renderer?.State.DesktopLayer is not null)
++            SettingsService.Settings.WidgetLayerMode = DeskBox.Services.SettingsService.WidgetLayerModeDesktopPinned;
++        RecordReferenceStartup("settings-ready");
++        LocalizationService = new LocalizationService(SettingsService);
++        ThemeService = new ThemeService(SettingsService);
++        RecordReferenceStartup("appearance-ready");
++        FileService = new FileService(LocalizationService);
++        OrganizerService = new OrganizerService(SettingsService, FileService, () => _referenceGrid.FixtureRoot);
++        ResizeGuideOverlay = new ResizeGuideOverlayService();
++        RecordReferenceStartup("services-ready");
++        return true;
++    }
++
++    private async Task ShowReferenceGridAsync()
++    {
++        try
++        {
++            UiDispatcherQueue = DispatcherQueue.GetForCurrentThread();
++            DeskBox.Platform.UiDispatch.MarkReady(UiDispatcherQueue);
++            WidgetSegmentedLayoutHelper.Initialize(UiDispatcherQueue);
++            LocalizationService.SetLanguage("zh-CN");
++            RecordReferenceStartup("dispatcher-ready");
++
++            var preview = _referenceGrid!;
++            await SetReferenceWindowsAsync(ReferenceDefinitions(preview.Renderer?.State));
++            RecordReferenceStartup("first-frame");
++            preview.MembershipChanged += () => UiDispatcherQueue.TryEnqueue(async () =>
++            {
++                try { await RefreshReferenceMembersAsync(); }
++                catch (Exception error) { Log($"原地分组刷新失败 {error}"); }
++            });
++
++            bool importPassed = false;
++            string probe = Path.Combine(ReferenceGridPreview.Root, "test-reference-import.request");
++            if (preview.Renderer is null && File.Exists(probe) &&
++                File.ReadAllText(probe).Trim() == "reference-import-smoke-v1")
++            {
++                string path = Path.Combine(preview.FixtureRoot, "会议记录.md");
++                byte[] before = File.ReadAllBytes(path);
++                var first = _referenceWindows[0].Content.ViewModel;
++                var second = _referenceWindows[1].Content.ViewModel;
++                var accepted = await second.ImportPathsAsync([path], preferredManualIndex: 0);
++                await first.RefreshReferenceGridAsync();
++                await second.RefreshReferenceGridAsync();
++                importPassed = accepted.SequenceEqual([path]) && !first.Items.Any(item => item.Path == path) &&
++                    second.Items.FirstOrDefault()?.Path == path && before.SequenceEqual(File.ReadAllBytes(path));
++                if (!importPassed)
++                    throw new InvalidOperationException("原地分组界面探针失败。");
++            }
++            var report = new
++            {
++                importPassed,
++                windows = _referenceWindows.Select(entry => new
++                {
++                    name = entry.Window.Config.Name,
++                    handle = entry.Window.WindowHandle.ToInt64(),
++                    collapsed = entry.Window.Config.IsCollapsed,
++                    titleImage = WidgetTitleIconAssetStore.Current.ResolveImagePath(entry.Window.Config.Id,
++                        WidgetTitleIconCustomization.GetImageFileNameOverride(entry.Window.Config)) is not null,
++                    backgroundImage = WidgetTitleIconAssetStore.Current.ResolveBackgroundPath(entry.Window.Config.Id,
++                        WidgetBackgroundCustomization.GetImageFileNameOverride(entry.Window.Config)) is not null,
++                    stacks = entry.Content.ViewModel.VisibleItems.OfType<WidgetStackItem>().Select(item => item.Name).ToArray(),
++                    compact = entry.Window.IsCompactArrangementActive,
++                    visible = entry.Window.Visible,
++                    xaml = entry.Window.Content?.XamlRoot is not null,
++                    entries = entry.Content.ViewModel.Items.Select(item => item.Path).ToArray(),
++                }).ToArray(),
++            };
++            File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-ready.json"), JsonSerializer.Serialize(report));
++            if (preview.Renderer is { } renderer)
++                ObserveReferenceRenderer(renderer);
++        }
++        catch (Exception error)
++        {
++            File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-error.txt"), error.ToString());
++            Environment.Exit(1);
++        }
++    }
++
++    private sealed record ReferenceWindow(string Box, string Group, string Title, RectInt32 Bounds, int Width, int Height,
++        bool Collapsed, WidgetCollapseBehavior Mode, ViewMode View, WidgetSortMode Sort,
++        ReferenceGridRenderer.BoxData? Saved, ReferenceGridRenderer.Tab? Tab, (string Id, string Name)[] Tabs)
++    {
++        internal bool Descending => Tab?.SortDescending ?? (Tab?.Sort is "date" or "size");
++    }
++
++    private static ReferenceWindow[] ReferenceDefinitions(ReferenceGridRenderer.Snapshot? snapshot)
++    {
++        if (snapshot is null)
++            return
++            [
++                new(ReferenceGridPreview.First, ReferenceGridPreview.First, "项目文件", new(40, 120, 300, 276), 300, 276,
++                    false, WidgetCollapseBehavior.Click, ViewMode.Icon, WidgetSortMode.Manual, null, null, []),
++                new(ReferenceGridPreview.Second, ReferenceGridPreview.Second, "资料归档", new(370, 120, 300, 276), 300, 276,
++                    true, WidgetCollapseBehavior.Smart, ViewMode.Icon, WidgetSortMode.Manual, null, null, []),
++            ];
++        if (!snapshot.Visible && snapshot.DesktopLayer is null)
++            return [];
++        return snapshot.Boxes.Select(placement =>
++        {
++            var box = placement.Box;
++            var tab = box.Tabs.First(item => item.Id == box.Active);
++            return new ReferenceWindow(box.Id, tab.Id, tab.Name,
++                new RectInt32(placement.X, placement.Y, placement.Width, placement.Height),
++                placement.LogicalWidth > 0 ? placement.LogicalWidth : placement.Width,
++                placement.LogicalHeight > 0 ? placement.LogicalHeight : placement.Height,
++                box.Collapsed, WidgetCollapseBehaviorNames.Normalize(box.CollapseMode,
++                    box.HoverExpand ? WidgetCollapseBehavior.Smart : WidgetCollapseBehavior.Click, allowSystem: true),
++                tab.List ? ViewMode.List : ViewMode.Icon,
++                tab.Sort switch
++                {
++                    "name" => WidgetSortMode.Name,
++                    "type" => WidgetSortMode.Type,
++                    "size" => WidgetSortMode.Size,
++                    "date" => WidgetSortMode.DateModified,
++                    _ => WidgetSortMode.Manual,
++                }, box, tab, box.Tabs.Select(member => (member.Id, member.Name)).ToArray());
++        }).ToArray();
++    }
++
++    private static WidgetConfig ReferenceConfig(ReferenceWindow item)
++    {
++        var config = new WidgetConfig
++        {
++            Id = item.Group, Name = item.Title, IsDefaultTitle = false, SortMode = item.Sort,
++            X = item.Bounds.X, Y = item.Bounds.Y, Width = item.Width, Height = item.Height, IsCollapsed = item.Collapsed,
++            IsSizeLocked = item.Saved?.LocksSize ?? false, IsPositionLocked = item.Saved?.LocksPosition ?? false,
++            ViewMode = item.View, SortDescending = item.Descending, MappedFolderPath = item.Tab?.Folder,
++            CompactWidth = item.Saved?.CapsuleWidth,
++            BoundsCoordinateVersion = WidgetConfig.CurrentBoundsCoordinateVersion,
++        };
++        config.Metadata[ReferenceGridPreview.GroupKey] = item.Group;
++        config.Metadata[ReferenceGridPreview.BoxKey] = item.Box;
++        WidgetCollapseBehaviorNames.SetOverride(config, item.Mode);
++        WidgetCompactExpansionDirectionPolicy.SetOverride(config, item.Saved?.ExpansionDirection);
++        FileWidgetFolderOpenBehaviorNames.SetOverride(config, item.Tab?.FolderOpen);
++        ReferenceGridPreview.SetStackPreference(config, item.Tab?.StackByType ?? false);
++        ReferenceGridPreview.SetAppearance(config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++        ReferenceGridPreview.ApplyMetadata(config, ReferenceGridPreview.StackKeys, item.Tab?.StackSettings);
++        ReferenceGridPreview.ApplyMetadata(config, ReferenceGridPreview.ArtworkKeys, item.Tab?.Artwork,
++            WidgetBackgroundCustomization.ColorMetadataKey);
++        return config;
++    }
++
++    private FileWidgetContentAdapter ReferenceContent(WidgetConfig config) =>
++        new(config, FileService, OrganizerService, SettingsService, LocalizationService, UiDispatcherQueue);
++
++    private static string ReadReferenceDefaultMode(ReferenceGridRenderer.Snapshot state) =>
++        WidgetCollapseBehaviorNames.ToSettingValue(
++            WidgetCollapseBehaviorNames.Normalize(state.DefaultCollapseMode, WidgetCollapseBehavior.Smart));
++
++    private async Task SetReferenceWindowsAsync(ReferenceWindow[] definitions, bool visibilityChanged = false,
++        bool defaultModeChanged = false)
++    {
++        _replacingReferenceWindows = true;
++        try
++        {
++            var previous = _referenceWindows.ToArray();
++            var byBox = previous.ToDictionary(entry => entry.Window.Config.Metadata[ReferenceGridPreview.BoxKey]);
++            var lastDefinitions = _referenceDefinitions.ToDictionary(item => item.Box);
++            var next = new List<(ContentWidgetWindow Window, FileWidgetContentAdapter Content)>();
++            var created = new List<(ContentWidgetWindow Window, FileWidgetContentAdapter Content)>();
++            var descriptor = new WidgetContentFactory(LocalizationService).GetDescriptor(WidgetKind.File);
++            foreach (var item in definitions)
++            {
++                if (byBox.TryGetValue(item.Box, out var reusable) && lastDefinitions.TryGetValue(item.Box, out var old))
++                {
++                    var (existing, currentContent) = reusable;
++                    if (item.Group != old.Group || item.Tab?.Folder != old.Tab?.Folder)
++                    {
++                        var nextConfig = ReferenceConfig(item);
++                        nextConfig.CompactPlacement = existing.Config.CompactPlacement;
++                        nextConfig.CompactWidth = existing.Config.CompactWidth;
++                        nextConfig.PositionAnchor = existing.Config.PositionAnchor;
++                        nextConfig.IsCollapsed = existing.Config.IsCollapsed;
++                        WidgetCollapseBehaviorNames.SetOverride(nextConfig, WidgetCollapseBehaviorNames.GetOverride(existing.Config));
++                        var replacement = ReferenceContent(nextConfig);
++                        await existing.SwitchReferenceGroupAsync(nextConfig, replacement, descriptor);
++                        replacement.ViewModel.EnableReferenceGridHydration();
++                        currentContent = replacement;
++                    }
++                    else
++                    {
++                        if (item.Title != old.Title)
++                            existing.ApplyReferenceTitle(item.Title);
++                        if (!item.Tabs.SequenceEqual(old.Tabs) ||
++                            item.Saved?.GroupNavigation != old.Saved?.GroupNavigation ||
++                            item.Saved?.GroupTitleDisplay != old.Saved?.GroupTitleDisplay ||
++                            item.Saved?.GroupWheel != old.Saved?.GroupWheel ||
++                            item.Saved?.GroupHover != old.Saved?.GroupHover)
++                            existing.RefreshReferenceGroupTabs();
++                        currentContent.ViewModel.ApplyReferencePresentation(item.View, item.Sort, item.Descending,
++                            item.Tab?.StackByType ?? false);
++                        currentContent.ViewModel.ApplyReferenceStackSettings(item.Tab?.StackSettings);
++                        if (item.Tab is { } tab && old.Tab is { } previousTab &&
++                            !tab.Items.SequenceEqual(previousTab.Items, StringComparer.OrdinalIgnoreCase))
++                            await currentContent.ViewModel.RefreshReferenceGridAsync();
++                        if (item.Tab?.FolderOpen != old.Tab?.FolderOpen)
++                        {
++                            FileWidgetFolderOpenBehaviorNames.SetOverride(existing.Config, item.Tab?.FolderOpen);
++                            await currentContent.ApplyFolderOpenBehaviorChangeAsync();
++                        }
++                    }
++                    existing.ApplyReferenceGridBounds(old.Bounds, item.Bounds, item.Width, item.Height);
++                    existing.ApplyReferenceLocks(item.Saved?.LocksPosition ?? false, item.Saved?.LocksSize ?? false);
++                    if (item.Saved?.ExpansionDirection != old.Saved?.ExpansionDirection)
++                        existing.ApplyReferenceExpansionDirection(item.Saved?.ExpansionDirection);
++                    if (item.Saved?.CapsuleWidth != old.Saved?.CapsuleWidth)
++                        existing.ApplyReferenceCompactWidth(item.Saved?.CapsuleWidth);
++                    bool changedColor = item.Saved?.Color != old.Saved?.Color || item.Saved?.Opacity != old.Saved?.Opacity;
++                    if (changedColor)
++                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++                    bool changedArtwork = ReferenceGridPreview.ApplyMetadata(existing.Config, ReferenceGridPreview.ArtworkKeys,
++                        item.Tab?.Artwork, WidgetBackgroundCustomization.ColorMetadataKey);
++                    if (!changedColor && !Equals(item.Tab?.Artwork?.GetValueOrDefault(WidgetBackgroundCustomization.ColorMetadataKey),
++                            old.Tab?.Artwork?.GetValueOrDefault(WidgetBackgroundCustomization.ColorMetadataKey)) &&
++                        item.Tab?.Artwork?.ContainsKey(WidgetBackgroundCustomization.ColorMetadataKey) != true)
++                    {
++                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++                        changedArtwork = true;
++                    }
++                    if (changedColor || changedArtwork)
++                    {
++                        existing.ApplyAppearancePreview();
++                        existing.ApplyReferenceArtwork();
++                    }
++                    bool followsChangedDefault = item.Mode == WidgetCollapseBehavior.System && defaultModeChanged;
++                    if (item.Mode != old.Mode || item.Collapsed != old.Collapsed || followsChangedDefault)
++                        existing.ApplyReferenceCollapse(item.Mode, item.Collapsed, followsChangedDefault);
++                    next.Add((existing, currentContent));
++                    continue;
++                }
++
++                var config = ReferenceConfig(item);
++                var content = ReferenceContent(config);
++                var window = new ContentWidgetWindow(config, content, SettingsService, descriptor)
++                {
++                    Title = item.Title + " · 桌面格子",
++                };
++                _referenceWindows.Add((window, content));
++                created.Add((window, content));
++                next.Add((window, content));
++                window.Closed += (_, _) =>
++                {
++                    _referenceWindows.RemoveAll(entry => ReferenceEquals(entry.Window, window));
++                    if (_referenceWindows.Count == 0 && !_replacingReferenceWindows)
++                        Exit();
++                };
++                window.PrepareReferenceGrid();
++                RecordReferenceStartup($"{item.Group}-created");
++            }
++            if (created.Count > 0)
++            {
++                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
++                await Task.WhenAll(created.Select(entry => entry.Window.ContentReadyTask)).WaitAsync(timeout.Token);
++                RecordReferenceStartup("content-ready");
++                while (created.Any(entry => entry.Window.Content is not FrameworkElement
++                       { IsLoaded: true, XamlRoot: not null, ActualWidth: > 0, ActualHeight: > 0 }))
++                    await Task.Delay(30, timeout.Token);
++                var frame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
++                void OnRendering(object? sender, object args) => frame.TrySetResult();
++                CompositionTarget.Rendering += OnRendering;
++                try { await frame.Task.WaitAsync(timeout.Token); }
++                finally { CompositionTarget.Rendering -= OnRendering; }
++                foreach (var entry in created)
++                {
++                    if (_referenceGrid?.Renderer?.State.DesktopLayer is not null &&
++                        !WidgetLayerService.AttachReferenceGridToDesktop(entry.Window.WindowHandle))
++                        throw new InvalidOperationException("无法将格子窗口挂到当前桌面。");
++                    entry.Content.ViewModel.EnableReferenceGridHydration();
++                }
++            }
++
++            foreach (var entry in visibilityChanged ? next : created)
++                entry.Window.SetReferenceGridVisible(_referenceGrid?.Renderer?.State.Visible ?? true);
++            foreach (var entry in previous)
++            {
++                if (!next.Contains(entry))
++                    entry.Window.Close();
++            }
++            _referenceWindows.Clear();
++            _referenceWindows.AddRange(next);
++            _referenceDefinitions = definitions;
++        }
++        finally
++        {
++            _replacingReferenceWindows = false;
++        }
++    }
++
++    private async Task RefreshReferenceMembersAsync()
++    {
++        foreach (var entry in _referenceWindows.ToArray())
++            await entry.Content.ViewModel.RefreshReferenceGridAsync();
++    }
++
++    private void ObserveReferenceRenderer(ReferenceGridRenderer renderer)
++    {
++        var heartbeat = UiDispatcherQueue.CreateTimer();
++        if (renderer.State.DesktopLayer is not null)
++        {
++            void Pulse()
++            {
++                if (!_replacingReferenceWindows)
++                    renderer.WritePulse(_referenceWindows.Select(entry => entry.Window.WindowHandle));
++            }
++            Pulse();
++            heartbeat.Interval = TimeSpan.FromMilliseconds(750);
++            heartbeat.Tick += (_, _) =>
++            {
++                try { Pulse(); }
++                catch (IOException error) { Log($"无法写入格子界面心跳 {error.Message}"); }
++                catch (UnauthorizedAccessException error) { Log($"无法写入格子界面心跳 {error.Message}"); }
++            };
++            heartbeat.Start();
++        }
++        var timer = UiDispatcherQueue.CreateTimer();
++        timer.Interval = TimeSpan.FromMilliseconds(250);
++        timer.Tick += async (_, _) =>
++        {
++            if (_pollingReferenceRenderer)
++                return;
++            _pollingReferenceRenderer = true;
++            try
++            {
++                if (!renderer.OwnerAlive)
++                {
++                    heartbeat.Stop();
++                    timer.Stop();
++                    Exit();
++                    return;
++                }
++                if (renderer.HasPendingRequest || _referenceWindows.Any(entry => entry.Window.ReferencePlacementInProgress))
++                    return;
++                bool wasVisible = renderer.State.Visible;
++                if (renderer.Refresh())
++                {
++                    if (renderer.State.Closing)
++                    {
++                        heartbeat.Stop();
++                        timer.Stop();
++                        Exit();
++                        return;
++                    }
++                    string defaultMode = ReadReferenceDefaultMode(renderer.State);
++                    UpdateReferenceStackRules(renderer.State);
++                    bool changedDefaultMode = SettingsService.Settings.WidgetCollapseBehavior != defaultMode;
++                    SettingsService.Settings.WidgetCollapseBehavior = defaultMode;
++                    await SetReferenceWindowsAsync(ReferenceDefinitions(renderer.State),
++                        wasVisible != renderer.State.Visible, changedDefaultMode);
++                }
++                ArrangeReferenceCapsules(renderer.State);
++            }
++            catch (Exception error)
++            {
++                heartbeat.Stop();
++                timer.Stop();
++                Log($"读取 SoulDesk 格子状态失败 {error}");
++                Exit();
++            }
++            finally
++            {
++                _pollingReferenceRenderer = false;
++            }
++        };
++        timer.Start();
++    }
++}
++#endif
+diff --git a/src/DeskBox/Program.ReferenceGridPreview.cs b/src/DeskBox/Program.ReferenceGridPreview.cs
+new file mode 100644
+--- /dev/null
++++ b/src/DeskBox/Program.ReferenceGridPreview.cs
+@@ -0,0 +1,48 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Services;
++using Microsoft.UI.Dispatching;
++using Microsoft.UI.Xaml;
++using System.Diagnostics;
++using System.Runtime.CompilerServices;
++
++namespace DeskBox;
++
++internal static class ReferenceGridEntry
++{
++    private static readonly Stopwatch Startup = Stopwatch.StartNew();
++
++    [STAThread]
++    private static void Main()
++    {
++        Record("managed-entry");
++        try
++        {
++            StartWinUI();
++        }
++        catch (Exception error)
++        {
++            File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-error.txt"), error.ToString());
++            Environment.ExitCode = 1;
++        }
++    }
++
++    [MethodImpl(MethodImplOptions.NoInlining)]
++    private static void StartWinUI()
++    {
++        Record("winrt-initialize");
++        WinRT.ComWrappersSupport.InitializeComWrappers();
++        Record("xaml-start");
++        Application.Start(parameters =>
++        {
++            Record("xaml-callback");
++            SynchronizationContext.SetSynchronizationContext(
++                new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
++            _ = new App();
++        });
++    }
++
++    internal static void Record(string stage) =>
++        File.AppendAllText(Path.Combine(ReferenceGridPreview.Root, "preview-startup.log"),
++            $"{Startup.ElapsedMilliseconds} {stage}{Environment.NewLine}");
++}
++#endif
+diff --git a/src/DeskBox/Services/ReferenceGridPreview.cs b/src/DeskBox/Services/ReferenceGridPreview.cs
+new file mode 100644
+index 0000000..ebe37c9
+--- /dev/null
++++ b/src/DeskBox/Services/ReferenceGridPreview.cs
+@@ -0,0 +1,348 @@
++#if SOULDESK_GRID_PREVIEW
++using System.Text.Json;
++using DeskBox.Controls;
++using DeskBox.Helpers;
++using DeskBox.Models;
++using Windows.Graphics;
++
++namespace DeskBox.Services;
++
++// 样例工作区是唯一允许写入配置和读取成员的目录。格子成员是路径引用。
++internal sealed class ReferenceGridPreview
++{
++    public const string GroupKey = "souldesk-reference-group";
++    internal const string BoxKey = "souldesk-reference-box";
++    internal const string StackKey = "souldesk-reference-stack";
++    internal const string OpacityKey = "souldesk-reference-opacity";
++    internal static readonly string[] StackKeys =
++    [
++        WidgetFileStackSettings.EnabledOverrideMetadataKey, WidgetFileStackSettings.GroupByOverrideMetadataKey,
++        WidgetFileStackSettings.ThresholdOverrideMetadataKey, WidgetFileStackSettings.OrderByOverrideMetadataKey,
++        WidgetFileStackSettings.OpenModeOverrideMetadataKey, WidgetFileStackSettings.DisabledStacksMetadataKey,
++        WidgetFileStackSettings.StackNameOverridesMetadataKey, WidgetFileStackSettings.StackOrderMetadataKey,
++        WidgetFileStackSettings.StackMemberOverridesMetadataKey
++    ];
++    internal static readonly string[] ArtworkKeys =
++    [
++        WidgetTitleIconCustomization.EmojiMetadataKey, WidgetTitleIconCustomization.ImageMetadataKey,
++        WidgetBackgroundCustomization.ImageMetadataKey, WidgetBackgroundCustomization.FitMetadataKey,
++        WidgetBackgroundCustomization.DimMetadataKey, WidgetBackgroundCustomization.ColorMetadataKey
++    ];
++    internal string AssetDirectory => Path.Combine(Path.GetDirectoryName(Root)!, "artwork");
++    private const string Marker = "souldesk-deskbox-grid-preview-v1";
++    private static readonly Lazy<string> RequiredRoot = new(ValidateLaunch);
++    private static readonly StringComparer Paths = StringComparer.OrdinalIgnoreCase;
++    private readonly object _gate = new();
++    private Dictionary<string, string[]> _groups;
++
++    public static string Root => RequiredRoot.Value;
++    public static ReferenceGridPreview? Current { get; private set; }
++    public const string First = "reference-project";
++    public const string Second = "reference-archive";
++
++    private ReferenceGridPreview()
++    {
++        string workspace = IsRenderer && !UsesDesktop ? Path.GetDirectoryName(Root)! : Root;
++        FixtureRoot = Path.Combine(workspace, "fixtures");
++        if (IsRenderer)
++        {
++            Renderer = new ReferenceGridRenderer(Root, UsesDesktop);
++            _groups = [];
++            return;
++        }
++        _groups = File.Exists(StatePath)
++            ? JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(StatePath))
++                ?? throw new InvalidDataException("格子布局无法读取。")
++            : new Dictionary<string, string[]>
++            {
++                [First] = ["项目清单.txt", "会议记录.md", "任务进度.csv"],
++                [Second] = ["发布记录.txt"],
++            };
++    }
++
++    public static ReferenceGridPreview Initialize() => Current ??= new();
++
++    private static bool IsRenderer => Environment.GetCommandLineArgs()[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop";
++    internal static bool UsesDesktop => Environment.GetCommandLineArgs()[1] == "--souldesk-grid-desktop";
++    public string FixtureRoot { get; }
++    internal ReferenceGridRenderer? Renderer { get; }
++    private string StatePath { get; } = Path.Combine(Root, "reference-groups.json");
++    internal event Action? MembershipChanged;
++
++    internal WidgetGroupPresentation? GroupPresentation(WidgetConfig config)
++    {
++        if (!config.Metadata.TryGetValue(BoxKey, out var id) ||
++            Renderer?.State.Boxes.FirstOrDefault(item => item.Box.Id == id)?.Box is not
++                { Tabs.Length: > 1 } box)
++            return null;
++        var members = box.Tabs.Select(tab => new WidgetGroupMemberPresentation(tab.Id, tab.Name,
++            WidgetKind.File, "\uE8B7", WidgetTitleIconKindNames.FromWidgetKind(WidgetKind.File),
++            tab.Id == box.Active, tab.Artwork?.GetValueOrDefault(WidgetTitleIconCustomization.EmojiMetadataKey) ?? "",
++            WidgetTitleIconAssetStore.Current.ResolveImagePath(tab.Id,
++                tab.Artwork?.GetValueOrDefault(WidgetTitleIconCustomization.ImageMetadataKey)))).ToArray();
++        return new WidgetGroupPresentation(box.Id, box.Id, box.Active,
++            WidgetGroupNavigationStyles.Normalize(box.GroupNavigation, allowFollowDefault: false),
++            WidgetGroupTitleDisplayModes.Normalize(box.GroupTitleDisplay, allowFollowDefault: false),
++            box.GroupWheel ?? true, box.GroupHover, members);
++    }
++
++    internal Task<bool>? SubmitBoxAsync(WidgetConfig config, string action, string? tab = null,
++        bool? collapsed = null, string? target = null, string[]? expectedTabs = null, string? collapseMode = null) =>
++        config.Metadata.TryGetValue(BoxKey, out var id)
++            ? Renderer?.SubmitBoxAsync(action, id, tab, collapsed, target: target, expectedTabs: expectedTabs,
++                collapseMode: collapseMode) : null;
++
++    internal RectInt32? DesktopBounds(WidgetConfig config)
++    {
++        if (Renderer is not { State.DesktopLayer: not null } renderer ||
++            !config.Metadata.TryGetValue(BoxKey, out var id) ||
++            renderer.State.Boxes.FirstOrDefault(item => item.Box.Id == id) is not { } placement)
++            return null;
++        return new RectInt32(placement.X, placement.Y, placement.Width, placement.Height);
++    }
++
++    internal Task<bool>? SubmitSettingAsync(WidgetConfig config, string setting, string? value = null, string action = "edit") =>
++        Renderer is { } renderer &&
++        config.Metadata.TryGetValue(BoxKey, out var box) && config.Metadata.TryGetValue(GroupKey, out var tab)
++            ? renderer.SubmitSettingAsync(action, box, tab, setting, value)
++            : null;
++
++    internal void PersistMetadata(WidgetConfig config, string setting, string[] keys)
++    {
++        if (Renderer is not { } renderer || !config.Metadata.TryGetValue(BoxKey, out var box) ||
++            !config.Metadata.TryGetValue(GroupKey, out var tab))
++            return;
++        var metadata = keys.Where(config.Metadata.ContainsKey).ToDictionary(key => key, key => config.Metadata[key]);
++        _ = ObserveBoxEditAsync(renderer.SubmitSettingAsync("edit", box, tab, setting, null, metadata));
++    }
++
++    internal static bool ApplyMetadata(WidgetConfig config, string[] keys, Dictionary<string, string>? values,
++        string? preserveMissingKey = null)
++    {
++        bool changed = false;
++        foreach (var key in keys)
++        {
++            if (values is not null && values.TryGetValue(key, out var value))
++            {
++                changed |= !config.Metadata.TryGetValue(key, out var old) || old != value;
++                config.Metadata[key] = value;
++            }
++            else if (key != preserveMissingKey)
++                changed |= config.Metadata.Remove(key);
++        }
++        return changed;
++    }
++
++    internal bool CanReadMappedFolder(string folder) => UsesDesktop || IsFixtureLocation(folder);
++
++    internal static bool UsesAutomaticStacks(WidgetConfig config) =>
++        config.Metadata.TryGetValue(StackKey, out string? value) && value == "true";
++
++    internal static void SetStackPreference(WidgetConfig config, bool value) =>
++        config.Metadata[StackKey] = value ? "true" : "false";
++
++    internal static void SetAppearance(WidgetConfig config, string? color, int opacity)
++    {
++        WidgetBackgroundCustomization.SetColorOverride(config,
++            color is not (null or "#283635") && AccentColorHelper.TryParseHex(color, out var parsed) ? parsed : null);
++        config.Metadata[OpacityKey] = Math.Clamp(opacity, 35, 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
++    }
++
++    internal Task<bool>? SavePositionAsync(WidgetConfig config, RectInt32 bounds, bool resize, double? capsuleWidth)
++    {
++        if (!config.Metadata.TryGetValue(BoxKey, out string? id) || Renderer is not { State.Visible: true } renderer ||
++            renderer.State.Boxes.FirstOrDefault(item => item.Box.Id == id) is not { } placement)
++            return null;
++        return bounds.X == placement.X && bounds.Y == placement.Y &&
++               bounds.Width == placement.Width && bounds.Height == placement.Height &&
++               (capsuleWidth is null || capsuleWidth == placement.Box.CapsuleWidth)
++            ? null
++            : renderer.SubmitBoxAsync(resize ? "resize" : "position", id, bounds: bounds, capsuleWidth: capsuleWidth);
++    }
++
++    internal static async Task ObserveBoxEditAsync(Task<bool> operation)
++    {
++        try { await operation; }
++        catch (Exception error) { App.Log($"保存桌面格子设置失败 {error.Message}"); }
++    }
++
++    public IReadOnlyList<string> GetFiles(string group)
++    {
++        if (Renderer is { } renderer)
++        {
++            var tab = renderer.State.Boxes.SelectMany(placement => placement.Box.Tabs)
++                .FirstOrDefault(item => item.Id == group);
++            if (tab?.Folder is { } folder && (UsesDesktop || IsFixtureLocation(folder)) && Directory.Exists(folder))
++                return Directory.GetFileSystemEntries(folder).Where(path => UsesDesktop || IsFixtureLocation(path)).ToArray();
++            return tab?.Items.Where(IsFixturePath).ToArray() ?? [];
++        }
++        lock (_gate)
++        {
++            return _groups.TryGetValue(group, out string[]? paths)
++                ? paths.Select(name => Path.GetFullPath(name, FixtureRoot))
++                    .Where(IsFixturePath).ToArray()
++                : [];
++        }
++    }
++
++    public bool IsFixturePath(string candidate) =>
++        (UsesDesktop || IsFixtureLocation(candidate)) &&
++        (Renderer is null || Path.IsPathFullyQualified(candidate) && Renderer.Contains(candidate));
++
++    private bool IsFixtureLocation(string candidate)
++    {
++        if (!Path.IsPathFullyQualified(candidate))
++            return false;
++
++        try
++        {
++            string full = Path.GetFullPath(candidate);
++            if (!full.StartsWith(FixtureRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
++                return false;
++            string relative = Path.GetRelativePath(FixtureRoot, full);
++            string path = FixtureRoot;
++            foreach (string segment in relative.Split(Path.DirectorySeparatorChar))
++            {
++                if (segment.Contains(':'))
++                    return false;
++                path = Path.Combine(path, segment);
++                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
++                    return false;
++            }
++            return true;
++        }
++        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
++        {
++            return false;
++        }
++    }
++
++    public IReadOnlyList<string> Attach(string group, IEnumerable<string> files, int? index = null)
++    {
++        var accepted = files.Where(IsFixturePath).Select(Path.GetFullPath).Distinct(Paths).ToArray();
++        if (accepted.Length == 0)
++            return [];
++
++        lock (_gate)
++        {
++            if (!_groups.TryGetValue(group, out string[]? target))
++                return [];
++
++            var relative = accepted.Select(path => Path.GetRelativePath(FixtureRoot, path)).ToHashSet(Paths);
++            int insert = index is null ? target.Length : Math.Clamp(index.Value, 0, target.Length);
++            int adjusted = target.Take(insert).Count(path => !relative.Contains(path));
++            var next = _groups.ToDictionary(entry => entry.Key,
++                entry => entry.Value.Where(path => !relative.Contains(path)).ToArray());
++            var members = next[group].ToList();
++            members.InsertRange(adjusted, accepted.Select(path => Path.GetRelativePath(FixtureRoot, path)));
++            next[group] = [.. members];
++            Save(next);
++        }
++
++        MembershipChanged?.Invoke();
++        return accepted;
++    }
++
++    internal Task<IReadOnlyList<string>> AttachAsync(string group, IEnumerable<string> files, int? index,
++        CancellationToken cancellationToken, string? before = null, string[]? displayOrder = null)
++    {
++        if (Renderer is null)
++            return Task.FromResult(Attach(group, files, index));
++        var paths = files.Where(IsFixturePath).Select(Path.GetFullPath).Distinct(Paths).ToArray();
++        if (paths.Length == 0)
++            return Task.FromResult<IReadOnlyList<string>>([]);
++        return Renderer.SubmitAsync("group", group, paths, before, cancellationToken, displayOrder);
++    }
++
++    internal async Task ReleaseAsync(string group, string path)
++    {
++        if (Renderer is null)
++            Release(group, path);
++        else if (IsFixturePath(path))
++            await Renderer.SubmitAsync("release", group, [path], null, CancellationToken.None);
++    }
++
++    public void Release(string group, string path)
++    {
++        if (!IsFixturePath(path))
++            return;
++        lock (_gate)
++        {
++            if (!_groups.TryGetValue(group, out string[]? target))
++                return;
++            string relative = Path.GetRelativePath(FixtureRoot, path);
++            var next = new Dictionary<string, string[]>(_groups);
++            next[group] = target.Where(item => !Paths.Equals(item, relative)).ToArray();
++            Save(next);
++        }
++        MembershipChanged?.Invoke();
++    }
++
++    private void Save(Dictionary<string, string[]> next)
++    {
++        string staged = StatePath + ".pending";
++        File.WriteAllText(staged, JsonSerializer.Serialize(next, new JsonSerializerOptions { WriteIndented = true }));
++        File.Move(staged, StatePath, overwrite: true);
++        _groups = next;
++    }
++
++    private static string ValidateLaunch()
++    {
++        string[] args = Environment.GetCommandLineArgs();
++        try
++        {
++            if (args.Length == 3 && Path.IsPathFullyQualified(args[2]))
++            {
++                string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(args[2]));
++                string name = Path.GetFileName(root);
++                string parent = Path.GetDirectoryName(root) ?? "";
++                bool normalPreview = args[1] == "--souldesk-grid-preview" &&
++                    name.StartsWith("deskbox-preview-", StringComparison.Ordinal) &&
++                    IsRegularFile(Path.Combine(root, "isolated-test-data.marker")) &&
++                    File.ReadAllText(Path.Combine(root, "isolated-test-data.marker")).Trim() == Marker;
++                bool engine = args[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop" &&
++                    name.StartsWith("deskbox-renderer-", StringComparison.Ordinal) &&
++                    Guid.TryParseExact(name["deskbox-renderer-".Length..], "N", out _) &&
++                    IsRegularFile(Path.Combine(root, "state.json"));
++                bool enginePreview = engine && args[1] == "--souldesk-grid-renderer" &&
++                    Path.GetFileName(parent).StartsWith("desktop-integration-", StringComparison.Ordinal) &&
++                    IsRegularFile(Path.Combine(parent, "isolated-test-data.marker"));
++                bool desktop = engine && args[1] == "--souldesk-grid-desktop";
++                if (!root.StartsWith(@"\\") && NoReparseDirectories(root) &&
++                    (normalPreview && NoReparseDirectories(Path.Combine(root, "fixtures")) ||
++                        enginePreview && NoReparseDirectories(Path.Combine(parent, "fixtures")) || desktop))
++                {
++                    foreach (string ownedPath in new[] { "data", "reference-groups.json", "reference-groups.json.pending",
++                        "DeskBox.log", "preview-startup.log", "preview-ready.json", "preview-error.txt", "request.json",
++                        "pulse.json", "pulse.tmp" })
++                    {
++                        string entry = Path.Combine(root, ownedPath);
++                        if (Path.Exists(entry) && (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
++                            throw new InvalidDataException("隔离数据目录不能包含重定向。");
++                    }
++                    return root;
++                }
++            }
++        }
++        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
++        {
++            // 失败时退出，绝不回退到正常 DeskBox 数据目录。
++        }
++        Environment.Exit(2);
++        throw new InvalidOperationException("需要带标记的桌面格子隔离目录。");
++    }
++
++    private static bool IsRegularFile(string path) => File.Exists(path) &&
++        (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0;
++
++    private static bool NoReparseDirectories(string path)
++    {
++        for (DirectoryInfo? info = new(path); info is not null; info = info.Parent)
++        {
++            if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) != 0)
++                return false;
++        }
++        return true;
++    }
++}
++#endif
+diff --git a/src/DeskBox/Services/ReferenceGridRenderer.cs b/src/DeskBox/Services/ReferenceGridRenderer.cs
+new file mode 100644
+index 0000000..b495694
+--- /dev/null
++++ b/src/DeskBox/Services/ReferenceGridRenderer.cs
+@@ -0,0 +1,215 @@
++#if SOULDESK_GRID_PREVIEW
++using System.Diagnostics;
++using System.Globalization;
++using System.Text.Json;
++using DeskBox.Platform;
++using System.Text;
++using Windows.Graphics;
++
++namespace DeskBox.Services;
++
++internal sealed class ReferenceGridRenderer
++{
++    internal sealed record Tab(string Id, string Name, string? Folder, string Sort, bool List,
++        bool StackByType, string[] Items, bool? SortDescending, string? FolderOpen,
++        Dictionary<string, string>? StackSettings, Dictionary<string, string>? Artwork);
++    internal sealed record BoxData(string Id, bool Collapsed, bool Locked, bool HoverExpand,
++        string Active, Tab[] Tabs, string? CollapseMode, bool? PositionLocked, bool? SizeLocked,
++        string? ExpansionDirection, string? Color, int Opacity, double? CapsuleWidth,
++        string? GroupNavigation, string? GroupTitleDisplay, bool? GroupWheel, bool GroupHover, string? BoundMonitor)
++    {
++        internal bool LocksPosition => PositionLocked ?? Locked;
++        internal bool LocksSize => SizeLocked ?? Locked;
++    }
++    internal sealed record Placement(BoxData Box, int X, int Y, int Width, int Height,
++        int LogicalWidth, int LogicalHeight);
++    internal sealed record DesktopIdentity(long Handle, int Pid, int Session);
++    internal sealed record DisplayInfo(string Id, string Name, bool Primary);
++    internal sealed record Move(string Box, RectInt32 Bounds);
++    internal sealed record StackRule(string Id, string Name, string[] Extensions);
++    internal sealed record Snapshot(int Version, int MaximumTabs, int OwnerPid, string OwnerStarted, string Session,
++        long Revision, bool Visible, bool Closing, DesktopIdentity? DesktopLayer, string? DesktopStarted,
++        Placement[] Boxes, string[] Files,
++        string? Completed, string[] Accepted, string? Error, string? DefaultCollapseMode,
++        DisplayInfo[]? Displays, string? CapsuleBar, int CapsuleSpacing, bool CoordinatedMove, StackRule[]? StackRules);
++
++    private readonly string _directory;
++    private readonly SemaphoreSlim _submissions = new(1);
++    private readonly Process _owner;
++    private Snapshot _state;
++    private HashSet<string> _allowed;
++    private long _pulse;
++
++    internal ReferenceGridRenderer(string directory, bool desktop)
++    {
++        _directory = directory;
++        _state = Read();
++        if (_state.Version != 1 || Path.GetFileName(directory) != "deskbox-renderer-" + _state.Session ||
++            !Guid.TryParseExact(_state.Session, "N", out _) || desktop != (_state.DesktopLayer is not null))
++            throw new InvalidDataException("无法确认 SoulDesk 格子会话。");
++        _owner = Process.GetProcessById(_state.OwnerPid);
++        if (_owner.HasExited || _owner.SessionId != Process.GetCurrentProcess().SessionId ||
++            _owner.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture) != _state.OwnerStarted)
++        {
++            _owner.Dispose();
++            throw new InvalidDataException("SoulDesk 格子引擎已经退出。");
++        }
++        _allowed = new HashSet<string>(_state.Files, StringComparer.OrdinalIgnoreCase);
++        if (desktop && DesktopOwner == IntPtr.Zero)
++            throw new InvalidDataException("Windows 桌面图标层身份不一致。");
++    }
++
++    internal Snapshot State => _state;
++    internal bool HasPendingRequest => _submissions.CurrentCount == 0;
++    internal bool OwnerAlive => !_owner.HasExited;
++    internal bool Contains(string path) => _allowed.Contains(path);
++    internal IntPtr DesktopOwner
++    {
++        get
++        {
++            if (_state.DesktopLayer is not { } layer || layer.Handle == 0)
++                return IntPtr.Zero;
++            var hwnd = new IntPtr(layer.Handle);
++            Win32Helper.GetWindowThreadProcessId(hwnd, out uint pid);
++            if (pid != layer.Pid || layer.Session != _owner.SessionId)
++                return IntPtr.Zero;
++            var name = new StringBuilder(64);
++            if (Win32Helper.GetAncestor(hwnd, 2) != hwnd ||
++                Win32Helper.GetClassName(hwnd, name, name.Capacity) == 0 ||
++                name.ToString() is not ("Progman" or "WorkerW"))
++                return IntPtr.Zero;
++            var iconView = Win32Helper.FindWindowEx(hwnd, IntPtr.Zero, "SHELLDLL_DefView", null);
++            if (iconView == IntPtr.Zero || Win32Helper.GetWindowThreadProcessId(iconView, out uint viewPid) == 0 ||
++                viewPid != pid)
++                return IntPtr.Zero;
++            try
++            {
++                using var explorer = Process.GetProcessById(layer.Pid);
++                if (!explorer.HasExited && explorer.SessionId == layer.Session &&
++                    explorer.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture) == _state.DesktopStarted)
++                    return hwnd;
++            }
++            catch (ArgumentException) { }
++            catch (InvalidOperationException) { }
++            catch (System.ComponentModel.Win32Exception) { }
++            return IntPtr.Zero;
++        }
++    }
++
++    internal bool Refresh()
++    {
++        Snapshot next = Read();
++        if (next.Session != _state.Session || next.OwnerStarted != _state.OwnerStarted ||
++            next.OwnerPid != _state.OwnerPid || next.Version != _state.Version || next.Revision < _state.Revision ||
++            next.DesktopLayer != _state.DesktopLayer || next.DesktopStarted != _state.DesktopStarted)
++            throw new InvalidDataException("SoulDesk 格子会话已改变。");
++        bool changed = next.Revision != _state.Revision;
++        if (changed)
++            _allowed = new HashSet<string>(next.Files, StringComparer.OrdinalIgnoreCase);
++        _state = next;
++        return changed;
++    }
++
++    internal void WritePulse(IEnumerable<IntPtr> windows)
++    {
++        string staged = Path.Combine(_directory, "pulse.tmp");
++        File.WriteAllText(staged, JsonSerializer.Serialize(new
++        {
++            _state.Session, Pid = Environment.ProcessId, Counter = ++_pulse, _state.Revision,
++            Windows = windows.Select(window => window.ToInt64()).ToArray()
++        }));
++        File.Move(staged, Path.Combine(_directory, "pulse.json"), overwrite: true);
++    }
++
++    private Snapshot Read()
++    {
++        using var input = new FileStream(Path.Combine(_directory, "state.json"),
++            FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
++        if (input.Length > 4 * 1024 * 1024)
++            throw new InvalidDataException("SoulDesk 格子布局超过 4 MiB。");
++        return JsonSerializer.Deserialize<Snapshot>(input)
++            ?? throw new InvalidDataException("SoulDesk 格子布局为空。");
++    }
++
++    internal async Task<IReadOnlyList<string>> SubmitAsync(string action, string tab, string[] paths,
++        string? before, CancellationToken cancellationToken, string[]? displayOrder = null) =>
++        (await SendAsync(action, tab, paths, before, null, null, null, null, null, null,
++            cancellationToken, displayOrder: displayOrder))?.Accepted ?? [];
++
++    internal async Task<bool> SubmitBoxAsync(string action, string box, string? tab = null, bool? collapsed = null,
++        RectInt32? bounds = null, string? target = null, string[]? expectedTabs = null, string? collapseMode = null,
++        double? capsuleWidth = null) =>
++        await SendAsync(action, tab, [], null, box, collapsed, bounds, target, expectedTabs, collapseMode,
++            CancellationToken.None, capsuleWidth: capsuleWidth) is not null;
++
++    internal async Task<bool> SubmitSettingAsync(string action, string box, string tab, string setting, string? value,
++        Dictionary<string, string>? metadata = null) =>
++        await SendAsync(action, tab, [], null, box, null, null, null, null, null,
++            CancellationToken.None, setting, value, metadata: metadata) is not null;
++
++    internal async Task<bool> SubmitMovesAsync(Move[] moves) =>
++        await SendAsync("move-many", null, [], null, null, null, null, null, null, null,
++            CancellationToken.None, moves: moves) is not null;
++
++    private async Task<Snapshot?> SendAsync(string action, string? tab, string[] paths, string? before,
++        string? box, bool? collapsed, RectInt32? bounds, string? target, string[]? expectedTabs, string? collapseMode,
++        CancellationToken cancellationToken, string? setting = null, string? value = null, double? capsuleWidth = null,
++        string[]? displayOrder = null, Dictionary<string, string>? metadata = null, Move[]? moves = null)
++    {
++        await _submissions.WaitAsync(cancellationToken);
++        try
++        {
++            if (!OwnerAlive)
++                return null;
++            Snapshot published = Read();
++            if (published.Session != _state.Session || published.Revision < _state.Revision)
++                return null;
++            string id = Guid.NewGuid().ToString("N");
++            string staged = Path.Combine(_directory, "request-" + id + ".tmp");
++            File.WriteAllText(staged, JsonSerializer.Serialize(new
++            {
++                published.Version, published.Session, published.Revision,
++                Id = id, Action = action, Box = box, Tab = tab, Paths = paths, Before = before, Collapsed = collapsed,
++                Target = target, ExpectedTabs = expectedTabs, CollapseMode = collapseMode, Setting = setting, Value = value,
++                CapsuleWidth = capsuleWidth, DisplayOrder = displayOrder, Metadata = metadata,
++                Moves = moves?.Select(move => new
++                {
++                    move.Box,
++                    Bounds = new { move.Bounds.X, move.Bounds.Y, move.Bounds.Width, move.Bounds.Height }
++                }),
++                Bounds = bounds is { } rect ? new { rect.X, rect.Y, rect.Width, rect.Height } : null
++            }));
++            try
++            {
++                File.Move(staged, Path.Combine(_directory, "request.json"), overwrite: true);
++            }
++            finally
++            {
++                if (File.Exists(staged))
++                    File.Delete(staged);
++            }
++
++            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
++            timeout.CancelAfter(TimeSpan.FromSeconds(5));
++            while (OwnerAlive)
++            {
++                Snapshot reply = Read();
++                if (reply.Session != _state.Session)
++                    break;
++                if (reply.Completed == id)
++                {
++                    if (reply.Error is { } error)
++                        throw new InvalidOperationException(error);
++                    return reply;
++                }
++                await Task.Delay(65, timeout.Token);
++            }
++            return null;
++        }
++        finally
++        {
++            _submissions.Release();
++        }
++    }
++}
++#endif
+diff --git a/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs b/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs
+new file mode 100644
+index 0000000..6d44305
+--- /dev/null
++++ b/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs
+@@ -0,0 +1,77 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Models;
++using DeskBox.Services;
++
++namespace DeskBox.ViewModels;
++
++public partial class WidgetViewModel
++{
++    private bool _referenceGridHydrationEnabled;
++
++    internal void RefreshReferenceStackRules() => RebuildStackDisplayItems();
++
++    internal void ApplyReferenceStackSettings(Dictionary<string, string>? preferences)
++    {
++        if (!ReferenceGridPreview.ApplyMetadata(Config, ReferenceGridPreview.StackKeys, preferences)) return;
++        CleanupStacks();
++        InitializeStacks();
++        ApplyStackSettings();
++    }
++
++    private static IEnumerable<string> ReferenceDisplayPaths(IEnumerable<WidgetItem> items) =>
++        items.SelectMany(item => item is WidgetStackItem stack ? stack.Members.Select(member => member.Path) : [item.Path]);
++
++    internal void EnableReferenceGridHydration()
++    {
++        _referenceGridHydrationEnabled = true;
++        StartItemHydration();
++    }
++
++    internal void ApplyReferencePresentation(ViewMode view, WidgetSortMode sort, bool descending, bool stack)
++    {
++        if (ViewMode != view)
++            Config.ViewMode = ViewMode = view;
++        if (Config.SortMode != sort || Config.SortDescending != descending)
++        {
++            Config.SortMode = sort;
++            Config.SortDescending = descending;
++            SortItems();
++            OnPropertyChanged(nameof(SortModeLabel));
++        }
++        if (ReferenceGridPreview.UsesAutomaticStacks(Config) != stack)
++        {
++            ReferenceGridPreview.SetStackPreference(Config, stack);
++            RebuildStackDisplayItems();
++        }
++    }
++
++    internal async Task RefreshReferenceGridAsync(CancellationToken cancellationToken = default)
++    {
++        if (ReferenceGridPreview.Current is not { } workspace ||
++            !Config.Metadata.TryGetValue(ReferenceGridPreview.GroupKey, out string? group))
++            return;
++
++        var files = await Task.WhenAll(workspace.GetFiles(group).Select(path =>
++            _fileService.TryCreateWidgetItemAsync(path,
++                hideShortcutArrowOverlay: _hideShortcutArrowOverlay,
++                showImageFilesAsIcons: _showImageFilesAsIcons,
++                showFileExtensions: _showFileExtensions,
++                hideShortcutExtensionWhenShowingFileExtensions: _hideShortcutExtensionWhenShowingFileExtensions,
++                loadIcon: false,
++                loadFolderItemCount: false,
++                loadShortcutTarget: false)));
++        cancellationToken.ThrowIfCancellationRequested();
++
++        if (_isDisposed)
++            return;
++        // 始终按成员目录的次序投影，跨格子只替换引用。
++        Items.Clear();
++        foreach (var file in files.OfType<WidgetItem>())
++            Items.Add(file);
++        SortItems();
++        RebuildStackDisplayItems();
++        if (_referenceGridHydrationEnabled)
++            StartItemHydration();
++    }
++}
++#endif
+diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs
+new file mode 100644
+index 0000000..53aaffa
+--- /dev/null
++++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs
+@@ -0,0 +1,175 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Models;
++using DeskBox.Services;
++using DeskBox.ViewModels;
++using Microsoft.UI.Xaml;
++using Microsoft.UI.Xaml.Controls;
++using Windows.ApplicationModel.DataTransfer;
++using System.Runtime.CompilerServices;
++
++namespace DeskBox.Controls.WidgetContents;
++
++public sealed partial class FileSurfaceContent
++{
++    private const string ReferencePathPrefix = "SoulDesk.DesktopGrid.Path/1|";
++    private static readonly ConditionalWeakTable<DragEventArgs, object> s_referenceDropEvents = new();
++
++    private void ShowReferenceItemMenu(WidgetItem item, Windows.Foundation.Point pointer, ReferenceGridPreview workspace)
++    {
++        if (item is WidgetStackItem stack)
++        {
++            CreateStackFlyout(stack).ShowAt(Root, pointer);
++            return;
++        }
++        bool mapped = ViewModel.MappedFolderPath is not null;
++        if (!(mapped ? workspace.CanReadMappedFolder(item.Path) : workspace.IsFixturePath(item.Path)))
++            return;
++        var menu = new MenuFlyout();
++        var open = new MenuFlyoutItem { Text = "打开", Icon = new FontIcon { Glyph = "\uE8E5" } };
++        open.Click += async (_, _) =>
++        {
++            try
++            {
++                if (!item.IsFolder || !await ViewModel.NavigateIntoFolderAsync(item))
++                    await ViewModel.OpenItemAsync(item, IntPtr.Zero);
++            }
++            catch (Exception error) { App.Log($"打开格子项目失败 {error.Message}"); }
++        };
++        var reveal = new MenuFlyoutItem { Text = "定位原文件", Icon = new FontIcon { Glyph = "\uE8B7" } };
++        reveal.Click += (_, _) => ViewModel.ShowInExplorer(item);
++        var copy = new MenuFlyoutItem { Text = "复制原路径", Icon = new FontIcon { Glyph = "\uE8C8" } };
++        copy.Click += (_, _) => CopyPathsToClipboard([item]);
++        menu.Items.Add(open);
++        menu.Items.Add(reveal);
++        menu.Items.Add(copy);
++        var active = GetActiveItemsView();
++        if (!active.SelectedItems.Contains(item))
++        {
++            active.SelectedItems.Clear();
++            active.SelectedItems.Add(item);
++        }
++        var selected = GetSelectedItems().Where(member => member is not WidgetStackItem).ToArray();
++        if (ViewModel.FileStacksEnabled && selected.Length > 1)
++        {
++            var create = new MenuFlyoutItem { Text = "创建自定义堆栈", Icon = new FontIcon { Glyph = "\uE81E" } };
++            create.Click += (_, _) => ApplyStackProjectionChange(() => ViewModel.CreateManualStack(selected));
++            menu.Items.Add(create);
++        }
++        if (ViewModel.CanRemoveItemFromStack(item))
++        {
++            var unstack = new MenuFlyoutItem { Text = "移出堆栈", Icon = new FontIcon { Glyph = "\uE74D" } };
++            unstack.Click += (_, _) => ApplyStackProjectionChange(() => ViewModel.RemoveItemFromStack(item));
++            menu.Items.Add(unstack);
++        }
++        menu.Items.Add(CreateStackSettingsMenu());
++        if (!mapped)
++        {
++            var release = new MenuFlyoutItem { Text = "移出格子", Icon = new FontIcon { Glyph = "\uE74D" } };
++            release.Click += async (_, _) =>
++            {
++                try { await workspace.ReleaseAsync(WidgetId, item.Path); }
++                catch (Exception error) { App.Log($"移出格子失败 {error.Message}"); }
++            };
++            menu.Items.Add(new MenuFlyoutSeparator());
++            menu.Items.Add(release);
++        }
++        menu.ShowAt(Root, pointer);
++    }
++
++    private static DataPackageOperation ReferenceEffect(DataPackageOperation allowed) =>
++        allowed.HasFlag(DataPackageOperation.Link) ? DataPackageOperation.Link :
++        allowed.HasFlag(DataPackageOperation.Copy) ? DataPackageOperation.Copy : DataPackageOperation.None;
++
++    internal static void SetReferenceDropEffect(DragEventArgs args, WidgetViewModel model)
++    {
++        var paths = GetPackagePaths(args.DataView);
++        bool supported = ReferenceGridPreview.Current is { } workspace && paths.Any(workspace.IsFixturePath) ||
++            paths.Length == 0 && (args.DataView.Contains(StandardDataFormats.StorageItems) ||
++                args.AllowedOperations.HasFlag(DataPackageOperation.Link) && args.DataView.Contains(StandardDataFormats.Text));
++        args.AcceptedOperation = supported && model.MappedFolderPath is null
++            ? ReferenceEffect(args.AllowedOperations) : DataPackageOperation.None;
++        args.DragUIOverride.Caption = args.AcceptedOperation == DataPackageOperation.None ? "" : "添加到格子";
++        args.Handled = true;
++    }
++
++    private void ApplyReferenceDragOver(DragEventArgs args)
++    {
++        SetReferenceDropEffect(args, ViewModel);
++        if (args.AcceptedOperation != DataPackageOperation.None)
++            ApplyDropVisual(FileDropVisualState.Accept);
++        else
++            ApplyDropVisual(FileDropVisualState.None);
++    }
++
++    internal static Task ApplyReferenceHostDropAsync(WidgetViewModel model, DragEventArgs args) =>
++        ImportReferenceDropAsync(model, args, _ => null);
++
++    private async Task ApplyReferenceDropAsync(DragEventArgs args)
++    {
++        try
++        {
++            await ImportReferenceDropAsync(ViewModel, args,
++                paths => CaptureExternalDropInsertionIndex(paths, args.GetPosition(GetActiveItemsView())));
++        }
++        finally
++        {
++            ResetExternalDropPreview();
++            ApplyDropVisual(FileDropVisualState.None);
++        }
++    }
++
++    private static async Task ImportReferenceDropAsync(WidgetViewModel model, DragEventArgs args,
++        Func<string[], int?> insertion)
++    {
++        if (!s_referenceDropEvents.TryAdd(args, new object()))
++            return;
++        var deferral = args.GetDeferral();
++        args.Handled = true;
++        args.AcceptedOperation = DataPackageOperation.None;
++        string[] eligible;
++        int? index;
++        try
++        {
++            var effect = ReferenceEffect(args.AllowedOperations);
++            if (model.MappedFolderPath is not null || effect == DataPackageOperation.None ||
++                ReferenceGridPreview.Current is not { } workspace)
++                return;
++            var paths = GetPackagePaths(args.DataView);
++            if (paths.Length == 0 && args.AllowedOperations.HasFlag(DataPackageOperation.Link) &&
++                args.DataView.Contains(StandardDataFormats.Text))
++            {
++                try
++                {
++                    var text = await args.DataView.GetTextAsync();
++                    if (text.StartsWith(ReferencePathPrefix, StringComparison.Ordinal))
++                        paths = [text[ReferencePathPrefix.Length..]];
++                }
++                catch (System.Runtime.InteropServices.COMException error)
++                {
++                    App.Log($"读取桌面格子原路径拖放格式失败 {error.Message}");
++                }
++            }
++            if (paths.Length == 0 && args.DataView.Contains(StandardDataFormats.StorageItems))
++                paths = (await args.DataView.GetStorageItemsAsync()).Select(item => item.Path).ToArray();
++            eligible = paths.Where(workspace.IsFixturePath).ToArray();
++            if (eligible.Length == 0)
++                return;
++            index = insertion(eligible);
++            args.AcceptedOperation = effect;
++        }
++        catch (Exception error)
++        {
++            App.Log($"读取原地拖放项目失败 {error}");
++            return;
++        }
++        finally
++        {
++            deferral.Complete();
++        }
++
++        // 文件拖放源可能在 Windows 的拖放循环里，先完成系统回调再等待引擎确认。
++        try { await model.ImportPathsAsync(eligible, preferredManualIndex: index); }
++        catch (Exception error) { App.Log($"保存原地拖放项目失败 {error}"); }
++    }
++}
++#endif
+diff --git a/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs b/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs
+new file mode 100644
+index 0000000..cb161cb
+--- /dev/null
++++ b/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs
+@@ -0,0 +1,172 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Controls;
++using DeskBox.Controls.WidgetContents;
++using DeskBox.Models;
++using DeskBox.Services;
++using Microsoft.UI.Xaml.Controls;
++using System.Diagnostics;
++
++namespace DeskBox.Views;
++
++public sealed partial class ContentWidgetWindow
++{
++    private bool SubmitReferenceGridSetting(string setting, string? value = null, string action = "edit")
++    {
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(_config, setting, value, action) is not { } request)
++            return false;
++        _ = ReferenceGridPreview.ObserveBoxEditAsync(request);
++        return true;
++    }
++
++    internal void ApplyReferenceTitle(string name)
++    {
++        _config.Name = name;
++        if (CurrentContent is FileWidgetContentAdapter file)
++            file.ViewModel.Name = name;
++        _titleViewModel.RefreshDisplayName();
++        Title = name + " · 桌面格子";
++    }
++
++    internal void ApplyReferenceArtwork()
++    {
++        InvalidateCustomAssetSources();
++        ApplyCustomWidgetBackground();
++        ApplyCustomTitleIconAndGroupIdentity();
++    }
++
++    internal void ApplyReferenceLocks(bool position, bool size)
++    {
++        if (_config.IsPositionLocked == position && _config.IsSizeLocked == size)
++            return;
++        _config.IsPositionLocked = position;
++        _config.IsSizeLocked = size;
++        ApplyLockActionIconState();
++    }
++
++    private MenuFlyout CreateReferenceGridCreationMenu()
++    {
++        var flyout = new MenuFlyout();
++        AppendReferenceGridCreation(flyout);
++        return flyout;
++    }
++
++    private void AppendReferenceGridCreation(MenuFlyout flyout)
++    {
++        flyout.Items.Add(ReferenceGridMenuItem("新建格子", "\uE710", () => SubmitReferenceGridSetting("new", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem("映射目录", "\uE8B7", () => SubmitReferenceGridSetting("map", action: "show")));
++    }
++
++    private MenuFlyout CreateReferenceGridMenu()
++    {
++        var renderer = ReferenceGridPreview.Current!.Renderer!;
++        var localization = App.Current.LocalizationService;
++        var flyout = new MenuFlyout();
++        var rename = new MenuFlyoutItem { Text = localization.T("Common.Rename"), Icon = new FontIcon { Glyph = "\uE8AC" } };
++        bool renameRequested = false;
++        rename.Click += (_, _) => renameRequested = true;
++        flyout.Closed += (_, _) =>
++        {
++            if (renameRequested) DispatcherQueue.TryEnqueue(StartTitleRename);
++        };
++        flyout.Items.Add(rename);
++        var layout = new MenuFlyoutSubItem { Text = "视图", Icon = new FontIcon { Glyph = "\uE8A9" } };
++        layout.Items.Add(CreateToggleMenuItem("列表视图", "\uE8FD", _config.ViewMode == DeskBox.Models.ViewMode.List,
++            value => SubmitReferenceGridSetting("list", value.ToString())));
++        layout.Items.Add(CreateToggleMenuItem("按类型堆叠", "\uE81E", ReferenceGridPreview.UsesAutomaticStacks(_config),
++            value => SubmitReferenceGridSetting("stack", value.ToString())));
++        flyout.Items.Add(layout);
++
++        var sort = new MenuFlyoutSubItem { Text = "排序", Icon = new FontIcon { Glyph = "\uE8CB" } };
++        var tab = renderer.State.Boxes.SelectMany(box => box.Box.Tabs).FirstOrDefault(tab => tab.Id == _config.Id);
++        foreach (var (value, label) in new[] { ("manual", "手动排序"), ("name", "名称"), ("type", "类型"),
++                     ("date", "修改时间"), ("size", "大小") })
++        {
++            bool selected = tab?.Sort == value;
++            string direction = selected && value != "manual" ? (_config.SortDescending ? " ↓" : " ↑") : "";
++            sort.Items.Add(CreateToggleMenuItem(label + direction, "", selected,
++                _ => SubmitReferenceGridSetting("sort", value)));
++        }
++        flyout.Items.Add(sort);
++        if (tab?.Folder is { } folder)
++        {
++            flyout.Items.Add(ReferenceGridMenuItem("在资源管理器打开映射目录", "\uE8B7", () =>
++            {
++                try { Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
++                catch (Exception error) { App.Log($"打开映射目录失败 {error.Message}"); }
++            }));
++            flyout.Items.Add(FileWidgetFolderOpenBehaviorMenuBuilder.Create(_config, localization,
++                value => SubmitReferenceGridSetting("folder-open", value)));
++        }
++        else
++        {
++            flyout.Items.Add(ReferenceGridMenuItem("添加桌面项目", "\uE710", () => SubmitReferenceGridSetting("pick", action: "show")));
++            flyout.Items.Add(ReferenceGridMenuItem("自动归类规则", "\uE74C", () => SubmitReferenceGridSetting("rules", action: "show")));
++        }
++        flyout.Items.Add(new MenuFlyoutSeparator());
++        var style = new MenuFlyoutSubItem { Text = "样式", Icon = new FontIcon { Glyph = "\uE790" } };
++        style.Items.Add(ReferenceGridMenuItem("底色与透明度", "\uE790", () => SubmitReferenceGridSetting("appearance", action: "show")));
++        Action? showCustomizer = null;
++        style.Items.Add(ReferenceGridMenuItem("标题图标", "\uE890", () => showCustomizer = ShowTitleIconCustomizer));
++        style.Items.Add(ReferenceGridMenuItem("背景图", "\uE91B", () => showCustomizer = ShowWidgetBackgroundCustomizer));
++        flyout.Closed += (_, _) =>
++        {
++            if (showCustomizer is not null) DispatcherQueue.TryEnqueue(() => showCustomizer());
++        };
++        flyout.Items.Add(style);
++        flyout.Items.Add(WidgetCollapseMenuBuilder.Create(_config, SettingsService.Settings.WidgetCollapseBehavior,
++            SettingsService.Settings.WidgetCompactExpansionDirection, localization, SetCollapseBehaviorOverride,
++            SetCompactExpansionDirectionOverride, ResetCompactWidthOverride));
++        flyout.Items.Add(WidgetLockMenuBuilder.Create(localization, _config.IsPositionLocked, _config.IsSizeLocked,
++            SetPositionLocked, SetSizeLocked));
++        var binding = new MenuFlyoutSubItem { Text = "显示器绑定", Icon = new FontIcon { Glyph = "\uE7F4" } };
++        var savedScreen = renderer.State.Boxes.FirstOrDefault(box => box.Box.Active == _config.Id)?.Box.BoundMonitor;
++        void AddMonitor(string title, string? id) =>
++            binding.Items.Add(CreateToggleMenuItem(title, "", savedScreen == id, _ => SubmitReferenceGridSetting("bind", id)));
++        AddMonitor("跟随拖动", null);
++        AddMonitor("始终在主屏", "@primary");
++        foreach (var display in renderer.State.Displays ?? []) AddMonitor(display.Name, display.Id);
++        if (savedScreen is not (null or "@primary") && (renderer.State.Displays ?? []).All(display => display.Id != savedScreen))
++            binding.Items.Add(new MenuFlyoutItem { Text = "已绑定显示器离线", IsEnabled = false });
++        flyout.Items.Add(binding);
++        WidgetGroupMenuBuilder.Append(flyout, _config, App.Current.WidgetManager, localization);
++        if (renderer.State.Boxes.Select(placement => placement.Box).FirstOrDefault(box =>
++            box.Tabs.Length > 1 && box.Active == _config.Id) is { } group)
++        {
++            var appearance = new MenuFlyoutSubItem { Text = "格子组显示", Icon = new FontIcon { Glyph = "\uE8A9" } };
++            foreach (var (mode, label) in new[] { (WidgetGroupNavigationStyles.Tabs, "并排标签"),
++                         (WidgetGroupNavigationStyles.Stack, "堆叠标签") })
++            {
++                appearance.Items.Add(CreateToggleMenuItem(label, "", mode == WidgetGroupNavigationStyles.Normalize(
++                    group.GroupNavigation, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-navigation", mode)));
++            }
++            appearance.Items.Add(new MenuFlyoutSeparator());
++            foreach (var (mode, label) in new[] { (WidgetGroupTitleDisplayModes.IconAndText, "图标和标题"),
++                         (WidgetGroupTitleDisplayModes.IconOnly, "仅图标"), (WidgetGroupTitleDisplayModes.TextOnly, "仅标题") })
++            {
++                appearance.Items.Add(CreateToggleMenuItem(label, "", mode == WidgetGroupTitleDisplayModes.Normalize(
++                    group.GroupTitleDisplay, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-title", mode)));
++            }
++            appearance.Items.Add(new MenuFlyoutSeparator());
++            appearance.Items.Add(CreateToggleMenuItem("滚轮切换标签", "", group.GroupWheel ?? true,
++                value => SubmitReferenceGridSetting("group-wheel", value.ToString())));
++            appearance.Items.Add(CreateToggleMenuItem("悬停切换标签", "", group.GroupHover,
++                value => SubmitReferenceGridSetting("group-hover", value.ToString())));
++            flyout.Items.Add(appearance);
++        }
++        flyout.Items.Add(new MenuFlyoutSeparator());
++        AppendReferenceGridCreation(flyout);
++        flyout.Items.Add(ReferenceGridMenuItem("全局搜索", "\uE721", () => SubmitReferenceGridSetting("search", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem("桌面整理", "\uE74C", () => SubmitReferenceGridSetting("organization", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem("管理桌面格子", "\uE713", () => SubmitReferenceGridSetting("manager", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem("隐藏格子", "\uE890", () => SubmitReferenceGridSetting("hidden", bool.TrueString)));
++        return flyout;
++    }
++
++    private static MenuFlyoutItem ReferenceGridMenuItem(string text, string glyph, Action action)
++    {
++        var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
++        item.Click += (_, _) => action();
++        return item;
++    }
++}
++#endif
+diff --git a/src/DeskBox/ViewModels/WidgetViewModel.SortingAndWatchers.cs b/src/DeskBox/ViewModels/WidgetViewModel.SortingAndWatchers.cs
+index 4e8a21a..80300eb 100644
+--- a/src/DeskBox/ViewModels/WidgetViewModel.SortingAndWatchers.cs
++++ b/src/DeskBox/ViewModels/WidgetViewModel.SortingAndWatchers.cs
+@@ -14,6 +14,21 @@ public partial class WidgetViewModel
+ {
+     public void SetSortMode(WidgetSortMode mode)
+     {
++#if SOULDESK_GRID_PREVIEW
++        string referenceMode = mode switch
++        {
++            WidgetSortMode.Name => "name",
++            WidgetSortMode.Type => "type",
++            WidgetSortMode.Size => "size",
++            WidgetSortMode.DateModified => "date",
++            _ => "manual",
++        };
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(Config, "sort", referenceMode) is { } request)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(request);
++            return;
++        }
++#endif
+         if (Config.SortMode == mode)
+         {
+             // Toggle direction only for auto sort modes (not Manual).
+diff --git a/src/DeskBox/ViewModels/WidgetViewModel.Stacks.cs b/src/DeskBox/ViewModels/WidgetViewModel.Stacks.cs
+index 4fa10d4..5ae995b 100644
+--- a/src/DeskBox/ViewModels/WidgetViewModel.Stacks.cs
++++ b/src/DeskBox/ViewModels/WidgetViewModel.Stacks.cs
+@@ -1726,6 +1726,9 @@ public partial class WidgetViewModel
+         WidgetFileStackSettings.SetStackOrder(
+             Config,
+             _stackOrder);
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(Config, "stack-settings", ReferenceGridPreview.StackKeys);
++#endif
+         _settingsService.UpdateWidget(
+             Config,
+             notifySubscribers: false);
+@@ -1748,6 +1751,9 @@ public partial class WidgetViewModel
+         WidgetFileStackSettings.SetStackOrder(
+             Config,
+             _stackOrder);
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(Config, "stack-settings", ReferenceGridPreview.StackKeys);
++#endif
+         _settingsService.UpdateWidget(
+             Config,
+             notifySubscribers: false);
+@@ -1758,6 +1764,9 @@ public partial class WidgetViewModel
+ 
+     private void PersistStackOverrides()
+     {
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(Config, "stack-settings", ReferenceGridPreview.StackKeys);
++#endif
+         _settingsService.UpdateWidget(Config, notifySubscribers: false);
+         ApplyStackSettings();
+         OnPropertyChanged(nameof(FileStacksFollowGlobalDefaults));
+@@ -1992,8 +2001,14 @@ public partial class WidgetViewModel
+             return;
+         }
+ 
++        bool automaticStacking =
++#if SOULDESK_GRID_PREVIEW
++            ReferenceGridPreview.Current?.Renderer is not null
++            ? ReferenceGridPreview.UsesAutomaticStacks(Config) :
++#endif
++            _settingsService.Settings.FileStackAutoStacking;
+         IReadOnlyList<WidgetStackGroup> automaticGroups =
+-            FileStacksEnabled && _settingsService.Settings.FileStackAutoStacking
++            FileStacksEnabled && automaticStacking
+             ? WidgetStackGroupingService.Group(
+                 Items,
+                 FileStackGroupBy,
+diff --git a/src/DeskBox/Services/ResizeGuideOverlayService.cs b/src/DeskBox/Services/ResizeGuideOverlayService.cs
+index 35d897e..0bd8899 100644
+--- a/src/DeskBox/Services/ResizeGuideOverlayService.cs
++++ b/src/DeskBox/Services/ResizeGuideOverlayService.cs
+@@ -242,13 +242,12 @@ public sealed class ResizeGuideOverlayService
+         IntPtr excludedHwnd)
+     {
+         var bounds = new List<WidgetSnapTarget>();
+-        var manager = App.Current?.WidgetManager;
+-        if (manager is null)
+-        {
+-            return bounds;
+-        }
+-
+-        foreach (var hwnd in manager.GetAllWidgetWindowHandles())
++        IEnumerable<IntPtr> handles = App.Current?.WidgetManager?.GetAllWidgetWindowHandles()
++#if SOULDESK_GRID_PREVIEW
++            ?? App.Current?.ReferenceGridWindowHandles()
++#endif
++            ?? [];
++        foreach (var hwnd in handles)
+         {
+             if (hwnd == excludedHwnd)
+             {
+@@ -344,7 +343,11 @@ public sealed class ResizeGuideOverlayService
+ 
+             FrameworkElement? root = key.Hwnd == _resizingWidgetHwnd
+                 ? _resizingWidgetRoot
+-                : App.Current?.WidgetManager?.GetWidgetRootElementByHandle(key.Hwnd);
++                : App.Current?.WidgetManager?.GetWidgetRootElementByHandle(key.Hwnd)
++#if SOULDESK_GRID_PREVIEW
++                    ?? App.Current?.ReferenceGridWindowRoot(key.Hwnd)
++#endif
++                ;
+             ShowHighlight(key.Hwnd, root, key.Edge);
+         }
+     }
+diff --git a/src/DeskBox/App.ReferenceLayout.cs b/src/DeskBox/App.ReferenceLayout.cs
+new file mode 100644
+index 0000000..005a657
+--- /dev/null
++++ b/src/DeskBox/App.ReferenceLayout.cs
+@@ -0,0 +1,156 @@
++#if SOULDESK_GRID_PREVIEW
++using DeskBox.Models;
++using DeskBox.Services;
++using DeskBox.Views;
++using Microsoft.UI.Windowing;
++using System.Text.Json;
++using Windows.Graphics;
++
++namespace DeskBox;
++
++public partial class App
++{
++    private (ContentWidgetWindow Window, RectInt32 Bounds)[]? _referenceMove;
++    private Dictionary<string, RectInt32>? _referenceMoveCommit;
++    private readonly Dictionary<string, RectInt32> _referenceCapsules = new(StringComparer.Ordinal);
++    private string? _referenceStackRules;
++
++    private void UpdateReferenceStackRules(ReferenceGridRenderer.Snapshot state)
++    {
++        var rules = state.StackRules ?? [];
++        string signature = JsonSerializer.Serialize(rules);
++        if (_referenceStackRules == signature) return;
++        _referenceStackRules = signature;
++        SettingsService.Settings.FileStackCustomRules = rules.Select(rule => new FileStackCustomRule
++        {
++            Id = rule.Id, Name = rule.Name, Extensions = [.. rule.Extensions]
++        }).ToList();
++        foreach (var item in _referenceWindows)
++            item.Content.ViewModel.RefreshReferenceStackRules();
++    }
++
++    private static DisplayArea ReferenceDisplay(RectInt32 bounds) => DisplayArea.GetFromPoint(
++        new PointInt32(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2), DisplayAreaFallback.Nearest);
++
++    internal bool BeginReferenceCoordinatedMove(IntPtr sourceHandle)
++    {
++        if (_referenceMove is not null || _referenceGrid?.Renderer?.State is not { CoordinatedMove: true, Visible: true })
++            return false;
++        var source = _referenceWindows.FirstOrDefault(entry => entry.Window.WindowHandle == sourceHandle).Window;
++        if (source is null || !source.CanParticipateInCoordinatedMove) return false;
++        var display = ReferenceDisplay(source.CoordinatedMoveBounds).DisplayId;
++        var entries = _referenceWindows.Where(entry => entry.Window.CanParticipateInCoordinatedMove &&
++                ReferenceDisplay(entry.Window.CoordinatedMoveBounds).DisplayId == display)
++            .Select(entry => (entry.Window, entry.Window.CoordinatedMoveBounds)).ToArray();
++        if (entries.Length < 2) return false;
++        _referenceMove = entries;
++        foreach (var (window, _) in entries)
++            window.BeginCoordinatedMoveParticipation(window.WindowHandle == sourceHandle);
++        return true;
++    }
++
++    internal bool UpdateReferenceCoordinatedMove(int dx, int dy)
++    {
++        if (_referenceMove is not { } entries) return false;
++        var start = WidgetCoordinatedMoveCalculator.GetUnion(entries.Select(entry => entry.Bounds));
++        var delta = WidgetCoordinatedMoveCalculator.ClampDelta(start, new PointInt32(dx, dy), ReferenceDisplay(start).WorkArea);
++        foreach (var (window, original) in entries)
++        {
++            var moved = new RectInt32(original.X + delta.X, original.Y + delta.Y, original.Width, original.Height);
++            window.PrepareCoordinatedMoveBounds(moved);
++            try { window.ApplyCoordinatedMoveBoundsFallback(moved); }
++            finally { window.CompleteCoordinatedMoveBoundsPreview(); }
++        }
++        return true;
++    }
++
++    internal bool CompleteReferenceCoordinatedMove(IntPtr source, bool moved)
++    {
++        if (_referenceMove is not { } entries) return false;
++        _referenceMove = null;
++        _referenceMoveCommit = new Dictionary<string, RectInt32>(StringComparer.Ordinal);
++        try
++        {
++            foreach (var (window, _) in entries)
++                window.CompleteCoordinatedMoveParticipation(moved, window.WindowHandle == source);
++            if (_referenceMoveCommit.Count >= 2 && _referenceGrid?.Renderer is { } renderer)
++                _ = CommitReferenceMovesAsync(renderer, _referenceMoveCommit.Select(
++                    item => new ReferenceGridRenderer.Move(item.Key, item.Value)).ToArray());
++        }
++        finally { _referenceMoveCommit = null; }
++        return true;
++    }
++
++    internal bool CollectReferenceCoordinatedPlacement(WidgetConfig config, RectInt32 bounds)
++    {
++        if (_referenceMoveCommit is null || !config.Metadata.TryGetValue(ReferenceGridPreview.BoxKey, out var id))
++            return false;
++        _referenceMoveCommit[id] = bounds;
++        return true;
++    }
++
++    private async Task CommitReferenceMovesAsync(ReferenceGridRenderer renderer, ReferenceGridRenderer.Move[] moves)
++    {
++        try
++        {
++            if (await renderer.SubmitMovesAsync(moves)) return;
++        }
++        catch (Exception error) { Log($"提交联动布局失败 {error.Message}"); }
++        foreach (var entry in _referenceWindows)
++        {
++            var saved = _referenceDefinitions.FirstOrDefault(item => item.Box ==
++                entry.Window.Config.Metadata[ReferenceGridPreview.BoxKey]);
++            if (saved is not null)
++                entry.Window.ApplyReferenceGridBounds(saved.Bounds, saved.Bounds, saved.Width, saved.Height);
++        }
++    }
++
++    private void ArrangeReferenceCapsules(ReferenceGridRenderer.Snapshot state)
++    {
++        if (!state.Visible || _referenceMove is not null) return;
++        var byId = _referenceWindows
++            .ToDictionary(entry => entry.Window.Config.Metadata[ReferenceGridPreview.BoxKey], entry => entry.Window);
++        foreach (string previous in _referenceCapsules.Keys.Where(id =>
++            !byId.TryGetValue(id, out var window) || !window.ReferenceCapsuleEligible).ToArray())
++        {
++            if (byId.TryGetValue(previous, out var window)) window.ClearCompactArrangementConstraint();
++            _referenceCapsules.Remove(previous);
++        }
++        if (state.CapsuleBar is null)
++        {
++            foreach (var previous in _referenceCapsules.Keys)
++                if (byId.TryGetValue(previous, out var window)) window.ResetReferenceCapsule();
++            _referenceCapsules.Clear();
++            return;
++        }
++
++        var entries = state.Boxes.Where(item => byId.TryGetValue(item.Box.Id, out var window) && window.ReferenceCapsuleEligible)
++            .Select(item =>
++            {
++                var bounds = new RectInt32(item.X, item.Y, item.Width, item.Height);
++                return (Id: item.Box.Id, Display: ReferenceDisplay(bounds), Bounds: byId[item.Box.Id].ReferenceCapsuleBounds(bounds));
++            });
++        foreach (var group in entries.GroupBy(entry => entry.Display.DisplayId))
++        {
++            var items = group.ToArray();
++            var work = items[0].Display.WorkArea;
++            bool vertical = state.CapsuleBar == "Vertical";
++            var order = items.OrderBy(item => vertical ? item.Bounds.Y : item.Bounds.X).ToArray();
++            var start = order[0].Bounds;
++            int spacing = (int)Math.Round(state.CapsuleSpacing * WidgetPositioningService.GetDpiScale(work));
++            var arrangement = WidgetCapsuleArrangementCalculator.Calculate(order.Select(item =>
++                new WidgetCapsuleArrangementItem(item.Id, item.Bounds.Width, item.Bounds.Height)).ToArray(),
++                work, new PointInt32(start.X, start.Y), WidgetPositionAnchors.LeftTop, state.CapsuleBar, spacing);
++            foreach (var item in arrangement)
++            {
++                var window = byId[item.Key];
++                if (!window.ReferenceCapsuleReady) continue;
++                if (!_referenceCapsules.TryGetValue(item.Key, out var previous) || previous != item.Value ||
++                    window.CoordinatedMoveBounds != item.Value)
++                    window.ApplyCompactArrangement(item.Value, constrainSize: true);
++                _referenceCapsules[item.Key] = item.Value;
++            }
++        }
++    }
++}
++#endif
+diff --git a/src/DeskBox/Services/WidgetTitleIconAssetStore.cs b/src/DeskBox/Services/WidgetTitleIconAssetStore.cs
+index 2d7c700..fb2a28b 100644
+--- a/src/DeskBox/Services/WidgetTitleIconAssetStore.cs
++++ b/src/DeskBox/Services/WidgetTitleIconAssetStore.cs
+@@ -47,7 +47,15 @@ public sealed class WidgetTitleIconAssetStore
+     private readonly string _rootDirectory;
+     private readonly SemaphoreSlim _recentGate = new(1, 1);
+ 
++#if SOULDESK_GRID_PREVIEW
++    private static WidgetTitleIconAssetStore? s_reference;
++    public static WidgetTitleIconAssetStore Current =>
++        ReferenceGridPreview.Current is { Renderer: not null } grid
++            ? s_reference ??= new WidgetTitleIconAssetStore(grid.AssetDirectory)
++            : s_default;
++#else
+     public static WidgetTitleIconAssetStore Current => s_default;
++#endif
+ 
+     public WidgetTitleIconAssetStore(string dataDirectory)
+     {
+@@ -183,6 +191,14 @@ public sealed class WidgetTitleIconAssetStore
+         }
+ 
+         string directory = GetAssetDirectory(widgetId);
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null)
++        {
++            for (DirectoryInfo? path = new(directory); path is not null; path = path.Parent)
++                if (path.Exists && (path.Attributes & FileAttributes.ReparsePoint) != 0)
++                    throw new InvalidOperationException("格子图像目录不能包含重解析点。");
++        }
++#endif
+         Directory.CreateDirectory(directory);
+         string targetPath = Path.Combine(
+             directory,
+diff --git a/src/DeskBox/Views/WidgetWindowBase.TitleIconCustomization.cs b/src/DeskBox/Views/WidgetWindowBase.TitleIconCustomization.cs
+index 4192c4a..27b1b80 100644
+--- a/src/DeskBox/Views/WidgetWindowBase.TitleIconCustomization.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.TitleIconCustomization.cs
+@@ -15,6 +15,10 @@ namespace DeskBox.Views;
+ 
+ public abstract partial class WidgetWindowBase
+ {
++#if SOULDESK_GRID_PREVIEW
++    private void PersistReferenceArtwork() =>
++        ReferenceGridPreview.Current?.PersistMetadata(Config, "artwork", ReferenceGridPreview.ArtworkKeys);
++#endif
+     private string? _customTitleIconSourcePath;
+     private ImageSource? _customTitleIconSource;
+     private string? _customTitleIconLoadFailedPath;
+@@ -334,6 +338,9 @@ public abstract partial class WidgetWindowBase
+         customizer.Initialize(Config);
+         customizer.Changed += (_, _) =>
+         {
++#if SOULDESK_GRID_PREVIEW
++            PersistReferenceArtwork();
++#endif
+             InvalidateCustomAssetSources();
+             ApplyCustomTitleIconAndGroupIdentity();
+         };
+@@ -371,6 +378,9 @@ public abstract partial class WidgetWindowBase
+         customizer.Initialize(Config);
+         customizer.Changed += (_, _) =>
+         {
++#if SOULDESK_GRID_PREVIEW
++            PersistReferenceArtwork();
++#endif
+             InvalidateCustomAssetSources();
+             ApplyCustomWidgetBackground();
+             ApplyCustomTitleIcon();
+@@ -411,6 +421,9 @@ public abstract partial class WidgetWindowBase
+                     settingsService.UpdateWidget(Config, notifySubscribers: false);
+                 }
+ 
++#if SOULDESK_GRID_PREVIEW
++                PersistReferenceArtwork();
++#endif
+                 InvalidateCustomAssetSources();
+                 ApplyCustomTitleIconAndGroupIdentity();
+                 DispatcherQueue.TryEnqueue(() => reopenCustomizer());
+@@ -459,6 +472,9 @@ public abstract partial class WidgetWindowBase
+                     settingsService.UpdateWidget(Config, notifySubscribers: false);
+                 }
+ 
++#if SOULDESK_GRID_PREVIEW
++                PersistReferenceArtwork();
++#endif
+                 InvalidateCustomAssetSources();
+                 ApplyCustomWidgetBackground();
+                 DispatcherQueue.TryEnqueue(() => reopenCustomizer());
+diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
+index 9d47311..4e04487 100644
+--- a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
++++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
+@@ -1694,8 +1694,7 @@ public sealed partial class FileSurfaceContent
+         MenuFlyoutItem editRules = CreateMenuItem(
+             "Settings.FileStacks.Custom.Rules.Title",
+             "\uE713");
+-        editRules.Click += (_, _) =>
+-            App.Current.ShowSettings("FileStackSettings");
++        editRules.Click += (_, _) => ShowFileStackRuleSettings();
+         menu.Items.Add(editRules);
+ 
+         return menu;
+@@ -1946,12 +1945,23 @@ public sealed partial class FileSurfaceContent
+         MenuFlyoutItem editRules = CreateMenuItem(
+             "Settings.FileStacks.Custom.Rules.Title",
+             "\uE713");
+-        editRules.Click += (_, _) =>
+-            App.Current.ShowSettings("FileStackSettings");
++        editRules.Click += (_, _) => ShowFileStackRuleSettings();
+         flyout.Items.Add(editRules);
+         return flyout;
+     }
+ 
++    private void ShowFileStackRuleSettings()
++    {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(ViewModel.Config, "stack-rules", action: "show") is { } request)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(request);
++            return;
++        }
++#endif
++        App.Current.ShowSettings("FileStackSettings");
++    }
++
+     private string GetDisabledStackDisplayName(
+         string key,
+         IReadOnlyDictionary<string, string> names)
+diff --git a/src/DeskBox/ViewModels/WidgetViewModel.ItemHydration.cs b/src/DeskBox/ViewModels/WidgetViewModel.ItemHydration.cs
+index 69c0a73..8418f81 100644
+--- a/src/DeskBox/ViewModels/WidgetViewModel.ItemHydration.cs
++++ b/src/DeskBox/ViewModels/WidgetViewModel.ItemHydration.cs
+@@ -20,6 +20,12 @@ public partial class WidgetViewModel
+             return;
+         }
+ 
++#if SOULDESK_GRID_PREVIEW
++        // 普通格子只保存成员引用，只有映射格子才使用实际目录。
++        if (Config.Metadata.ContainsKey(ReferenceGridPreview.GroupKey))
++            return;
++#endif
++
+         Config.FollowsDefaultStoragePath = true;
+         Config.ManagedFolderName = string.IsNullOrWhiteSpace(Config.ManagedFolderName)
+             ? CreateAvailableManagedFolderName(Config.Name, Config.Id)
