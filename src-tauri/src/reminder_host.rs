@@ -186,7 +186,11 @@ pub(crate) async fn island_surface(
             });
         }
         if let Some(id) = history_to_open {
-            windows::dispatch(&app, move |app| windows::notification_history(app, &id));
+            if core.market_role.is_notifier() {
+                crate::market_runtime::open_history(&app, &id)?;
+            } else {
+                windows::dispatch(&app, move |app| windows::notification_history(app, &id));
+            }
         }
         // 读取与悬停不等待窗口协调，窗口创建正在等待本页就绪。
         if schedule {
@@ -194,13 +198,21 @@ pub(crate) async fn island_surface(
         }
         let result = result?;
         if let Some((id, demo_key)) = market_event_to_open {
-            windows::serialized(&app, |app| {
-                if let Some(key) = &demo_key {
-                    windows::open_market_alert_chart(app, key)
-                } else {
-                    crate::alert_notice::open(app, &id, crate::alerts::NotificationChannel::Island)
-                }
-            })?;
+            if core.market_role.is_notifier() {
+                crate::market_runtime::open_chart(&app, &id)?;
+            } else {
+                windows::serialized(&app, |app| {
+                    if let Some(key) = &demo_key {
+                        windows::open_market_alert_chart(app, key)
+                    } else {
+                        crate::alert_notice::open(
+                            app,
+                            &id,
+                            crate::alerts::NotificationChannel::Island,
+                        )
+                    }
+                })?;
+            }
             let closed = (|| {
                 let _native = core.store.native_actions.lock().map_err(err)?;
                 service.engine.lock().map_err(err)?.dismiss_opened_market(
@@ -431,8 +443,10 @@ pub(crate) async fn notification_settings(
                         SettingsCommand::ClearHistory => reminder_store::clear_island_history(&core.store)?,
                         _ => reminder_store::prune_island_history(&core.store, now)?,
                     }
-                    let engine = service.engine.lock().map_err(err)?;
-                    let pending = engine.pending().into_iter().map(reminder_store::island_pending_entry).collect::<Vec<_>>();
+                    let mut pending = service.pending_notices()?;
+                    if core.market_role.is_desktop() {
+                        pending.extend(crate::market_runtime::pending_notices(&core.store)?);
+                    }
                     let days = reminder_store::island_history_days(&*core.store.db.lock().map_err(err)?)?;
                     return Ok(json!({
                         "shown": reminder_store::island_history(&core.store)?,
@@ -772,6 +786,34 @@ impl Service {
         }
         self.schedule(app);
         Ok(())
+    }
+
+    pub(crate) fn sync_market(&self, app: &AppHandle) -> AppResult<()> {
+        let core = app.state::<Core>();
+        {
+            let _native = core.store.native_actions.lock().map_err(err)?;
+            let mut engine = self.engine.lock().map_err(err)?;
+            let clock = self.clock()?;
+            engine.sync(&core.store, clock)?;
+            if windows::hidden(app)? {
+                engine.cancel_notifications();
+            } else {
+                engine.show_queued(&core.store, clock)?;
+            }
+        }
+        self.schedule(app);
+        Ok(())
+    }
+
+    pub(crate) fn pending_notices(&self) -> AppResult<Vec<Value>> {
+        Ok(self
+            .engine
+            .lock()
+            .map_err(err)?
+            .pending()
+            .into_iter()
+            .map(reminder_store::island_pending_entry)
+            .collect())
     }
     pub fn show_target(
         &self,

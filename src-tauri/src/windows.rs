@@ -278,6 +278,8 @@ pub(crate) fn build(
     let shared_notice = notice && app.get_webview_window("edge").is_some();
     let result = create(if shared_notice {
         "edge"
+    } else if notice && core.market_role.is_notifier() {
+        "market-notification-overlay"
     } else if notice {
         "notification-overlay"
     } else {
@@ -421,6 +423,10 @@ pub fn save_all_geometry(app: &AppHandle) -> AppResult<()> {
 pub(crate) fn quit(app: &AppHandle) -> AppResult<()> {
     crate::component_lifecycle::before_exit(app);
     save_all_geometry(app)?;
+    let core = app.state::<Core>();
+    if core.market_role.is_desktop() {
+        crate::market_runtime::stop(&core.store)?;
+    }
     crate::component_lifecycle::after_geometry_saved(app);
     crate::integration::trace_lifecycle(
         app,
@@ -596,7 +602,13 @@ fn active_panel_instances(app: &AppHandle) -> AppResult<Vec<serde_json::Value>> 
         .collect())
 }
 pub(crate) fn hidden(app: &AppHandle) -> AppResult<bool> {
-    Ok(app.state::<Core>().visibility.lock().map_err(err)?.hidden)
+    let core = app.state::<Core>();
+    if core.market_role.is_notifier() {
+        let db = core.store.db.lock().map_err(err)?;
+        Ok(crate::reminder_store::preference(&db, "hidden_all")?.as_deref() == Some("true"))
+    } else {
+        Ok(core.visibility.lock().map_err(err)?.hidden)
+    }
 }
 pub fn changed(app: &AppHandle) -> AppResult<()> {
     app.emit("host:changed", ()).map_err(err)
@@ -986,7 +998,7 @@ fn island_reconcile(
         (label, existing)
     };
     let active = || service.target(Surface::Notice).as_ref() == Some(&target);
-    let result = (|| {
+    let result: AppResult<()> = (|| {
         let w = if let Some(w) = window {
             w
         } else {
@@ -1002,9 +1014,11 @@ fn island_reconcile(
         let mut snapshot = service.notice_snapshot(&target)?;
         let show_window = snapshot["hidden"] != true;
         let click_through = snapshot["opacity"] == 0;
-        snapshot["marketAudioMuted"] =
-            serde_json::json!(core.integration.as_ref().is_some_and(|c| c.market_check()));
-        app.emit_to(&label, "host:island-content", snapshot)
+        snapshot["marketAudioMuted"] = serde_json::json!(
+            core.integration.as_ref().is_some_and(|c| c.market_check())
+                || crate::market_runtime::is_check(app)
+        );
+        app.emit_to(&label, "host:island-content", &snapshot)
             .map_err(err)?;
         wait_ready_while(app, &label, &target.event, Duration::ZERO, active)?;
         let (x, y, width, height) = saved_island_geometry(app, target.height)?;
@@ -1022,7 +1036,11 @@ fn island_reconcile(
                 native::hide(&w)?;
             }
             Ok(())
-        })
+        })?;
+        if show_window {
+            crate::market_runtime::visible_evidence(app, &w, &target.event, &snapshot)?;
+        }
+        Ok(())
     })();
     {
         let key = format!("{label}/{}", target.event);

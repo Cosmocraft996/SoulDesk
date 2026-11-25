@@ -304,7 +304,98 @@ pub struct Feed {
 pub struct Input {
     pub observation: Observation,
     pub context: Context,
+    pub trade_id: Option<u64>,
 }
+
+// 仅由带独立目录标记的验收进程调用，经正式解析器和有界警报流提交。
+pub(crate) async fn isolation_fixture(
+    feed: &Feed,
+    tx: mpsc::Sender<Input>,
+    start: u64,
+) -> AppResult<()> {
+    let key = MarketKey::binance("BTCUSDT", PriceKind::Mark);
+    for (index, price) in ["99", "101", "99"].into_iter().enumerate() {
+        if index > 0 {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+        }
+        isolation_quote(
+            feed,
+            &tx,
+            &key,
+            price,
+            start + index as u64 * 80,
+            index as u64 + 1,
+            None,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn isolation_quote(
+    feed: &Feed,
+    tx: &mpsc::Sender<Input>,
+    key: &MarketKey,
+    price: &str,
+    time: u64,
+    ordinal: u64,
+    id: Option<u64>,
+) -> AppResult<()> {
+    let catalog = vec![Contract {
+        symbol: key.symbol.clone(),
+        base_asset: "BTC".into(),
+        quote_asset: "USDT".into(),
+        market: key.market.clone(),
+        contract_type: "PERPETUAL".into(),
+        status: "TRADING".into(),
+        tick_size: "0.01".into(),
+    }];
+    let keys = HashSet::from([key.clone()]);
+    let generation = feed.generation.load(Ordering::SeqCst);
+    *feed.source_clock.lock().map_err(err)? = Some((now_ms().max(time), Instant::now()));
+    let symbol = key.symbol.to_ascii_lowercase();
+    let frame = match id {
+        Some(id) => json!({"stream":format!("{symbol}@aggTrade"),
+            "data":{"e":"aggTrade","s":key.symbol,"p":price,"E":time,"T":time,"a":id,"st":1}}),
+        None => json!({"stream":format!("{symbol}@markPrice@1s"),
+            "data":{"e":"markPriceUpdate","s":key.symbol,"p":price,"E":time,"st":1}}),
+    };
+    let Some(Parsed::Price {
+        key,
+        price,
+        time,
+        trade_id,
+    }) = parse_market_frame(&frame.to_string(), &catalog, &keys, feed.market)?
+    else {
+        return Err("正式行情解析器没有接收测试报价".into());
+    };
+    let received_mono_ms = feed.origin.elapsed().as_millis() as u64;
+    tx.send(Input {
+        trade_id,
+        observation: Observation {
+            key,
+            price,
+            source_utc_ms: time,
+            received_mono_ms,
+            generation,
+            ordinal,
+            recovered: ordinal == 1,
+            valid: true,
+        },
+        context: Context {
+            clock: Clock {
+                utc_ms: now_ms(),
+                mono_ms: received_mono_ms,
+            },
+            generation,
+            source_now_utc_ms: time,
+        },
+    })
+    .await
+    .map_err(err)
+}
+
 impl Feed {
     pub fn new(
         network: NetworkConfig,
@@ -645,7 +736,7 @@ async fn connection(
                             let recovered=last.get(&key).is_none_or(|(_,_,_,at)|mono.saturating_sub(*at)>10_000);
                             let direction=last.get(&key).filter(|_|!recovered).map(|(_,previous,_,_)| alerts::parse_price(&price).unwrap().cmp(&alerts::parse_price(previous).unwrap()) as i8);
                             last.insert(key.clone(),(time,price.clone(),trade_id,mono));ordinal+=1;
-                            let input=Input{observation:Observation{key:key.clone(),price:price.clone(),source_utc_ms:time,received_mono_ms:mono,generation,ordinal,recovered,valid:true},context:Context{clock:Clock{utc_ms:now_ms(),mono_ms:mono},generation,source_now_utc_ms:source_now}};
+                            let input=Input{trade_id,observation:Observation{key:key.clone(),price:price.clone(),source_utc_ms:time,received_mono_ms:mono,generation,ordinal,recovered,valid:true},context:Context{clock:Clock{utc_ms:now_ms(),mono_ms:mono},generation,source_now_utc_ms:source_now}};
                             if tx.try_send(input).is_err(){feed.state.lock().map_err(err)?.queue_overflows+=1;return Err("QUEUE_OVERFLOW: 警报输入队列已满，停止该代次并恢复".into());}
                             let mut s=feed.state.lock().map_err(err)?;s.received+=1;s.source_now=Some(source_now);s.quotes.retain(|q|q.key!=key&&keys.contains(&q.key));s.quotes.push(Quote{key,price,source_utc_ms:time,generation,quality:"fresh".into(),direction,received:mono});
                         },None=>{}
@@ -697,6 +788,7 @@ mod tests {
             valid: true,
         };
         tx.try_send(Input {
+            trade_id: None,
             observation: quote,
             context: Context {
                 clock: Clock {

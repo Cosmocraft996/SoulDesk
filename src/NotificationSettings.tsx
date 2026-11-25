@@ -29,7 +29,7 @@ const samples = [
   ['call-sound', '模拟来电（播放声音）'], ['market-up', '行情上涨'], ['market-down', '行情下跌'],
 ] as const;
 type Sample = typeof samples[number][0];
-type HistoryEntry = { id: string; kind: Sample | 'market-alert'; title: string; message: string; source: string; at?: number; shownAt?: number };
+type HistoryEntry = { id: string; kind: Sample | 'market-alert'; title: string; message: string; source: string; at?: number; shownAt?: number; triggeredAt?: number };
 type History = { shown: HistoryEntry[]; pending: HistoryEntry[]; retentionDays: number };
 type HistoryCommand = { type: 'history-retention'; days: number } | { type: 'clear-history' };
 type Command =
@@ -250,6 +250,7 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
         return <li key={entry.id} ref={selected ? selectedEntry : undefined} aria-current={selected || undefined}>
           <div><strong>{entry.title || entry.message}</strong><time dateTime={date.toISOString()}>{date.toLocaleString()}</time></div>
           {entry.title && entry.message && <p>{entry.message}</p>}
+          {entry.triggeredAt !== undefined && <p>重启补报 · 触发于 {new Date(entry.triggeredAt).toLocaleString('zh-CN', { hour12: false, fractionalSecondDigits: 3, second: '2-digit', minute: '2-digit', hour: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit' })}</p>}
           <small>{entry.source} · {entry.kind === 'market-alert' ? '行情通知' : entry.kind === 'call' ? '来电' : samples.find(([kind]) => kind === entry.kind)?.[1]}</small>
         </li>;
       })}

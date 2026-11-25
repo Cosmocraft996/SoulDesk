@@ -496,6 +496,12 @@ fn save_watchlist_checked(
     save_watchlist(store, instance, symbols)
 }
 pub fn persistent_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
+    let mut keys = watchlist_keys(store)?;
+    keys.extend(rule_keys(store)?);
+    Ok(keys)
+}
+
+fn watchlist_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
     let mut keys = HashSet::new();
     {
         let db = store.db.lock().map_err(err)?;
@@ -507,12 +513,15 @@ pub fn persistent_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
             keys.extend(item.keys());
         }
     }
-    for (r, state) in alert_store::list_rules(store)? {
-        if r.enabled && !state.completed {
-            keys.insert(r.key);
-        }
-    }
     Ok(keys)
+}
+
+pub(crate) fn rule_keys(store: &Store) -> AppResult<HashSet<MarketKey>> {
+    Ok(alert_store::list_rules(store)?
+        .into_iter()
+        .filter(|(rule, state)| rule.enabled && !state.completed)
+        .map(|(rule, _)| rule.key)
+        .collect())
 }
 fn active_contract(service: &Service, key: &MarketKey) -> AppResult<()> {
     key.validate()?;
@@ -792,7 +801,7 @@ pub async fn gateway(
     result
 }
 
-fn market_log_status(feed: &market::Feed) -> AppResult<String> {
+pub(crate) fn market_log_status(feed: &market::Feed) -> AppResult<String> {
     #[derive(serde::Serialize)]
     struct Status<'a> {
         error: Option<&'a str>,
@@ -836,57 +845,113 @@ pub fn start_feed(
     });
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let mut engine = alert_store::Engine::default();
-        let mut maintenance = std::time::Instant::now();
-        while let Some(mut input) = inputs.recv().await {
-            if handle.state::<Core>().quitting.load(Ordering::Relaxed) {
-                break;
-            }
-            let _guard = feed.processing.lock().unwrap_or_else(|e| e.into_inner());
-            if input.observation.generation != feed.generation.load(Ordering::SeqCst) {
-                continue;
-            }
-            let core = handle.state::<Core>();
-            let Some(source_now) = feed.source_now() else {
-                continue;
-            };
-            input.context.clock = crate::alerts::Clock {
-                utc_ms: crate::store::now_ms(),
-                mono_ms: feed.origin.elapsed().as_millis() as u64,
-            };
-            input.context.source_now_utc_ms = source_now;
-            if maintenance.elapsed() > std::time::Duration::from_secs(30) {
-                if let Err(e) = engine.retain_rules(&core.store) {
-                    core.report(e);
-                }
-                maintenance = std::time::Instant::now();
-            }
-            match engine.process(&core.store, &input.observation, input.context) {
-                Ok(events) => {
-                    for event in events {
-                        if let Err(e) = core.store.log(
-                            "alert",
-                            &format!(
-                                "事件 {} {} {} {:?} {:?}",
-                                event.id,
-                                event.key.market,
-                                event.key.symbol,
-                                event.key.price_kind,
-                                event.reason
-                            ),
-                        ) {
-                            core.report(e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    core.report(format!("警报状态写入失败，停止行情代次：{e}"));
-                    feed.desired.send_modify(|d| d.reconnect += 1);
-                    feed.generation.fetch_add(1, Ordering::SeqCst);
-                }
-            }
+        let core = handle.state::<Core>();
+        if core.market_role.is_desktop() {
+            // 展示连接按视图订阅，规则由独立核心专属判断。
+            while inputs.recv().await.is_some() {}
+        } else {
+            consume_feed(core.store.clone(), feed, inputs, None).await;
         }
     });
+}
+
+pub(crate) async fn consume_feed(
+    store: Arc<Store>,
+    feed: Arc<market::Feed>,
+    mut inputs: tokio::sync::mpsc::Receiver<market::Input>,
+    recovery: Option<Arc<crate::market_replay::Session>>,
+) {
+    let mut engine = alert_store::Engine::default();
+    let mut maintenance = std::time::Instant::now();
+    let mut checkpoints = HashMap::<MarketKey, std::time::Instant>::new();
+    let report = |error: &str| {
+        if let Err(log_error) = store.log("error", error) {
+            eprintln!("行情后台：{error}（保存日志失败：{log_error}）");
+        }
+    };
+    while let Some(mut input) = inputs.recv().await {
+        if feed.cancel.is_cancelled() {
+            break;
+        }
+        if input.observation.generation != feed.generation.load(Ordering::SeqCst) {
+            continue;
+        }
+        let Some(source_now) = feed.source_now() else {
+            continue;
+        };
+        input.context.clock = crate::alerts::Clock {
+            utc_ms: crate::store::now_ms(),
+            mono_ms: feed.origin.elapsed().as_millis() as u64,
+        };
+        input.context.source_now_utc_ms = source_now;
+        if !crate::alerts::quote_fresh(&input.observation, input.context) {
+            continue;
+        }
+        if maintenance.elapsed() > std::time::Duration::from_secs(30) {
+            if let Err(e) = engine.retain_rules(&store) {
+                report(&e);
+            }
+            if recovery.is_some() {
+                if let Ok(keys) = rule_keys(&store) {
+                    checkpoints.retain(|key, _| keys.contains(key));
+                }
+            }
+            maintenance = std::time::Instant::now();
+        }
+        let key = &input.observation.key;
+        let last = checkpoints.get(key);
+        let save_checkpoint = last.is_none_or(|at| at.elapsed().as_secs() >= 1);
+        let progress = if let Some(recovery) = &recovery {
+            let network = feed.desired.borrow().network.clone();
+            match recovery
+                .prepare(&store, &input, last.is_none(), save_checkpoint, &network)
+                .await
+            {
+                Ok(progress) => Some(progress),
+                Err(error) => {
+                    report(&format!("行情补查断点读取失败：{error}"));
+                    feed.reconnect();
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        // 补查期间收到了重连或退出时，丢弃过期的初始化结果。
+        let _guard = feed.processing.lock().unwrap_or_else(|e| e.into_inner());
+        if feed.cancel.is_cancelled()
+            || input.observation.generation != feed.generation.load(Ordering::SeqCst)
+        {
+            continue;
+        }
+        match engine.process_live(&store, &input.observation, input.context, progress) {
+            Ok(events) => {
+                if recovery.is_some() && save_checkpoint {
+                    checkpoints.insert(key.clone(), std::time::Instant::now());
+                }
+                for event in events {
+                    if let Err(e) = store.log(
+                        "alert",
+                        &format!(
+                            "事件 {} {} {} {:?} {:?}",
+                            event.id,
+                            event.key.market,
+                            event.key.symbol,
+                            event.key.price_kind,
+                            event.reason
+                        ),
+                    ) {
+                        report(&e);
+                    }
+                }
+            }
+            Err(e) => {
+                report(&format!("警报状态写入失败，停止行情代次：{e}"));
+                feed.desired.send_modify(|d| d.reconnect += 1);
+                feed.generation.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }
 }
 pub fn start(app: &AppHandle) {
     let handle = app.clone();
@@ -914,7 +979,7 @@ pub fn start(app: &AppHandle) {
                     core.report(error);
                 }
             }
-            if cleanup_due || prune_alert_backlog {
+            if !core.market_role.is_desktop() && (cleanup_due || prune_alert_backlog) {
                 let source_now = core
                     .business
                     .feed
@@ -932,7 +997,8 @@ pub fn start(app: &AppHandle) {
                         }
                     };
             }
-            if cleanup_due {
+            // 多进程共用数据库时由 SQLite 自动回收，避免额外检查点与其他进程竞争。
+            if cleanup_due && !core.market_role.is_desktop() {
                 if let Err(error) = core.store.reclaim_idle_wal() {
                     core.report(error);
                 }
@@ -941,7 +1007,11 @@ pub fn start(app: &AppHandle) {
                 let sessions = core.sessions.0.lock().map_err(err)?;
                 let mut subs = core.business.subscriptions.lock().map_err(err)?;
                 subs.retain(|_, s| sessions.contains_key(&s.owner));
-                let mut keys = persistent_keys(&core.store)?;
+                let mut keys = if core.market_role.is_desktop() {
+                    watchlist_keys(&core.store)?
+                } else {
+                    persistent_keys(&core.store)?
+                };
                 for sub in subs.values() {
                     keys.extend(sub.keys.iter().cloned());
                 }
@@ -976,6 +1046,9 @@ pub fn start(app: &AppHandle) {
             let _ = handle.emit("business:changed", ());
         }
     });
+    if app.state::<Core>().market_role.is_desktop() {
+        return;
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {

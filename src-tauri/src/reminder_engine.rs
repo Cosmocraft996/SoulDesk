@@ -118,7 +118,8 @@ pub(crate) struct MarketNotice {
     pub price: String,
     pub threshold: String,
     pub demo: bool,
-    triggered_at: u64,
+    pub replayed: bool,
+    pub(crate) triggered_at: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -687,7 +688,12 @@ impl Engine {
                 price: event.observed_price.clone(),
                 threshold: event.threshold.clone(),
                 demo: false,
-                triggered_at: event.created_utc_ms,
+                replayed: event.replayed,
+                triggered_at: if event.replayed {
+                    event.source_utc_ms
+                } else {
+                    event.created_utc_ms
+                },
             },
             clock,
         );
@@ -1138,6 +1144,7 @@ impl Engine {
                     price: price.into(),
                     threshold: price.into(),
                     demo: true,
+                    replayed: false,
                     triggered_at: clock.wall_ms,
                 },
                 clock,
@@ -1496,6 +1503,7 @@ mod tests {
             source_utc_ms: number,
             created_utc_ms: number,
             reason: Reason::Crossed,
+            replayed: false,
             notification: true,
             notification_channel: NotificationChannel::Island,
             sound: false,
@@ -1748,16 +1756,33 @@ mod tests {
 
     #[test]
     fn high_frequency_notification_histories_reuse_disk_space_after_reaching_caps() {
+        check_high_frequency_history_storage(false);
+    }
+
+    #[test]
+    fn high_frequency_notification_histories_reuse_space_with_split_market_connections() {
+        check_high_frequency_history_storage(true);
+    }
+
+    fn check_high_frequency_history_storage(split_market: bool) {
         use crate::alerts::{self, Direction, MarketKey, Mode, Observation, Rule};
         use crate::{alert_store, reminder_store};
 
-        let (store, _) = fixture();
-        alert_store::history_settings(&store, Some(&Value::Null)).unwrap();
+        let root =
+            std::env::temp_dir().join(format!("souldesk-history-load-{}", uuid::Uuid::new_v4()));
+        let store = Store::open_desktop(root, split_market).unwrap();
+        let market = split_market
+            .then(|| Store::open_market_worker(store.root.clone(), "market-test").unwrap());
+        let delivery = split_market
+            .then(|| Store::open_market_worker(store.root.clone(), "notice-test").unwrap());
+        let market = market.as_ref().unwrap_or(&store);
+        let delivery = delivery.as_ref().unwrap_or(&store);
+        alert_store::history_settings(market, Some(&Value::Null)).unwrap();
         let key = MarketKey::spot("BTCUSDT");
         let mut alerts = alert_store::Engine::default();
         for index in 0..30 {
             alert_store::save_rule(
-                &store,
+                market,
                 &Rule {
                     id: uuid::Uuid::new_v4().to_string(),
                     revision: 1,
@@ -1808,7 +1833,7 @@ mod tests {
                     generation: 1,
                     source_now_utc_ms: now,
                 };
-                let events = alerts.process(&store, &quote, context).unwrap();
+                let events = alerts.process(market, &quote, context).unwrap();
                 assert_eq!(events.len(), 30);
                 total += events.len();
                 let mut db = store.db.lock().unwrap();
@@ -1827,7 +1852,7 @@ mod tests {
                 .unwrap()
                 .is_empty());
             let mut batches = 1;
-            while alert_store::prune_history(&store, now, &[], Some(now)).unwrap() {
+            while alert_store::prune_history(delivery, now, &[], Some(now)).unwrap() {
                 batches += 1;
                 assert!(batches <= 3);
             }
@@ -1848,11 +1873,13 @@ mod tests {
                 .unwrap()
                 .iter()
                 .all(|row| row["at"].as_u64().unwrap() >= now - 33_000));
-            store.reclaim_idle_wal().unwrap();
+            if !split_market {
+                store.reclaim_idle_wal().unwrap();
+            }
             samples.push((size("workbench.sqlite"), size("workbench.sqlite-wal")));
         }
         println!(
-            "隔离高频验收 触发和灵动记录各 {total} 条，每轮清理后主库及 WAL 字节数 {samples:?}"
+            "隔离高频验收 分进程连接={split_market} 触发和灵动记录各 {total} 条，每轮清理后主库及 WAL 字节数 {samples:?}"
         );
         let baseline = samples[3].0;
         assert!(samples[4..]

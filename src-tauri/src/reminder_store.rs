@@ -275,10 +275,14 @@ fn island_entry(notice: &crate::reminder_engine::Notice, at: u64) -> Value {
                 (_, NoticeKind::Reminder) if notice.break_seconds.is_some() => "久坐提醒",
                 _ => "灵动通知",
             });
-    json!({
+    let mut entry = json!({
         "id": notice.id, "kind": notice.kind, "title": notice.title,
         "message": notice.message, "source": source, "at": at,
-    })
+    });
+    if let Some(alert) = notice.market_alert.as_ref().filter(|alert| alert.replayed) {
+        entry["triggeredAt"] = json!(alert.triggered_at);
+    }
+    entry
 }
 
 pub(crate) fn island_pending_entry(notice: &crate::reminder_engine::Notice) -> Value {

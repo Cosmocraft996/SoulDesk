@@ -166,6 +166,7 @@ pub struct Store {
     /// 原生提醒/计时操作与共享切源串行；通知调用期间不持SQLite锁。
     pub(crate) native_actions: Mutex<()>,
     log_lock: Mutex<()>,
+    log_name: &'static str,
 }
 
 impl Store {
@@ -198,20 +199,26 @@ impl Store {
         let _lock = self.log_lock.lock().map_err(err)?;
         let dir = self.root.join("logs");
         std::fs::create_dir_all(&dir).map_err(err)?;
-        let path = dir.join("current.jsonl");
+        let path = dir.join(format!("{}.jsonl", self.log_name));
+        let rotated = |index| {
+            dir.join(if self.log_name == "current" {
+                format!("previous-{index}.jsonl")
+            } else {
+                format!("{}-{index}.jsonl", self.log_name)
+            })
+        };
         if std::fs::metadata(&path).is_ok_and(|m| m.len() >= 10 * 1024 * 1024) {
-            let oldest = dir.join("previous-4.jsonl");
+            let oldest = rotated(4);
             if oldest.is_file() {
                 std::fs::remove_file(&oldest).map_err(err)?;
             }
             for index in (1..=3).rev() {
-                let from = dir.join(format!("previous-{index}.jsonl"));
+                let from = rotated(index);
                 if from.is_file() {
-                    std::fs::rename(from, dir.join(format!("previous-{}.jsonl", index + 1)))
-                        .map_err(err)?;
+                    std::fs::rename(from, rotated(index + 1)).map_err(err)?;
                 }
             }
-            std::fs::rename(&path, dir.join("previous-1.jsonl")).map_err(err)?;
+            std::fs::rename(&path, rotated(1)).map_err(err)?;
         }
         let line = json!({"time":now_ms(),"category":category,"message":message.chars().take(2000).collect::<String>()});
         let mut file = std::fs::OpenOptions::new()
@@ -253,6 +260,10 @@ impl Store {
     }
 
     pub fn open(root: PathBuf) -> AppResult<Self> {
+        Self::open_desktop(root, false)
+    }
+
+    pub(crate) fn open_desktop(root: PathBuf, split_market: bool) -> AppResult<Self> {
         std::fs::create_dir_all(root.join("widgets")).map_err(err)?;
         let mut db = Connection::open(root.join("workbench.sqlite")).map_err(err)?;
         let version: u32 = db
@@ -342,14 +353,43 @@ impl Store {
             [],
         )
         .map_err(err)?;
-        db.execute_batch("UPDATE alert_events SET notification='unknown',notification_error='上次在递送中退出，系统结果不确定' WHERE notification='sending';
-          UPDATE alert_events SET sound='unknown',sound_error='上次在递送中退出，系统结果不确定' WHERE sound='sending';").map_err(err)?;
+        if !split_market {
+            Self::recover_market_deliveries(&db)?;
+        }
+        crate::market_replay::install(&db)?;
         // 待发送事件使用交易所校正UTC判断时效；启动时尚未校时，不能按本地墙钟提前过期。
         db.execute(
             "UPDATE test_events SET sound='unknown' WHERE sound='sending'",
             [],
         )
         .map_err(err)?;
+        Self::from_connection(root, db, "current")
+    }
+
+    pub(crate) fn open_market_worker(root: PathBuf, log_name: &'static str) -> AppResult<Self> {
+        use rusqlite::OpenFlags;
+        let db = Connection::open_with_flags(
+            root.join("workbench.sqlite"),
+            OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )
+        .map_err(err)?;
+        let version: u32 = db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(err)?;
+        if version != 4 {
+            return Err("行情后台需要由桌面程序准备当前版本的数据库".into());
+        }
+        db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
+            .map_err(err)?;
+        Self::from_connection(root, db, log_name)
+    }
+
+    pub(crate) fn recover_market_deliveries(db: &Connection) -> AppResult<()> {
+        db.execute_batch("UPDATE alert_events SET notification='unknown',notification_error='上次在递送中退出，系统结果不确定' WHERE notification='sending';
+          UPDATE alert_events SET sound='unknown',sound_error='上次在递送中退出，系统结果不确定' WHERE sound='sending';").map_err(err)
+    }
+
+    fn from_connection(root: PathBuf, db: Connection, log_name: &'static str) -> AppResult<Self> {
         db.pragma_update(None, "journal_size_limit", Self::WAL_RETAIN_BYTES)
             .map_err(err)?;
         Ok(Self {
@@ -357,6 +397,7 @@ impl Store {
             db: Mutex::new(db),
             native_actions: Mutex::new(()),
             log_lock: Mutex::new(()),
+            log_name,
         })
     }
 

@@ -202,6 +202,8 @@ Rust 全目标检查命令为 `node scripts/desktop.mjs check:rust --locked --al
 
 0.4.0 正式隔离验收：先构建，再执行 `node scripts/verify-desktop.mjs`。它使用正式 Core、包管理、窗口与后台，独立生成 `artifacts/desktop-integration-<运行标识>/` 和同名报告；检查非空 v3 迁移、真实外部包、切换/失败回滚、隐藏后台规则和重启。结束后保留普通管理及组件界面供最小人工观察；不安装、不打开正常库。此入口不是旧独立探针。
 
+行情警报进程隔离验收可在构建后运行 `node scripts/verify-market-isolation.mjs`。它用独立数据库启动正式程序的三个角色，阻塞主界面并注入短时触线行情，再模拟行情核心意外退出。报告核对 Windows 窗口可见性、显示延迟、原触发时间、缺口记录及子进程退出。验收使用模拟行情与历史响应。
+
 以下独立桌面平台探针保留供历史复现，日常运行不使用：先执行 `pnpm build:web`，再运行 `node scripts/desktop.mjs desktop`。脚本使用现有工具链构建独立二进制并嵌入本次前端资源，不启动正常 Core 或打开正常数据库。报告及同名专属 WebView 数据目录保存在 `artifacts/desktop-probe-<运行标识>`；仅本次探针的侧栏比例写入其目录。界面中的时钟/卡片是静态外观夹具，尚不能称为真实组件包验收。退出在界面中确认；未完成项和视觉失败会保留，不自动标通过。
 
 真实组件探针：先运行 `node scripts/build-example.mjs` 生成外部时钟/卡片 ZIP，再执行 `node scripts/desktop.mjs desktop --widgets`。复用同一承载与消息桥，试加载、实例和配置只写本次报告目录中的测试 SQLite；自动核对隐藏释放、侧栏往返、目标挂载后的受控失败恢复与系统关闭释放，再保留窗口供人工检查。本机隔离最小验证已通过；其报告本身不证明正式入口，0.4.0 正式集成另见11。

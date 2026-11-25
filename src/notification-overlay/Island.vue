@@ -16,6 +16,11 @@ const startAt = props.sampledAt;
 const now = computed(() => startAt + elapsed.value);
 const kind = computed(() => props.notification.kind);
 const market = computed(() => props.notification.marketAlert);
+const replayTime = computed(() => market.value?.replayed ? new Date(market.value.triggeredAt) : null);
+const replayLabel = computed(() => replayTime.value?.toLocaleString('zh-CN', {
+  hour12: false, fractionalSecondDigits: 3, second: '2-digit', minute: '2-digit',
+  hour: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit',
+}));
 let timer, drag;
 
 async function request(method, args = {}) {
@@ -59,14 +64,17 @@ onBeforeUnmount(() => clearInterval(timer));
   <article class="island" :class="kind" :style="{ height: `${height}px` }"
     @mouseenter="request('hover', { entered: true })" @mouseleave="request('hover', { entered: false })">
     <button class="history-hit" type="button" :aria-label="market ? '查看 K 线' : '查看通知历史'"
-      :title="market ? `${notification.title} · 警报价 ${market.threshold} · ${notification.message}` : undefined"
+      :title="market ? `${notification.title} · 警报价 ${market.threshold} · ${notification.message}${replayLabel ? ` · 重启补报 · 触发于 ${replayLabel}` : ''}` : undefined"
       @pointerdown="startDrag" @click="openNotice" />
     <div v-if="market" class="market-card">
       <div class="market-instrument">
         <strong>{{ market.key.symbol.replace(/USDT$/, '/USDT') }}</strong>
         <small>{{ market.demo ? '测试 · ' : '' }}{{ market.key.market === 'spot' ? '现货' : '永续' }} · {{ market.key.priceKind === 'mark' ? '标记价' : '成交价' }}</small>
       </div>
-      <strong class="market-move" :class="market.direction">{{ notification.message }}</strong>
+      <div class="market-result">
+        <strong class="market-move" :class="market.direction">{{ notification.message }}</strong>
+        <small v-if="replayTime">补报 {{ replayTime.toLocaleTimeString('zh-CN', { hour12: false }) }}</small>
+      </div>
     </div>
     <CountingNotification v-else-if="kind === 'countdown'" v-bind="notification" :now="now" />
     <AdvanceCountdownNotification v-else-if="kind === 'advance-countdown'" v-bind="notification" :now="now" @action="request('action', { action: $event })" />
@@ -112,6 +120,9 @@ onBeforeUnmount(() => clearInterval(timer));
 .market-instrument :is(strong, small) { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .market-instrument strong { font-size: 13px; }
 .market-instrument small { font-size: 10px; color: #bfc4c5; }
+.market-result { min-width: 0; }
+.market-result :is(strong, small) { display: block; }
+.market-result small { font-size: 10px; color: #bfc4c5; white-space: nowrap; }
 .market-move { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
 .market-move.up { color: #70df98; }
 .market-move.down { color: #ff878a; }

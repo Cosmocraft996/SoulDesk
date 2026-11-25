@@ -1,6 +1,7 @@
 //! 规则状态与逻辑事件原子保存；系统递送只能在提交之后开始。
 use crate::{
     alerts::{self, AlertEvent, Context, Observation, Rule, RuleState},
+    market_replay::{self, Coverage, Progress},
     store::{err, AppResult, Store},
 };
 use rusqlite::{params, Connection, OptionalExtension};
@@ -72,10 +73,21 @@ impl Engine {
         quote: &Observation,
         context: Context,
     ) -> AppResult<Vec<AlertEvent>> {
+        self.process_live(store, quote, context, None)
+    }
+
+    pub(crate) fn process_live(
+        &mut self,
+        store: &Store,
+        quote: &Observation,
+        context: Context,
+        progress: Option<Progress>,
+    ) -> AppResult<Vec<AlertEvent>> {
         let mut db = store.db.lock().map_err(err)?;
         let tx = db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(err)?;
+        let key = serde_json::to_string(&quote.key).map_err(err)?;
         let rows = {
             let mut query = tx
                 .prepare(
@@ -83,7 +95,7 @@ impl Engine {
                 )
                 .map_err(err)?;
             let rows = query
-                .query_map([serde_json::to_string(&quote.key).map_err(err)?], |r| {
+                .query_map([&key], |r| {
                     Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
                 })
                 .map_err(err)?;
@@ -91,9 +103,52 @@ impl Engine {
         };
         let mut updates = Vec::new();
         let mut events = Vec::new();
-        for (definition, persisted) in rows {
-            let rule: Rule = serde_json::from_str(&definition).map_err(err)?;
-            let loaded: RuleState = serde_json::from_str(&persisted).map_err(err)?;
+        let rows = rows
+            .into_iter()
+            .map(|(definition, persisted)| {
+                let rule: Rule = serde_json::from_str(&definition).map_err(err)?;
+                let state: RuleState = serde_json::from_str(&persisted).map_err(err)?;
+                Ok((rule, persisted, state))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        let mut changed = false;
+        let mut tracked = false;
+        let mut versions = market_replay::RuleVersions::new();
+        let progress = progress.filter(|_| alerts::quote_fresh(quote, context));
+        let coverage = progress
+            .as_ref()
+            .and_then(|progress| progress.coverage.as_ref());
+        let live_versions = || {
+            let mut versions = rows
+                .iter()
+                .filter(|(_, _, state)| !state.completed)
+                .map(|(rule, _, _)| (rule.id.clone(), rule.revision))
+                .collect::<Vec<_>>();
+            versions.sort_unstable();
+            versions
+        };
+        let replay = match coverage {
+            Some(Coverage::Verified { baseline, trades }) if baseline.rules == live_versions() => {
+                Some((baseline, trades))
+            }
+            _ => None,
+        };
+        if let Some(progress) = &progress {
+            if rows.iter().any(|(_, _, state)| !state.completed) {
+                let gap = match coverage {
+                    Some(Coverage::Gap { from, reason }) => Some((*from, *reason)),
+                    Some(Coverage::Verified { baseline, .. }) if replay.is_none() => {
+                        Some((Some(baseline.time), "停机前后的生效规则版本不一致"))
+                    }
+                    _ => None,
+                };
+                if let Some((from, reason)) = gap {
+                    market_replay::save_gap(&tx, &key, &progress.checkpoint, from, reason)?;
+                }
+            }
+        }
+        for (rule, persisted, loaded) in rows {
+            tracked |= !loaded.completed;
             let state = self
                 .states
                 .get(&rule.id)
@@ -107,7 +162,53 @@ impl Engine {
                 })
                 .map(|(_, state)| state)
                 .unwrap_or(&loaded);
-            let result = alerts::evaluate(&rule, state, quote, context)?;
+            let result = if let Some((baseline, trades)) = replay.filter(|_| !loaded.completed) {
+                let mut previous = loaded.clone();
+                previous.resume_from(baseline.time, &baseline.price, quote.generation)?;
+                let mut last_time = baseline.time;
+                let mut last_price = baseline.price.as_str();
+                for (index, trade) in trades.iter().enumerate() {
+                    let historical = Observation {
+                        key: quote.key.clone(),
+                        price: trade.price.clone(),
+                        source_utc_ms: trade.time,
+                        received_mono_ms: trade.time,
+                        generation: quote.generation,
+                        ordinal: index as u64 + 1,
+                        recovered: false,
+                        valid: true,
+                    };
+                    let recovered = alerts::evaluate(
+                        &rule,
+                        &previous,
+                        &historical,
+                        Context {
+                            clock: alerts::Clock {
+                                utc_ms: trade.time,
+                                mono_ms: trade.time,
+                            },
+                            generation: quote.generation,
+                            source_now_utc_ms: trade.time,
+                        },
+                    )?;
+                    if let Some(mut event) = recovered.event {
+                        event.replayed = true;
+                        insert_event(&tx, &event)?;
+                        events.push(event);
+                    }
+                    previous = recovered.state;
+                    last_time = trade.time;
+                    last_price = &trade.price;
+                }
+                previous.resume_from(last_time, last_price, quote.generation)?;
+                let continued = Observation {
+                    recovered: false,
+                    ..quote.clone()
+                };
+                alerts::evaluate(&rule, &previous, &continued, context)?
+            } else {
+                alerts::evaluate(&rule, state, quote, context)?
+            };
             if result.clock_shift {
                 store.log(
                     "clock_shift",
@@ -122,6 +223,7 @@ impl Engine {
             }
             let encoded = serde_json::to_string(&result.state).map_err(err)?;
             if encoded != persisted {
+                changed = true;
                 tx.execute(
                     "UPDATE alert_rules SET state=?1 WHERE id=?2 AND revision=?3",
                     params![encoded, rule.id, rule.revision],
@@ -132,7 +234,15 @@ impl Engine {
                 insert_event(&tx, &event)?;
                 events.push(event);
             }
+            if progress.is_some() && !result.state.completed {
+                versions.push((rule.id.clone(), rule.revision));
+            }
             updates.push((rule.id, (rule.revision, result.state)));
+        }
+        if let Some(mut progress) = progress.filter(|p| tracked && (p.save_checkpoint || changed)) {
+            versions.sort_unstable();
+            progress.checkpoint.rules = versions;
+            market_replay::save_checkpoint(&tx, &key, &progress.checkpoint)?;
         }
         tx.commit().map_err(err)?;
         // 只有事务提交成功才推进内存去重、单调时钟和运行状态。

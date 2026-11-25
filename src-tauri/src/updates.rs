@@ -155,10 +155,19 @@ async fn install(app: &AppHandle, expected: Option<&str>) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         windows::serialized(&handle, |app| {
             windows::save_all_geometry(app)?;
-            let backup = app.state::<Core>().store.backup()?;
+            let core = app.state::<Core>();
+            let backup = core.store.backup()?;
             change(app, |s| s.backup = Some(backup.display().to_string()))?;
             // 官方插件使用NSIS /UPDATE，不进入卸载/删除应用数据分支；启动失败会返回错误。
-            update.install(bytes).map_err(err)
+            if !core.market_role.is_desktop() {
+                return update.install(bytes).map_err(err);
+            }
+            let result = crate::market_runtime::pause_for_update(&core.store)
+                .and_then(|()| update.install(bytes).map_err(err));
+            if result.is_err() {
+                crate::market_runtime::resume(&core.store)?;
+            }
+            result
         })
     })
     .await

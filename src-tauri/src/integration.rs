@@ -38,6 +38,7 @@ impl Config {
                 | "widgetjs-resume"
                 | "widgetjs-manual"
                 | "official-gallery"
+                | "market-isolation"
         )
     }
 }
@@ -101,6 +102,7 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
         "--desktop-integration-widgetjs-manual" => "widgetjs-manual",
         "--desktop-integration-official-gallery" => "official-gallery",
         "--desktop-sandbox" => "manual",
+        "--desktop-integration-market-isolation" => "market-isolation",
         _ => return Err("未知桌面隔离参数".into()),
     };
     let path = PathBuf::from(
@@ -128,7 +130,12 @@ pub fn parse(args: &[String]) -> AppResult<Option<Config>> {
     }
     if matches!(
         mode,
-        "first" | "panel" | "panel-performance" | "widgetjs" | "official-gallery"
+        "first"
+            | "panel"
+            | "panel-performance"
+            | "widgetjs"
+            | "official-gallery"
+            | "market-isolation"
     ) {
         if root.exists() || path.exists() {
             return Err("不覆盖已存在的报告或测试目录".into());
@@ -160,6 +167,25 @@ fn rule(name: &str) -> Rule {
     }
 }
 pub fn prepare(c: &Config) -> AppResult<()> {
+    if c.mode == "market-isolation" {
+        std::fs::create_dir(&c.root).map_err(err)?;
+        std::fs::write(
+            c.root.join("isolated-test-data.marker"),
+            b"SoulDesk market process isolation",
+        )
+        .map_err(err)?;
+        let store = Store::open(c.root.clone())?;
+        store.save_preference(
+            crate::reminder_store::Channel::Island.preference_key(),
+            "true",
+        )?;
+        let mut rule = rule("进程隔离短时触线");
+        rule.threshold = "100".into();
+        rule.notification = true;
+        rule.notification_channel = alerts::NotificationChannel::Island;
+        alert_store::save_rule(&store, &rule, None)?;
+        return Ok(());
+    }
     if c.mode == "official-gallery" {
         std::fs::create_dir(&c.root).map_err(err)?;
         std::fs::write(
@@ -3752,6 +3778,10 @@ pub fn start(app: &AppHandle) {
     if c.mode == "manual" || c.mode == "widgetjs-manual" {
         return;
     }
+    if c.mode == "market-isolation" {
+        crate::market_runtime::start_isolation_check(app, c);
+        return;
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut report = if c.mode == "resume" || c.mode == "surface" || c.mode == "widgetjs-resume"
@@ -3805,6 +3835,7 @@ mod tests {
             "widgetjs",
             "widgetjs-resume",
             "official-gallery",
+            "market-isolation",
         ] {
             let config = Config {
                 root: PathBuf::new(),

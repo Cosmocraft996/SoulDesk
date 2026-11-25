@@ -50,6 +50,8 @@ mod labor;
 mod launcher;
 pub mod market;
 mod market_history;
+mod market_replay;
+mod market_runtime;
 mod media;
 pub mod network;
 mod notification_sdk;
@@ -166,6 +168,7 @@ pub struct Core {
     jobs: job_host::Service,
     clipboard: clipboard_host::Service,
     business: business::Service,
+    market_role: market_runtime::Role,
     coin_live: coin_live::Service,
     coin_index: coin::IndexCache,
     content_cache: content_cache::Service,
@@ -968,7 +971,9 @@ async fn business_settings(
     let core = app.state::<Core>();
     match action.as_str() {
         "get" => Ok(
-            json!({"config":core.store.preference("network").and_then(|v|serde_json::from_str::<Value>(&v).ok()).unwrap_or(json!({"mode":"system"})),"market":core.business.feed.snapshot()?}),
+            json!({"config":core.store.preference("network").and_then(|v|serde_json::from_str::<Value>(&v).ok()).unwrap_or(json!({"mode":"system"})),
+                "market":core.business.feed.snapshot()?,
+                "monitorGaps":market_replay::history(&core.store)?}),
         ),
         "set" => {
             let config = config.ok_or("INVALID_ARGUMENT: 缺少网络配置")?;
@@ -982,6 +987,9 @@ async fn business_settings(
             Ok(Value::Null)
         }
         "reconnect" => {
+            if core.market_role.is_desktop() {
+                market_runtime::request_reconnect(&core.store)?;
+            }
             core.business.reconnect();
             Ok(Value::Null)
         }
@@ -1588,27 +1596,19 @@ fn tray_panel_should_toggle(event: &TrayIconEvent, skip_release: &AtomicBool) ->
     }
 }
 
-fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri::{
-        menu::{Menu, MenuItem},
-        tray::TrayIconBuilder,
-    };
-    let args = std::env::args().collect::<Vec<_>>();
-    let integration = integration::parse(&args)?;
-    if let Some(config) = &integration {
-        integration::prepare(config)?;
-    }
-    let verification = verification::parse(&args)?;
-    let root = if let Some(config) = &integration {
-        config.root.clone()
-    } else {
-        match &verification {
-            Some(config) => config.root.clone(),
-            None => app.path().app_local_data_dir()?,
-        }
-    };
-    let store = Store::open(root)?;
-    reminder_store::migrate_notification_channel(&store)?;
+type FeedChannels = (
+    tokio::sync::watch::Receiver<market::Desired>,
+    tokio::sync::mpsc::Sender<market::Input>,
+    tokio::sync::mpsc::Receiver<market::Input>,
+);
+
+fn manage_core(
+    app: &mut tauri::App,
+    store: Store,
+    integration: Option<integration::Config>,
+    verification: Option<verification::Config>,
+    market_role: market_runtime::Role,
+) -> [FeedChannels; 2] {
     let config = store
         .preference("network")
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -1621,7 +1621,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let (spot, spot_rx, spot_tx, spot_inputs) = market::Feed::for_market(network, "spot");
     let hidden = store.preference("hidden_all").as_deref() == Some("true");
     let panel_locked = store.preference("panel_locked").as_deref() == Some("true");
-    let shortcut = panel_shortcut(&store);
     app.manage(Core {
         ai: Default::default(),
         assistant: Default::default(),
@@ -1634,6 +1633,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             subscriptions: Default::default(),
             network_ready: AtomicBool::new(network_ready),
         },
+        market_role,
         store: Arc::new(store),
         sessions: Default::default(),
         visibility: Mutex::new(windows::Visibility {
@@ -1675,6 +1675,48 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         pomodoro: Default::default(),
         pomodoro_windows: Default::default(),
     });
+    [
+        (market_rx, market_tx, market_inputs),
+        (spot_rx, spot_tx, spot_inputs),
+    ]
+}
+
+fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::{
+        menu::{Menu, MenuItem},
+        tray::TrayIconBuilder,
+    };
+    let args = std::env::args().collect::<Vec<_>>();
+    let integration = integration::parse(&args)?;
+    if let Some(config) = &integration {
+        integration::prepare(config)?;
+    }
+    let verification = verification::parse(&args)?;
+    let root = if let Some(config) = &integration {
+        config.root.clone()
+    } else {
+        match &verification {
+            Some(config) => config.root.clone(),
+            None => app.path().app_local_data_dir()?,
+        }
+    };
+    let split_market = verification.is_none()
+        && integration
+            .as_ref()
+            .is_none_or(|config| matches!(config.mode.as_str(), "manual" | "market-isolation"));
+    let store = Store::open_desktop(root, split_market)?;
+    reminder_store::migrate_notification_channel(&store)?;
+    let shortcut = panel_shortcut(&store);
+    let hidden = store.preference("hidden_all").as_deref() == Some("true");
+    let market_role = if split_market {
+        market_runtime::Role::Desktop
+    } else {
+        market_runtime::Role::InProcess
+    };
+    let channels = manage_core(app, store, integration, verification, market_role);
+    if split_market {
+        market_runtime::start_desktop(app.handle())?;
+    }
     let show = MenuItem::with_id(app, "show", "管理组件", true, None::<&str>)?;
     let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "panel", "切换组件面板", true, None::<&str>)?;
@@ -1807,7 +1849,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // 正常启动恢复桌面场景；显式隔离历史验收继续由其入口拥有。
     app.state::<Core>().keyboard.start(app.handle())?;
     app.state::<Core>().clipboard.start(app.handle())?;
-    if app.state::<Core>().verification.is_none() && !hidden {
+    if app.state::<Core>().verification.is_none()
+        && !hidden
+        && !market_runtime::is_check(app.handle())
+    {
         windows::dispatch(app.handle(), windows::restore);
     }
     let handle = app.handle().clone();
@@ -1851,20 +1896,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .is_none_or(|c| c.g2)
     {
         let core = app.state::<Core>();
-        business::start_feed(
-            app.handle(),
-            core.business.feed.clone(),
-            market_rx,
-            market_tx,
-            market_inputs,
-        );
-        business::start_feed(
-            app.handle(),
-            core.business.spot.clone(),
-            spot_rx,
-            spot_tx,
-            spot_inputs,
-        );
+        for (feed, (rx, tx, inputs)) in [&core.business.feed, &core.business.spot]
+            .into_iter()
+            .zip(channels)
+        {
+            business::start_feed(app.handle(), feed.clone(), rx, tx, inputs);
+        }
         business::start(app.handle());
     }
     Ok(())
@@ -1956,9 +1993,17 @@ mod exit_tests {
 }
 
 pub fn run() {
+    let args = std::env::args().collect::<Vec<_>>();
+    if let Some(result) = market_runtime::run_worker(&args) {
+        if let Err(error) = result {
+            eprintln!("SoulDesk 行情进程：{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    let integration = integration::parse(&args);
     verification::capture_start();
-    let panel_check = integration::parse(&std::env::args().collect::<Vec<_>>())
-        .is_ok_and(|c| c.is_some_and(|c| c.standalone_check()));
+    let panel_check = integration.is_ok_and(|c| c.is_some_and(|c| c.standalone_check()));
     let mut builder = tauri::Builder::default();
     // 专项检查必须先通过独立路径校验，且不注册全局快捷键、桌面监听或更新定时器。
     if !panel_check {

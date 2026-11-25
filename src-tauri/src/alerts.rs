@@ -189,6 +189,15 @@ pub struct RuleState {
     #[serde(skip)]
     last_clock: Option<Clock>,
 }
+impl RuleState {
+    pub(crate) fn resume_from(&mut self, time: u64, price: &str, generation: u64) -> AppResult<()> {
+        self.last_source = Some((time, parse_price(price)?));
+        self.last_input = Some((generation, 0));
+        self.last_clock = None;
+        self.cooldown_until_mono_ms = None;
+        Ok(())
+    }
+}
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
@@ -213,6 +222,8 @@ pub struct AlertEvent {
     pub source_utc_ms: u64,
     pub created_utc_ms: u64,
     pub reason: Reason,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub replayed: bool,
     pub notification: bool,
     #[serde(default, skip_serializing_if = "NotificationChannel::is_windows")]
     pub notification_channel: NotificationChannel,
@@ -229,6 +240,21 @@ pub enum IgnoreReason {
     Duplicate,
     OutOfOrder,
     MonotonicClockRegression,
+}
+
+pub(crate) fn quote_fresh(quote: &Observation, context: Context) -> bool {
+    quote.valid
+        && quote.generation == context.generation
+        && quote.received_mono_ms <= context.clock.mono_ms
+        && context.clock.mono_ms - quote.received_mono_ms <= FRESH_MS
+        && quote.source_utc_ms
+            <= context
+                .source_now_utc_ms
+                .saturating_add(FUTURE_TOLERANCE_MS)
+        && context
+            .source_now_utc_ms
+            .saturating_sub(quote.source_utc_ms)
+            <= FRESH_MS
 }
 pub struct Transition {
     pub state: RuleState,
@@ -267,17 +293,7 @@ pub fn evaluate(
     if !quote.valid {
         return Ok(ignored(state, IgnoreReason::Unavailable));
     }
-    if quote.received_mono_ms > context.clock.mono_ms
-        || context.clock.mono_ms - quote.received_mono_ms > FRESH_MS
-        || quote.source_utc_ms
-            > context
-                .source_now_utc_ms
-                .saturating_add(FUTURE_TOLERANCE_MS)
-        || context
-            .source_now_utc_ms
-            .saturating_sub(quote.source_utc_ms)
-            > FRESH_MS
-    {
+    if !quote_fresh(quote, context) {
         return Ok(ignored(state, IgnoreReason::Stale));
     }
     let price = parse_price(&quote.price)?;
@@ -432,6 +448,7 @@ pub fn evaluate(
             source_utc_ms: quote.source_utc_ms,
             created_utc_ms: context.source_now_utc_ms,
             reason,
+            replayed: false,
             notification: rule.notification,
             notification_channel: rule.notification_channel,
             sound: rule.sound,

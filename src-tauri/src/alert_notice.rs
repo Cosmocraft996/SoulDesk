@@ -212,12 +212,23 @@ pub(crate) fn content(event: &AlertEvent) -> (String, String) {
         (Reason::Reached, Direction::Up) => "向上到价",
         (Reason::Reached, Direction::Down) => "向下到价",
     };
+    let mut message = format!(
+        "{reason} · 触发 {} · 目标 {}",
+        event.observed_price, event.threshold
+    );
+    if event.replayed {
+        let when = chrono::DateTime::from_timestamp_millis(event.source_utc_ms as i64)
+            .map(|time| {
+                time.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M:%S%.3f")
+                    .to_string()
+            })
+            .unwrap_or_else(|| event.source_utc_ms.to_string());
+        message = format!("重启补报 · {when} · {message}");
+    }
     (
         format!("{} · {market} · {price}", event.key.symbol),
-        format!(
-            "{reason} · 触发 {} · 目标 {}",
-            event.observed_price, event.threshold
-        ),
+        message,
     )
 }
 
@@ -297,40 +308,53 @@ pub(crate) fn toast_xml(event: &AlertEvent) -> AppResult<::windows::Data::Xml::D
 }
 
 #[cfg(windows)]
-fn windows_notification(app: &AppHandle, event: &AlertEvent) -> AppResult<()> {
+pub(crate) fn windows_notification(
+    store: &crate::store::Store,
+    identifier: &str,
+    suppress_popup: bool,
+    event: &AlertEvent,
+) -> AppResult<()> {
     use crate::store::err;
     use ::windows::{
         core::HSTRING,
         UI::Notifications::{ToastNotification, ToastNotificationManager},
     };
-    let core = app.state::<Core>();
-    crate::reminder_store::ensure_windows_enabled(&core.store)?;
+    crate::reminder_store::ensure_windows_enabled(store)?;
     let toast = ToastNotification::CreateToastNotification(&toast_xml(event)?).map_err(err)?;
     toast
         .SetTag(&HSTRING::from(toast_tag(&event.id)))
         .map_err(err)?;
     toast.SetGroup(&HSTRING::from(TOAST_GROUP)).map_err(err)?;
-    if core
-        .integration
-        .as_ref()
-        .is_some_and(|config| config.market_check())
-    {
+    if suppress_popup {
         // 隔离检查读取操作中心记录，不弹出会打断用户工作的横幅。
         toast.SetSuppressPopup(true).map_err(err)?;
     }
-    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(&app.config().identifier))
+    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(identifier))
         .and_then(|notifier| notifier.Show(&toast))
         .map_err(err)
 }
 
 #[cfg(not(windows))]
-fn windows_notification(_: &AppHandle, _: &AlertEvent) -> AppResult<()> {
+pub(crate) fn windows_notification(
+    _: &crate::store::Store,
+    _: &str,
+    _: bool,
+    _: &AlertEvent,
+) -> AppResult<()> {
     Err("当前平台未验证实际警报通知适配器".into())
 }
 
 pub(crate) fn deliver(app: &AppHandle, event: &AlertEvent) -> AppResult<()> {
+    let core = app.state::<Core>();
     match event.notification_channel {
-        NotificationChannel::Windows => windows_notification(app, event),
-        NotificationChannel::Island => app.state::<Core>().reminders.market_alert(app, event),
+        NotificationChannel::Windows => windows_notification(
+            &core.store,
+            &app.config().identifier,
+            core.integration
+                .as_ref()
+                .is_some_and(|config| config.market_check()),
+            event,
+        ),
+        NotificationChannel::Island => core.reminders.market_alert(app, event),
     }
 }
