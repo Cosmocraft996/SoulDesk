@@ -224,7 +224,7 @@ pub(crate) fn build(
         std::fs::create_dir_all(&directory)?;
         let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.as_str().into()))
             .title(match label {
-                "main" => "SoulDesk · 组件管理",
+                "main" => "SoulDesk · 设置",
                 "panel" => "SoulDesk · 组件面板",
                 _ => "SoulDesk · 组件",
             })
@@ -241,7 +241,7 @@ pub(crate) fn build(
         }
         #[cfg(windows)]
         if label == "main" {
-            builder = builder.drag_and_drop(false);
+            builder = builder.drag_and_drop(false).min_inner_size(500., 390.);
         }
         if surface {
             builder = builder
@@ -295,11 +295,11 @@ pub(crate) fn build(
         Err(tauri::Error::Runtime(error))
             if label == "main" && error.to_string().contains("HRESULT(0x8007139F)") =>
         {
-            // WebView2 拒绝复用现有环境时，组件管理可使用单独的缓存目录。
+            // WebView2 拒绝复用现有环境时，设置窗口可使用单独的缓存目录。
             let window = create("main-recovery").map_err(|retry| {
-                format!("组件管理 WebView2 初始化失败：{error}；备用目录初始化失败：{retry}")
+                format!("设置窗口 WebView2 初始化失败：{error}；备用目录初始化失败：{retry}")
             })?;
-            core.log_error(&format!("组件管理已通过备用 WebView2 目录打开：{error}"));
+            core.log_error(&format!("设置窗口已通过备用 WebView2 目录打开：{error}"));
             Ok(window)
         }
         result => result,
@@ -541,6 +541,9 @@ pub fn main_window(app: &AppHandle) -> AppResult<WebviewWindow> {
 /// 打开管理不解除隐藏全部，也不显示面板或独立组件。
 pub fn show(app: &AppHandle, focus: bool) -> AppResult<()> {
     let w = main_window(app)?;
+    if focus && w.is_minimized().map_err(err)? {
+        w.unminimize().map_err(err)?;
+    }
     clamp(&w)?;
     w.show().map_err(err)?;
     if focus {
@@ -548,12 +551,20 @@ pub fn show(app: &AppHandle, focus: bool) -> AppResult<()> {
     }
     Ok(())
 }
-pub fn settings(app: &AppHandle) -> AppResult<()> {
+fn show_settings_tab(app: &AppHandle, tab: &str) -> AppResult<()> {
     if app.get_webview_window("main").is_none() {
-        build(app, "main", "index.html?tab=checks".into(), 1000., 740.)?;
+        build(app, "main", format!("index.html?tab={tab}"), 1000., 740.)?;
     }
     show(app, true)?;
-    app.emit_to("main", "host:navigate", "checks").map_err(err)
+    app.emit_to("main", "host:navigate", tab).map_err(err)
+}
+
+pub fn settings(app: &AppHandle) -> AppResult<()> {
+    show_settings_tab(app, "general")
+}
+
+pub(crate) fn component_library(app: &AppHandle) -> AppResult<()> {
+    show_settings_tab(app, "library")
 }
 
 pub(crate) fn notification_history(app: &AppHandle, id: &str) -> AppResult<()> {
@@ -561,14 +572,10 @@ pub(crate) fn notification_history(app: &AppHandle, id: &str) -> AppResult<()> {
         build(
             app,
             "main",
-            format!("index.html?tab=checks&notificationHistory={id}"),
+            format!("index.html?tab=notifications&notificationHistory={id}"),
             1000.,
             740.,
         )?;
-    }
-    let window = main_window(app)?;
-    if window.is_minimized().map_err(err)? {
-        window.unminimize().map_err(err)?;
     }
     show(app, true)?;
     app.emit_to("main", "host:notification-history", id)

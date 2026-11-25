@@ -36,8 +36,11 @@ target/
 # 图标生成器额外生成的平台资源不属于 Windows G0 交付
 src-tauri/icons/*
 !src-tauri/icons/icon.svg
+!src-tauri/icons/icon-light.svg
 !src-tauri/icons/icon.ico
 !src-tauri/icons/icon.png
+!src-tauri/icons/tray.svg
+!src-tauri/icons/tray.rgba
 src-tauri/gen/
 
 # 编辑器与系统临时文件

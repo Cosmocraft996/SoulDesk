@@ -74,6 +74,7 @@ ${StrLoc}
 !define INSTALLMODE "{{install_mode}}"
 !define LICENSE "{{license}}"
 !define INSTALLERICON "{{installer_icon}}"
+!define DESKTOPSHORTCUTICON "souldesk-float-blue.ico"
 !define SIDEBARIMAGE "{{sidebar_image}}"
 !define HEADERIMAGE "{{header_image}}"
 !define UNINSTALLERICON "{{uninstaller_icon}}"
@@ -628,12 +629,8 @@ Section Install
     Call CreateOrUpdateStartMenuShortcut
   !insertmacro MUI_STARTMENU_WRITE_END
 
-  ; Create desktop shortcut for silent and passive installers
-  ; because finish page will be skipped
-  ${If} $PassiveMode = 1
-  ${OrIf} ${Silent}
-    Call CreateOrUpdateDesktopShortcut
-  ${EndIf}
+  ; 普通保留安装也更新已有桌面快捷方式。
+  Call CreateOrUpdateDesktopShortcut
 
   !ifmacrodef NSIS_HOOK_POSTINSTALL
     !insertmacro NSIS_HOOK_POSTINSTALL
@@ -893,20 +890,64 @@ Function CreateOrUpdateStartMenuShortcut
 FunctionEnd
 
 Function CreateOrUpdateDesktopShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+  StrCpy $R0 "$DESKTOP\${PRODUCTNAME}.lnk"
+  !insertmacro IsShortcutTarget "$R0" "$INSTDIR\${MAINBINARYNAME}.exe"
   Pop $0
   ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    Return
+    Goto update_icon
   ${EndIf}
 
+  ${If} $OldMainBinaryName != ""
+    !insertmacro IsShortcutTarget "$R0" "$INSTDIR\$OldMainBinaryName"
+    Pop $0
+    ${If} $0 = 1
+      !insertmacro SetShortcutTarget "$R0" "$INSTDIR\${MAINBINARYNAME}.exe"
+      Goto update_icon
+    ${EndIf}
+  ${EndIf}
+
+  ; 同名且指向其他位置的快捷方式由用户管理。
+  IfFileExists "$R0" done
   ${If} $UpdateMode = 1
   ${OrIf} $NoShortcutMode = 1
     Return
   ${EndIf}
+  ${IfNot} ${Silent}
+  ${AndIf} $PassiveMode != 1
+    Return
+  ${EndIf}
 
-  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+  CreateShortcut "$R0" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${DESKTOPSHORTCUTICON}" 0
+  !insertmacro SetLnkAppUserModelId "$R0"
+  Goto notify_shell
+
+  update_icon:
+  ; 原地更新继承自应用的图标，保留启动属性和用户自选图标。
+  !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
+  ${If} $0 P<> 0
+    ${IUnknown::QueryInterface} $0 '("${IID_IPersistFile}",.r1)'
+    ${If} $1 P<> 0
+      ${IPersistFile::Load} $1 '("$R0", ${STGM_READWRITE}).r2'
+      ${If} $2 = 0
+        ${IShellLink::GetIconLocation} $0 '(.r3, ${NSIS_MAX_STRLEN}, .r4).r2'
+        ${If} $2 >= 0
+        ${AndIf} $4 = 0
+          ${If} $3 == ""
+          ${OrIf} $3 == "$INSTDIR\${MAINBINARYNAME}.exe"
+          ${OrIf} $3 == "$INSTDIR\$OldMainBinaryName"
+            ${IShellLink::SetIconLocation} $0 '(w "$INSTDIR\${DESKTOPSHORTCUTICON}", 0).r2'
+            ${If} $2 = 0
+              ${IPersistFile::Save} $1 '("$R0",1)'
+            ${EndIf}
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+      ${IUnknown::Release} $1 ""
+    ${EndIf}
+    ${IUnknown::Release} $0 ""
+  ${EndIf}
+
+  notify_shell:
+  System::Call 'shell32::SHChangeNotify(i 0x2000, i 0x2005, w "$R0", p 0)'
+  done:
 FunctionEnd

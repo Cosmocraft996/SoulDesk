@@ -1,14 +1,43 @@
 [data-app-theme="ink"] {
   --app-scheme: dark;
-  --app-bg: #101720;
-  --app-rail: #0b121b;
-  --app-card: #182432;
-  --app-control: #202f40;
-  --app-line: #334558;
-  --app-text: #eaf1f7;
-  --app-muted: #a6b5c6;
-  --app-accent: #a9c8ff;
-  --app-on-accent: #101a2b;
+  --app-bg: #101a27;
+  --app-rail: #0c1420;
+  --app-card: #18283a;
+  --app-control: #233549;
+  --app-text: #f0f7ff;
+  --app-muted: #a9bed5;
+  --app-line: #344c64;
+  --app-control-border: #7190ad;
+  --app-accent: #64d0ff;
+  --app-on-accent: #102134;
+  --app-selected: #203c52;
+  --app-primary-hover: #8bddff;
+  --app-primary-active: #43bbee;
+  --app-focus: #8be1ff;
+  --app-ok: #87d9ad;
+  --app-warning: #f0c879;
+  --app-danger: #ffaca6;
+}
+
+[data-app-theme="ice-light"] {
+  --app-scheme: light;
+  --app-bg: #eef4f8;
+  --app-rail: #e5eef5;
+  --app-card: #fafcfe;
+  --app-control: #e8f1f7;
+  --app-text: #15283d;
+  --app-muted: #486075;
+  --app-line: #c9d7e2;
+  --app-control-border: #657b8e;
+  --app-accent: #075c88;
+  --app-on-accent: #ffffff;
+  --app-selected: #d9eef9;
+  --app-primary-hover: #064e74;
+  --app-primary-active: #053d5c;
+  --app-focus: #075c88;
+  --app-ok: #176044;
+  --app-warning: #744700;
+  --app-danger: #9c342e;
 }
 
 [data-app-theme="pine"] {
@@ -54,6 +83,11 @@
   color: var(--app-text);
   --muted: var(--app-muted);
   --line: var(--app-line);
+}
+
+:where(:root[data-app-theme]) {
+  --app-control-border: var(--app-line);
+  --app-focus: var(--app-accent);
   --app-ok: #8dd2b2;
   --app-danger: #f7aea6;
   --app-hover: color-mix(in srgb, var(--app-control), var(--app-accent) 11%);
@@ -68,27 +102,38 @@
 /* 颜色方案只传给宿主控件，避免影响组件 iframe 的系统配色查询。 */
 :root[data-app-theme][data-surface="management"] { background: var(--app-bg); color-scheme: var(--app-scheme); }
 :where(:root[data-app-theme]) :is(button, input, select, progress) { color-scheme: var(--app-scheme); accent-color: var(--app-accent); }
-:where(:root[data-app-theme]) button { color: var(--app-text); background: var(--app-control); border-color: var(--app-line); }
+:where(:root[data-app-theme]) button { color: var(--app-text); background: var(--app-control); border-color: var(--app-control-border); }
 :where(:root[data-app-theme]) button:hover { background: var(--app-hover); border-color: var(--app-muted); }
-:where(:root[data-app-theme]) :is(button, input, select, summary):focus-visible { outline-color: var(--app-accent); }
-:where(:root[data-app-theme]) :is(input, select) { color: var(--app-text); background: var(--app-bg); border-color: var(--app-line); }
+:where(:root[data-app-theme]) :is(button, input, select, summary):focus-visible { outline-color: var(--app-focus); }
+:where(:root[data-app-theme]) :is(input, select) { color: var(--app-text); background: var(--app-bg); border-color: var(--app-control-border); }
 .shortcut-capture { cursor: pointer; caret-color: transparent; }
 .shortcut-capture:focus { outline: 2px solid var(--app-accent, #bdbdbd); outline-offset: 2px; }
 :where(:root[data-app-theme]) :is(input[type="range"], input[type="checkbox"]) { accent-color: var(--app-accent); }
 :where(:root[data-app-theme]) button.primary { background: var(--app-accent); color: var(--app-on-accent); border-color: var(--app-accent); }
 :where(:root[data-app-theme]) button.primary:hover { filter: brightness(1.08); }
 
-:where(:root[data-app-theme]) .management-shell > aside { background: var(--app-rail); border-color: var(--app-line); }
-:where(:root[data-app-theme]) .management-shell nav button:hover { background: var(--app-card); }
-:where(:root[data-app-theme]) .management-shell nav button.selected {
-  background: var(--app-selected);
-  color: var(--app-text);
-  box-shadow: inset 2px 0 var(--app-accent);
+:where(:root:is([data-app-theme="ink"], [data-app-theme="ice-light"])) :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--app-focus);
+  outline-offset: 2px;
 }
-:where(:root[data-app-theme]) :is(.topbar, .statusbar, .instance-row, .panel-group-list > li) { border-color: var(--app-line); }
-:where(:root[data-app-theme]) :is(.topbar, .topbar kbd, .local-status, .statusbar, .badge, .instance-row details, .empty-symbol, .network-state, .update-settings details) { color: var(--app-muted); }
-:where(:root[data-app-theme]) .topbar button { background: var(--app-control); border: 1px solid var(--app-line); }
-:where(:root[data-app-theme]) .topbar button:hover { background: var(--app-hover); }
+:where(:root:is([data-app-theme="ink"], [data-app-theme="ice-light"])) button.primary:hover {
+  background: var(--app-primary-hover);
+  border-color: var(--app-primary-hover);
+  filter: none;
+}
+:where(:root:is([data-app-theme="ink"], [data-app-theme="ice-light"])) button.primary:active {
+  background: var(--app-primary-active);
+  border-color: var(--app-primary-active);
+}
+:where(:root:is([data-app-theme="ink"], [data-app-theme="ice-light"])) button.primary:disabled {
+  background: var(--app-control);
+  color: var(--app-muted);
+  border-color: var(--app-line);
+}
+:where(:root:is([data-app-theme="ink"], [data-app-theme="ice-light"])) .notice.warning { color: var(--app-warning); }
+
+:where(:root[data-app-theme]) :is(.instance-row, .panel-group-list > li) { border-color: var(--app-line); }
+:where(:root[data-app-theme]) :is(.badge, .instance-row details, .empty-symbol, .network-state, .update-settings details) { color: var(--app-muted); }
 :where(:root[data-app-theme]) .dot:not(.offline) { background: var(--app-ok); }
 :where(:root[data-app-theme]) :is(.package, .settings-panel, .notice, .panel-notice .notice) {
   background: var(--app-card);
@@ -169,7 +214,7 @@
 }
 .app-theme-option:hover { border-color: var(--app-muted); }
 .app-theme-option:has(input:checked) { border-color: var(--app-accent); box-shadow: inset 0 0 0 1px var(--app-accent); }
-.app-theme-option:has(input:focus-visible) { outline: 2px solid var(--app-accent); outline-offset: 2px; }
+.app-theme-option:has(input:focus-visible) { outline: 2px solid var(--app-focus); outline-offset: 2px; }
 .app-theme-option:has(input:disabled) { cursor: default; opacity: .72; }
 .app-theme-caption { display: flex; align-items: center; gap: 5px; padding: 0 4px 3px; font-weight: 600; }
 .app-theme-caption input { margin: 0 2px 0 0; }
@@ -190,9 +235,6 @@
 .app-theme-sample i { border-radius: 3px; background: var(--app-card); border: 1px solid var(--app-line); }
 .app-theme-sample i:last-child { border: 0; background: var(--app-accent); width: 66%; }
 .settings-panel.app-theme-settings > p { margin: 10px 0 0; }
-.notification-tone select { width: min(19rem, 100%); }
-.island-level input { width: min(14rem, 45%); }
-.island-level output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 .notification-history { list-style: none; padding: 0; max-height: 320px; overflow-y: auto; }
 .notification-history li { padding: 10px 4px; overflow-wrap: anywhere; }
 .notification-history li + li { border-top: 1px solid var(--border, #6665); }

@@ -27,6 +27,7 @@ globalThis.IntersectionObserver = class {
 Object.defineProperty(dom.window.HTMLElement.prototype, 'clientWidth', { get: () => 600 });
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+dom.window.HTMLElement.prototype.scrollIntoView = function () {};
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const dataUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
@@ -34,7 +35,7 @@ const palette = JSON.parse(readFileSync(new URL('../src/panel-colors.json', impo
 const cache = new Map();
 function moduleUrl(name) {
   if (cache.has(name)) return cache.get(name);
-  if (name.endsWith('.png')) return dataUrl('export default ' + JSON.stringify(new URL('../src/' + name, import.meta.url).href) + ';');
+  if (name.endsWith('.png') || name.endsWith('.svg')) return dataUrl('export default ' + JSON.stringify(new URL('../src/' + name, import.meta.url).href) + ';');
   if (name.endsWith('.json')) return dataUrl('export default ' + readFileSync(new URL('../src/' + name, import.meta.url), 'utf8') + ';');
   const source = name === 'host' ? 'export const invoke=(...args)=>globalThis.panelFixture.invoke(...args);'
     : name === 'WidgetFrame' ? `import {useEffect,createElement} from 'react';export function WidgetFrame({instance}){useEffect(()=>{const f=globalThis.panelFixture;f.mounted.add(instance);f.mounts.push(instance);return()=>f.mounted.delete(instance);},[instance]);return createElement('div',{'data-instance':instance});}`
@@ -43,7 +44,9 @@ function moduleUrl(name) {
     : readFileSync(new URL(`../src/${name}${name.endsWith('.ts') ? '' : name === 'panel-layout' ? '.ts' : '.tsx'}`, import.meta.url), 'utf8');
   let compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   compiled = compiled.replace(/from\s*(['"])([^'"]+)\1/g, (_all, _quote, specifier) => {
-    const url = specifier.startsWith('./') ? moduleUrl(specifier.slice(2))
+    const url = specifier.endsWith('?raw') ? dataUrl('export default ' + JSON.stringify(readFileSync(new URL(`../src/${specifier.slice(0, -4)}`, import.meta.url), 'utf8')))
+      : specifier.endsWith('.svg') ? moduleUrl(specifier)
+      : specifier.startsWith('./') ? moduleUrl(specifier.slice(2))
       : specifier === '@tauri-apps/api/core' ? dataUrl('export const isTauri=()=>true;')
       : specifier === '@tauri-apps/api/event' ? dataUrl('export const listen=async(name,callback)=>{const listeners=globalThis.panelFixture?.listeners;if(!listeners)return()=>{};const set=listeners.get(name)??new Set();listeners.set(name,set);set.add(callback);return()=>set.delete(callback);};') : import.meta.resolve(specifier);
     return 'from ' + JSON.stringify(url);
@@ -297,11 +300,11 @@ test('黑白和饱和自定义色的标签文字与底色保持足够对比', as
   const css = readFileSync(new URL('../src/app-theme.css', import.meta.url), 'utf8');
   const cssDom = new JSDOM(`<style>${css}</style>`);
   const rules = [...cssDom.window.document.styleSheets[0].cssRules];
-  const themes = rules.filter(rule => /^\[data-app-theme="[a-z]+"\]$/.test(rule.selectorText));
+  const themes = rules.filter(rule => /^\[data-app-theme="[a-z-]+"\]$/.test(rule.selectorText));
   const groupRule = rules.find(rule => rule.selectorText === '.panel-group-tab, .panel-color-preview');
   const hexToRgb = hex => hex.trim().slice(1).match(/../g).map(value => parseInt(value, 16));
   try {
-    assert.equal(themes.length, 4);
+    assert.equal(themes.length, 5);
     await click(button('管理分组'));
     for (const color of ['#FFFFFF', '#000000', '#0000FF', '#00FF00']) {
       await click(textButton(groupRow('工作'), '配色')); await input(button('十六进制颜色'), color); await submit(document.querySelector('.panel-color-editor'));
@@ -320,20 +323,24 @@ test('黑白和饱和自定义色的标签文字与底色保持足够对比', as
 });
 
 test('应用主题显示已保存选项，成功后切换，失败保留当前主题', async () => {
-  const f = await fixture({ query: '?tab=checks', appTheme: 'pine' });
+  const f = await fixture({ query: '?tab=appearance', appTheme: 'pine' });
   const choice = id => document.querySelector(`input[name="app-theme"][value="${id}"]`);
   try {
     assert.equal(document.documentElement.dataset.appTheme, 'pine');
     assert.equal(choice('pine').checked, true);
-    assert.equal(document.querySelectorAll('input[name="app-theme"]').length, 4);
+    assert.equal(document.querySelectorAll('input[name="app-theme"]').length, 5);
     await click(choice('oat'));
     assert.equal(f.state.appTheme, 'oat');
     assert.equal(document.documentElement.dataset.appTheme, 'oat');
     assert.equal(choice('oat').checked, true);
+    await click(choice('ice-light'));
+    assert.equal(f.state.appTheme, 'ice-light');
+    assert.equal(document.documentElement.dataset.appTheme, 'ice-light');
+    assert.equal(choice('ice-light').checked, true);
     f.fail = true;
     await click(choice('iris'));
-    assert.equal(document.documentElement.dataset.appTheme, 'oat');
-    assert.equal(choice('oat').checked, true);
+    assert.equal(document.documentElement.dataset.appTheme, 'ice-light');
+    assert.equal(choice('ice-light').checked, true);
     assert.match(document.querySelector('.notice').textContent, /测试主题保存失败/);
   } finally { await f.close(); }
 });
@@ -345,9 +352,9 @@ test('侧边面板随宿主事件切换主题并保留组件会话与自定义�
     const widget = document.querySelector('[data-instance="a"]');
     assert.ok(widget);
     const groupColor = colorOf('工作');
-    f.state.appTheme = 'iris';
+    f.state.appTheme = 'ice-light';
     await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
-    assert.equal(document.documentElement.dataset.appTheme, 'iris');
+    assert.equal(document.documentElement.dataset.appTheme, 'ice-light');
     assert.equal(document.querySelector('[data-instance="a"]'), widget);
     assert.deepEqual(f.mounts, ['a']);
     assert.equal(colorOf('工作'), groupColor);
@@ -355,8 +362,8 @@ test('侧边面板随宿主事件切换主题并保留组件会话与自定义�
 });
 
 test('组件库默认添加到面板，只有宿主成功后才提示成功，隐藏全部时禁止添加', async () => {
-  const f = await fixture({ query: '' });
-  const add = () => textButton(document, '＋ 添加到面板');
+  const f = await fixture({ query: '?tab=library' });
+  const add = () => textButton(document, '添加到面板');
   try {
     assert.match(document.querySelector('.heading').textContent, /侧边面板当前分组/);
     await click(add());
@@ -366,13 +373,13 @@ test('组件库默认添加到面板，只有宿主成功后才提示成功，�
     await click(add());
     assert.match(document.querySelector('[role="status"]').textContent, /操作失败：.*测试添加失败/);
     f.state.hiddenAll = true;
-    await click(textButton(document, '隐藏全部'));
+    await act(async () => { for (const notify of f.listeners.get('host:changed')) await notify(); });
     assert.equal(add().disabled, true);
   } finally { await f.close(); }
 });
 
 test('组件库允许网页文件拖放，仅将导入区内的单个 ZIP 字节送给宿主', async () => {
-  const f = await fixture({ query: '' });
+  const f = await fixture({ query: '?tab=library' });
   const zone = button('导入组件');
   const picker = textButton(zone, '导入本地 ZIP');
   const zip = new File(['测试 ZIP 内容'], '计时器.ZIP');
@@ -404,7 +411,7 @@ test('组件库允许网页文件拖放，仅将导入区内的单个 ZIP 字节
     assert.equal(zone.hasAttribute('data-drag-over'), true);
     await drag(zone, 'dragleave');
     assert.equal(zone.hasAttribute('data-drag-over'), false);
-    const outside = document.querySelector('.topbar');
+    const outside = document.querySelector('.settings-header');
     assert.deepEqual(await drag(outside, 'dragover'), { prevented: true, effect: 'none' });
     assert.equal((await drag(outside, 'drop')).prevented, true);
     assert.equal(imports().length, 0);
@@ -435,8 +442,8 @@ test('组件库允许网页文件拖放，仅将导入区内的单个 ZIP 字节
     assert.deepEqual(imports().at(-1), ['import_package', undefined]);
     assert.equal(document.querySelector('.notice'), null);
 
-    await click([...document.querySelectorAll('nav button')].find(node => node.textContent.endsWith('设置')));
-    assert.equal((await drag(document.querySelector('.topbar'), 'drop')).prevented, true);
+    await click(textButton(document, '常规'));
+    assert.equal((await drag(document.querySelector('.settings-header'), 'drop')).prevented, true);
     assert.equal(imports().length, 3);
   } finally { await f.close(); }
 });
@@ -507,7 +514,7 @@ test('八款挂件选中即保存，左侧停靠时右边沿向右加宽', async
 });
 
 test('面板偏好连续改动立即预览，只保存修改字段，失败恢复已保存值', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=desktop' });
   try {
     assert.equal(document.querySelector('.panel-preferences button'), null);
     let release;
@@ -537,7 +544,7 @@ function edgePointer(node, type, { pointerType = 'mouse', buttons = 0 } = {}) {
 }
 
 test('灵动通知滑杆可设置全透明和零音量，松开各自保存', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=notifications' });
   try {
     const opacity = document.querySelector('#island-opacity');
     const volume = document.querySelector('#island-volume');
@@ -562,7 +569,7 @@ test('灵动通知滑杆可设置全透明和零音量，松开各自保存', as
 });
 
 test('灵动通知测试可发送上涨、下跌和有声来电样例', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=notifications' });
   try {
     const select = document.querySelector('#notification-sample');
     const variants = ['market-up', 'market-down', 'call-sound'];
@@ -579,7 +586,7 @@ test('灵动通知测试可发送上涨、下跌和有声来电样例', async ()
 });
 
 test('灵动通知历史可保存保留天数并仅清空已显示记录', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=notifications' });
   const entry = (id, title) => ({ id, title, kind: 'info', source: 'SoulDesk', at: 1 });
   f.islandHistory = { retentionDays: 3, shown: [entry('shown', '已显示测试')], pending: [entry('pending', '正在排队测试')] };
   try {
@@ -638,7 +645,7 @@ test('收起态挂件单击优先，停留后展开，按住经过和快速移�
 });
 
 test('管理页主键点击只把普通区域交给外部收起，面板按钮走显式切换', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '' });
   try {
     const toggle = document.querySelector('[data-panel-toggle]');
     await act(async () => {
@@ -647,12 +654,51 @@ test('管理页主键点击只把普通区域交给外部收起，面板按钮�
       edgePointer(document.querySelector('.management-content h1'), 'pointerdown', { buttons: 1 });
     });
     assert.deepEqual(f.calls.filter(([command]) => command === 'window_action').map(([, args]) => args.action), ['toggle', 'outside-panel']);
-    const checkbox = [...document.querySelectorAll('input[type="checkbox"]')].find(input => input.labels[0]?.textContent === '启用面板快捷键');
-    await click(checkbox);
+    const checkShortcut = async () => {
+      await click(textButton(document, '快捷键'));
+      await click([...document.querySelectorAll('input[type="checkbox"]')].find(input => input.labels[0]?.textContent === '启用面板快捷键'));
+      await click(textButton(document, '常规'));
+      return document.querySelector('[data-panel-toggle] kbd')?.textContent;
+    };
+    assert.equal(await checkShortcut(), undefined);
     assert.equal(f.state.panelShortcutEnabled, false);
-    assert.equal(toggle.querySelector('kbd'), null);
-    await click(checkbox);
-    assert.equal(toggle.querySelector('kbd').textContent, 'Ctrl+Alt+Space');
+    assert.equal(await checkShortcut(), 'Ctrl+Alt+Space');
+  } finally { await f.close(); }
+});
+
+test('设置入口、搜索和宿主通知跳转打开对应分类', async () => {
+  const f = await fixture({ query: '' });
+  const title = () => document.querySelector('#settings-page-title').textContent;
+  const hostEvent = (event, payload) => act(async () => {
+    for (const listener of f.listeners.get(event)) listener({ payload });
+  });
+  try {
+    assert.equal(title(), '常规');
+    assert.equal(document.querySelectorAll('[aria-label="设置分类"] button').length, 8);
+    assert.equal(document.querySelector('[aria-label="组件管理分类"]'), null);
+    await click(textButton(document, '组件管理'));
+    assert.equal(title(), '组件管理');
+    assert.equal(document.querySelector('[aria-label="组件管理分类"] [aria-current]').textContent, '已添加');
+    await hostEvent('host:navigate', 'library');
+    assert.equal(document.querySelector('[aria-label="组件管理分类"] [aria-current]').textContent, '组件库');
+
+    await act(async () => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true })));
+    assert.equal(document.querySelector('.settings-search').open, true);
+    await input(button('搜索设置项'), '燕麦');
+    await submit(document.querySelector('.settings-search form'));
+    assert.equal(title(), '外观');
+    assert.equal(document.activeElement.id, 'app-theme');
+    assert.equal(document.querySelector('.settings-search').open, false);
+
+    f.islandHistory = { retentionDays: 3, shown: [{ id: 'selected', title: '选中的通知', kind: 'info', source: 'SoulDesk', at: 1 }], pending: [] };
+    await hostEvent('host:notification-history', 'selected');
+    assert.equal(title(), '通知与声音');
+    assert.match(document.querySelector('.notification-history li[aria-current]').textContent, /选中的通知/);
+    await click(textButton(document, '快捷键'));
+    assert.ok(document.querySelector('#island-shortcut-mute'));
+    assert.equal(document.querySelector('#notification-history'), null);
+    await hostEvent('host:navigate', 'general');
+    assert.equal(title(), '常规');
   } finally { await f.close(); }
 });
 
@@ -676,12 +722,13 @@ test('面板快捷键未注册时可从管理页打开设置并重试原键', as
       { value: 'Ctrl+Alt+Space' }, { value: 'Ctrl+Alt+Space' },
     ]);
     assert.equal(document.querySelector('[role="alert"]'), null);
-    assert.equal(toggle.querySelector('kbd').textContent, 'Ctrl+Alt+Space');
+    await click(textButton(document, '常规'));
+    assert.equal(document.querySelector('[data-panel-toggle] kbd').textContent, 'Ctrl+Alt+Space');
   } finally { await f.close(); }
 });
 
 test('面板快捷键录入完整组合，取消还原已保存的键位，冲突后仍可修改', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=shortcuts' });
   const field = document.querySelector('#shortcut');
   const save = textButton(field.closest('.setting-row'), '保存');
   const shortcutCalls = () => f.calls.filter(([name]) => name === 'set_shortcut').map(([, args]) => args);
@@ -737,6 +784,7 @@ test('面板快捷键录入完整组合，取消还原已保存的键位，冲�
     await click(save);
     assert.deepEqual(shortcutCalls(), [{ value: 'Alt+Numpad1' }, { value: 'Ctrl+Alt+ArrowUp' }]);
     assert.equal(f.state.diagnostics.shortcut, 'Ctrl+Alt+ArrowUp');
+    await click(textButton(document, '常规'));
     assert.equal(document.querySelector('[data-panel-toggle] kbd').textContent, 'Ctrl+Alt+ArrowUp');
   } finally { await f.close(); }
 });
@@ -761,10 +809,9 @@ test('展开后按住挂件仍发起移动，拖完不会误收起，轻点可�
 });
 
 test('全局宿主衬底默认关闭，切换立即保存，保存失败时沿用已保存状态', async () => {
-  const f = await fixture({ query: '?tab=checks' });
+  const f = await fixture({ query: '?tab=appearance' });
   try {
-    const checkbox = document.querySelector('.settings-panel input[type="checkbox"]');
-    assert.equal(checkbox.labels[0].textContent, '显示宿主衬底');
+    const checkbox = button('显示宿主衬底');
     assert.equal(checkbox.checked, false);
     await click(checkbox);
     assert.equal(f.state.widgetBackdrop, true);
@@ -1320,7 +1367,7 @@ test('从组件工具栏移动分组，失败保留选择，成功后可在目�
 });
 
 test('官方广场、组件库和已添加实例都能组合分类与搜索', async () => {
-  const f = await fixture({ query: '?management=1' });
+  const f = await fixture({ query: '?tab=library' });
   const clock = { ...f.state.packages[0], id: 'local.souldesk.widgetjs.clock', name: '时钟' };
   const imported = { ...clock, id: 'local.fixture.note', name: '本地便签' };
   f.state.packages = [clock, imported];
@@ -1381,7 +1428,7 @@ test('官方广场、组件库和已添加实例都能组合分类与搜索', as
 });
 
 test('组件库全部更新先确认兼容版本和新增权限，逐项更新并报告部分失败', async () => {
-  const f = await fixture({ query: '?management=1' });
+  const f = await fixture({ query: '?tab=library' });
   const installed = ['便签', '时钟', '已是新版', '需升级宿主', '私有组件'].map((name, i) => ({
     ...f.state.packages[0], name, id: `local.fixture.widget-${i}`, digest: String(i).repeat(64),
     version: i === 2 ? '2.0.0' : '1.0.0', capabilities: [],
@@ -1443,7 +1490,7 @@ test('组件库全部更新先确认兼容版本和新增权限，逐项更新�
 });
 
 test('官方广场选兼容版本，更新确认显示新增权限，试加载失败保留原登记', async () => {
-  const f = await fixture({ query: '?management=1' });
+  const f = await fixture({ query: '?tab=library' });
   const id = 'official.souldesk.test';
   const digest = 'c'.repeat(64);
   const local = { ...f.state.packages[0], id, version: '0.1.0', installed: true, digest: 'a'.repeat(64), capabilities: [] };
@@ -1481,7 +1528,7 @@ test('官方广场选兼容版本，更新确认显示新增权限，试加载�
 });
 
 test('目录故障保留可信列表和已装组件状态，已撤回的包可离线卸载', async () => {
-  const f = await fixture({ query: '?management=1' });
+  const f = await fixture({ query: '?tab=library' });
   const id = 'official.souldesk.test';
   const local = { ...f.state.packages[0], id, version: '0.1.0', installed: true, digest: 'a'.repeat(64) };
   f.state.packages.push(local);
@@ -1517,7 +1564,7 @@ test('目录故障保留可信列表和已装组件状态，已撤回的包可�
 
 
 test('官方广场首次安装须确认，完成后由用户决定添加到面板', async () => {
-  const f = await fixture({ query: '?management=1' });
+  const f = await fixture({ query: '?tab=library' });
   const id = 'official.souldesk.test';
   const release = { version: '0.1.0', minHostVersion: '0.5.2', capabilities: [],
     releaseNotes: '首次发布', status: 'published', sha256: 'a'.repeat(64) };

@@ -661,11 +661,17 @@ mod tests {
         let root = std::env::temp_dir().join(format!("souldesk-theme-{}", uuid::Uuid::new_v4()));
         let store = Store::open(root.clone()).unwrap();
         assert_eq!(AppTheme::stored(&store).id(), "ink");
-        store.save_preference(AppTheme::KEY, "oat").unwrap();
+        let theme = serde_json::from_value::<AppTheme>(json!("ice-light")).unwrap();
+        assert_eq!(theme.chrome(), tauri::Theme::Light);
+        store.save_preference(AppTheme::KEY, theme.id()).unwrap();
         drop(store);
 
         let store = Store::open(root).unwrap();
-        assert_eq!(AppTheme::stored(&store).id(), "oat");
+        assert_eq!(AppTheme::stored(&store).id(), "ice-light");
+        for legacy in ["ink", "pine", "oat", "iris"] {
+            store.save_preference(AppTheme::KEY, legacy).unwrap();
+            assert_eq!(AppTheme::stored(&store).id(), legacy);
+        }
         store.save_preference(AppTheme::KEY, "unknown").unwrap();
         assert_eq!(AppTheme::stored(&store).id(), "ink");
         assert!(serde_json::from_value::<AppTheme>(json!("unknown")).is_err());

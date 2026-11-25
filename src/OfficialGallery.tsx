@@ -243,7 +243,7 @@ export function OfficialGallery({ packages, instances, unavailable, canAdd, onAd
   })) ?? [];
 
   return <>
-    <div className="heading"><div><h1>官方广场</h1><p>浏览、安装和更新 SoulDesk 官方组件。</p></div>
+    <div className="heading"><p>浏览、安装和更新 SoulDesk 官方组件。</p>
       <button disabled={loading} onClick={() => void refresh()}>{loading ? '正在刷新…' : '刷新目录'}</button>
     </div>
     {result && !result.online && <p className="notice" role="status">

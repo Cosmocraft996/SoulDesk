@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { Bell, BellRing, Blend, Eye, List, Monitor, Phone, Volume2, VolumeX, type LucideIcon } from 'lucide-react';
 import { invoke } from './host';
+import { SettingsGroup, SettingsRow, SettingsSwitch } from './SettingsLayout';
 import { heldShortcutModifiers, shortcutMainKey } from './shortcut-keys.ts';
 
 type Channel = 'windows' | 'island';
@@ -44,9 +46,10 @@ type Command =
   | { type: 'shortcut'; control: IslandControl; value: string }
   | { type: 'test'; channel: Channel; sample: Sample };
 
-function IslandLevel({ id, label, value, disabled, save }: {
+function IslandLevel({ id, label, icon, value, disabled, save }: {
   id: string;
   label: string;
+  icon: LucideIcon;
   value: number;
   disabled: boolean;
   save: (percent: number) => Promise<boolean>;
@@ -65,12 +68,11 @@ function IslandLevel({ id, label, value, disabled, save }: {
     slider.addEventListener('change', commit);
     return () => slider.removeEventListener('change', commit);
   }, [save, value]);
-  return <div className="setting-row island-level">
-    <label htmlFor={id}>{label}</label>
-    <input ref={input} id={id} type="range" min="0" max="100" value={draft ?? value}
+  return <SettingsRow title={label} icon={icon}>
+    <input ref={input} id={id} type="range" min="0" max="100" aria-label={label} value={draft ?? value}
       disabled={disabled} onChange={event => setDraft(event.currentTarget.valueAsNumber)} />
     <output htmlFor={id}>{draft ?? value}%</output>
-  </div>;
+  </SettingsRow>;
 }
 
 function IslandShortcutField({ control, label, shortcut, disabled, save }: {
@@ -89,6 +91,8 @@ function IslandShortcutField({ control, label, shortcut, disabled, save }: {
     <input id={`island-shortcut-${control}`} className="shortcut-capture" readOnly
       aria-describedby="island-shortcut-help" disabled={disabled} value={value.replace(/\bSuper\b/gi, 'Win')}
       onKeyDown={event => {
+        if (event.code === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) return;
+        if (event.nativeEvent.isComposing || event.key === 'Process') return;
         event.preventDefault();
         if (event.repeat) return;
         const modifiers = heldShortcutModifiers(event);
@@ -105,7 +109,7 @@ function IslandShortcutField({ control, label, shortcut, disabled, save }: {
   </div>;
 }
 
-export function NotificationSettings({ historyRequest }: { historyRequest?: { id: string } }) {
+export function NotificationSettings({ shortcutsOnly, historyRequest }: { shortcutsOnly: boolean; historyRequest?: { id: string } }) {
   const [preferences, setPreferences] = useState<Preferences>();
   const [controls, setControls] = useState<IslandControls>();
   const [sample, setSample] = useState<Sample>('info');
@@ -209,7 +213,7 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
     if (historyRequest) setHistoryOpen(true);
   }, [historyRequest]);
   useEffect(() => {
-    if (!historyOpen) return;
+    if (shortcutsOnly || !historyOpen) return;
     let active = true;
     setHistory(undefined);
     setHistoryError('');
@@ -218,12 +222,18 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
       failure => { if (active) setHistoryError(String(failure)); },
     );
     return () => { active = false; };
-  }, [historyOpen, historyRefresh, historyRequest]);
+  }, [shortcutsOnly, historyOpen, historyRefresh, historyRequest]);
   useEffect(() => {
     if (historyOpen && historyRequest && (history || historyError)) {
       (selectedEntry.current ?? historyPanel.current)?.scrollIntoView({ block: 'nearest' });
     }
   }, [historyOpen, historyRequest, history, historyError]);
+  useEffect(() => {
+    if (shortcutsOnly) {
+      previewRequest.current?.abort();
+      setPreviewDirection(undefined);
+    }
+  }, [shortcutsOnly]);
 
   async function changeHistory(command: HistoryCommand) {
     setHistoryBusy(true);
@@ -257,54 +267,78 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
     </ul>;
   }
 
-  return <section className="settings-panel">
-    <h2>通知</h2>
-    <div className="setting-row">
-      <label className="check"><input type="checkbox" checked={preferences?.windows ?? true} disabled={!preferences || busy}
-        onChange={event => void change({ type: 'channel', channel: 'windows', enabled: event.target.checked })} />Windows 系统通知</label>
-      <button type="button" disabled={!preferences?.windows || busy}
-        onClick={() => void change({ type: 'test', channel: 'windows', sample: 'info' })}>测试系统通知</button>
-    </div>
-    <label className="check"><input type="checkbox" checked={preferences?.island ?? true} disabled={!preferences || busy}
-      onChange={event => void change({ type: 'channel', channel: 'island', enabled: event.target.checked })} />灵动通知</label>
-    <IslandLevel id="island-opacity" label="灵动通知透明度"
-      value={100 - (preferences?.opacity ?? 100)} disabled={!preferences || busy}
-      save={percent => change({ type: 'opacity', percent: 100 - percent })} />
-    <IslandLevel id="island-volume" label="灵动通知音量"
-      value={preferences?.volume ?? 100} disabled={!preferences || busy}
-      save={percent => change({ type: 'volume', percent })} />
-    <div className="setting-row">
-      <button type="button" disabled={!controls || busy} onClick={() => void change({ type: 'toggle', control: 'visibility' })}>
-        {controls?.hidden ? '显示灵动通知' : '隐藏灵动通知'}
-      </button>
-      <button type="button" disabled={!controls || busy} onClick={() => void change({ type: 'toggle', control: 'mute' })}>
-        {controls?.muted ? '解除灵动通知静音' : '静音灵动通知'}
-      </button>
-    </div>
-    {preferences && <>
+  const feedback = error && <p role="alert" className="notice error">{error}</p>;
+  if (shortcutsOnly) return <section className="settings-panel" id="notification-shortcuts" tabIndex={-1}>
+    <h2>灵动通知快捷键</h2>
+    {feedback}
+    {preferences ? <>
       <p id="island-shortcut-help" className="muted">点击输入框，录入带 Ctrl、Alt、Shift 或 Win 的组合键。按 Esc 取消。</p>
       <IslandShortcutField control="visibility" label="灵动通知显隐快捷键" shortcut={preferences.shortcuts.visibility}
         disabled={busy} save={value => change({ type: 'shortcut', control: 'visibility', value })} />
       <IslandShortcutField control="mute" label="灵动通知静音快捷键" shortcut={preferences.shortcuts.mute}
         disabled={busy} save={value => change({ type: 'shortcut', control: 'mute', value })} />
-    </>}
-    <div className="setting-row">
-      <label htmlFor="island-max-visible">灵动通知最大可见条数</label>
-      <select id="island-max-visible" value={preferences?.maxVisible ?? 9} disabled={!preferences || busy}
-        onChange={event => void change({ type: 'max-visible', count: Number(event.target.value) })}>
-        {Array.from({ length: 20 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count} 条</option>)}
-      </select>
-    </div>
-    <label className="check"><input type="checkbox" checked={preferences?.marketSound ?? true} disabled={!preferences || busy}
-      onChange={event => void change({ type: 'market-sound', enabled: event.target.checked })} />行情通知铃声</label>
-    {preferences && marketDirections.map(([direction, label]) => {
+    </> : !error && <p>正在读取灵动通知快捷键…</p>}
+  </section>;
+
+  return <>
+    {feedback}
+    <SettingsGroup id="notification-channels" title="通知渠道">
+      <SettingsRow title="Windows 系统通知" icon={Monitor} description="在 Windows 通知中心接收消息。">
+        <button type="button" disabled={!preferences?.windows || busy}
+          onClick={() => void change({ type: 'test', channel: 'windows', sample: 'info' })}>测试系统通知</button>
+        <SettingsSwitch label="Windows 系统通知" checked={preferences?.windows ?? true} disabled={!preferences || busy}
+          onChange={enabled => void change({ type: 'channel', channel: 'windows', enabled })} />
+      </SettingsRow>
+      <SettingsRow title="灵动通知" icon={Bell} description="在桌面显示 SoulDesk 通知卡片。">
+        <SettingsSwitch label="灵动通知" checked={preferences?.island ?? true} disabled={!preferences || busy}
+          onChange={enabled => void change({ type: 'channel', channel: 'island', enabled })} />
+      </SettingsRow>
+    </SettingsGroup>
+    <SettingsGroup id="notification-island" title="灵动通知">
+      <SettingsRow title="显示通知卡片" icon={Eye} description="隐藏卡片后，声音和通知队列继续运行。">
+        <SettingsSwitch label="显示通知卡片" checked={controls?.hidden === false} disabled={!controls || busy}
+          onChange={() => void change({ type: 'toggle', control: 'visibility' })} />
+      </SettingsRow>
+      <IslandLevel id="island-opacity" label="灵动通知透明度" icon={Blend}
+        value={100 - (preferences?.opacity ?? 100)} disabled={!preferences || busy}
+        save={percent => change({ type: 'opacity', percent: 100 - percent })} />
+      <IslandLevel id="island-volume" label="灵动通知音量" icon={Volume2}
+        value={preferences?.volume ?? 100} disabled={!preferences || busy}
+        save={percent => change({ type: 'volume', percent })} />
+      <SettingsRow title="静音" icon={VolumeX} description="同时静音行情铃声和模拟来电。">
+        <SettingsSwitch label="灵动通知静音" checked={controls?.muted ?? false} disabled={!controls || busy}
+          onChange={() => void change({ type: 'toggle', control: 'mute' })} />
+      </SettingsRow>
+      <SettingsRow title="最大可见条数" icon={List} description="超过上限的通知进入队列。">
+        <select id="island-max-visible" aria-label="灵动通知最大可见条数" value={preferences?.maxVisible ?? 9} disabled={!preferences || busy}
+          onChange={event => void change({ type: 'max-visible', count: Number(event.target.value) })}>
+          {Array.from({ length: 20 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count} 条</option>)}
+        </select>
+      </SettingsRow>
+      <SettingsRow title="允许模拟来电" icon={Phone} description="允许支持此能力的小组件触发来电。">
+        <SettingsSwitch label="允许小组件触发模拟来电" checked={preferences?.calls ?? false} disabled={!preferences || busy}
+          onChange={enabled => void change({ type: 'calls', enabled })} />
+      </SettingsRow>
+      <SettingsRow title="测试灵动通知" icon={BellRing} description="预览提醒、行情和模拟来电等通知。">
+        <select id="notification-sample" aria-label="灵动通知样式" value={sample} onChange={event => setSample(event.target.value as Sample)}>
+          {samples.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
+        </select>
+        <button type="button" disabled={!preferences?.island || busy}
+          onClick={() => void change({ type: 'test', channel: 'island', sample })}>测试灵动通知</button>
+      </SettingsRow>
+    </SettingsGroup>
+    <SettingsGroup id="notification-sounds" title="行情铃声">
+      <SettingsRow title="行情通知铃声" icon={Volume2} description="控制行情上涨和下跌通知的铃声。">
+        <SettingsSwitch label="行情通知铃声" checked={preferences?.marketSound ?? true} disabled={!preferences || busy}
+          onChange={enabled => void change({ type: 'market-sound', enabled })} />
+      </SettingsRow>
+      {preferences && marketDirections.map(([direction, label]) => {
       const selected = preferences.marketTones[direction];
       const canPreview = preferences.marketToneGroups.some(group => group.sounds.some(sound => sound.id === selected && sound.available));
       const previewing = previewDirection === direction;
       const field = `market-tone-${direction}`;
-      return <div className="setting-row notification-tone" key={direction}>
-        <label htmlFor={field}>{label}铃声</label>
-        <select id={field} value={selected} disabled={busy}
+      return <SettingsRow title={`${label}铃声`} icon={Volume2} key={direction}>
+        <select id={field} className="notification-tone-select" aria-label={`${label}铃声`} value={selected} disabled={busy}
           onChange={event => void change({ type: 'market-tone', direction, id: event.target.value })}>
           {preferences.marketToneGroups.map(group => <optgroup label={group.name} key={group.name}>
             {group.sounds.map(sound => <option value={sound.id} key={sound.id} disabled={!sound.available}>
@@ -314,18 +348,11 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
         </select>
         <button type="button" disabled={!canPreview || busy} aria-label={`${previewing ? '停止试听' : '试听'}${label}铃声`}
           onClick={() => void previewTone(direction, selected)}>{previewing ? '停止' : '试听'}</button>
-      </div>;
-    })}
-    <label className="check"><input type="checkbox" checked={preferences?.calls ?? false} disabled={!preferences || busy}
-      onChange={event => void change({ type: 'calls', enabled: event.target.checked })} />允许小组件触发模拟来电</label>
-    <div className="setting-row">
-      <label htmlFor="notification-sample">灵动通知样式</label>
-      <select id="notification-sample" value={sample} onChange={event => setSample(event.target.value as Sample)}>
-        {samples.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-      </select>
-      <button type="button" disabled={!preferences?.island || busy}
-        onClick={() => void change({ type: 'test', channel: 'island', sample })}>测试灵动通知</button>
-    </div>
+      </SettingsRow>;
+      })}
+    </SettingsGroup>
+    <section className="settings-panel" id="notification-history" tabIndex={-1}>
+    <h2>灵动通知历史</h2>
     <div className="setting-row">
       <button type="button" disabled={historyBusy} aria-expanded={historyOpen} onClick={() => {
         setConfirmHistoryClear(false);
@@ -367,6 +394,6 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
         {history.shown.length > 0 ? entries(history.shown) : <p className="muted">暂无灵动通知记录</p>}
       </>}
     </div>}
-    {error && <p role="alert" className="notice error">{error}</p>}
-  </section>;
+    </section>
+  </>;
 }

@@ -123,6 +123,8 @@ const MAIN_TRAY: &str = "souldesk-main";
 enum AppTheme {
     #[default]
     Ink,
+    #[serde(rename = "ice-light")]
+    IceLight,
     Pine,
     Oat,
     Iris,
@@ -134,6 +136,7 @@ impl AppTheme {
     fn id(self) -> &'static str {
         match self {
             Self::Ink => "ink",
+            Self::IceLight => "ice-light",
             Self::Pine => "pine",
             Self::Oat => "oat",
             Self::Iris => "iris",
@@ -142,7 +145,7 @@ impl AppTheme {
 
     fn stored(store: &Store) -> Self {
         let value = store.preference(Self::KEY);
-        [Self::Ink, Self::Pine, Self::Oat, Self::Iris]
+        [Self::Ink, Self::IceLight, Self::Pine, Self::Oat, Self::Iris]
             .into_iter()
             .find(|theme| Some(theme.id()) == value.as_deref())
             .unwrap_or_default()
@@ -151,7 +154,7 @@ impl AppTheme {
     fn chrome(self) -> tauri::Theme {
         match self {
             Self::Ink | Self::Pine => tauri::Theme::Dark,
-            Self::Oat | Self::Iris => tauri::Theme::Light,
+            Self::IceLight | Self::Oat | Self::Iris => tauri::Theme::Light,
         }
     }
 }
@@ -1074,7 +1077,7 @@ async fn window_action(
         windows::serialized(&app, |app| {
             let id = || instance.as_deref().ok_or("缺少实例".to_owned());
             match action.as_str() {
-                "show" => windows::show(app, true),
+                "show" => windows::component_library(app),
                 "settings" => windows::settings(app),
                 "hide-all" => windows::hide_all(app),
                 "restore-all" => windows::restore(app),
@@ -1729,7 +1732,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if split_market {
         market_runtime::start_desktop(app.handle())?;
     }
-    let show = MenuItem::with_id(app, "show", "管理组件", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "添加组件", true, None::<&str>)?;
     let restore = MenuItem::with_id(app, "restore", "恢复组件", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "panel", "切换组件面板", true, None::<&str>)?;
     let assistant = MenuItem::with_id(app, "assistant", "网页 AI 助手", true, None::<&str>)?;
@@ -1743,7 +1746,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let island_mute =
         MenuItem::with_id(app, "island-mute", "切换灵动通知静音", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏全部", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "设置与诊断", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let desktop_grid =
         MenuItem::with_id(app, "desktop-grid", "桌面格子", cfg!(windows), None::<&str>)?;
     let desktop_grid_restore = MenuItem::with_id(
@@ -1757,6 +1760,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = Menu::with_items(
         app,
         &[
+            &settings,
             &show,
             &panel,
             &assistant,
@@ -1766,27 +1770,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &island_mute,
             &restore,
             &hide,
-            &settings,
             &quit,
         ],
     )?;
-    let mut pixels = vec![0u8; 32 * 32 * 4];
-    for y in 0..32 {
-        for x in 0..32 {
-            let i = (y * 32 + x) * 4;
-            let on = (8..24).contains(&x) && (7..12).contains(&y)
-                || (8..13).contains(&x) && (7..25).contains(&y)
-                || (8..24).contains(&x) && (20..25).contains(&y);
-            pixels[i..i + 4].copy_from_slice(if on {
-                &[204, 241, 126, 255]
-            } else {
-                &[22, 29, 26, 255]
-            });
-        }
-    }
+    let tray_pixels: &[u8; 32 * 32 * 4] = include_bytes!("../icons/tray.rgba");
     let skip_tray_release = AtomicBool::new(false);
     TrayIconBuilder::with_id(MAIN_TRAY)
-        .icon(tauri::image::Image::new_owned(pixels, 32, 32))
+        .icon(tauri::image::Image::new(tray_pixels, 32, 32))
         .tooltip("SoulDesk")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -1833,7 +1823,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = app.state::<Core>().assistant.cancel_all();
                 }
                 windows::dispatch(app, move |app| match action.as_str() {
-                    "show" => windows::show(app, true),
+                    "show" => windows::component_library(app),
                     "settings" => windows::settings(app),
                     "hide" => windows::hide_all(app),
                     "restore" => windows::restore(app),

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { ArrowUpRight, DatabaseBackup, Eye, EyeOff, Grid2X2, LayoutGrid, Moon, PanelRight, Plus, Power, Scan, Layers } from 'lucide-react';
 import appPackage from '../package.json' with { type: 'json' };
+import lucideLicense from '../docs/licenses/lucide-0.563.0.txt?raw';
 import { invoke } from './host';
 import { OfficialGallery, UpdateAllWidgets, type CatalogResponse } from './OfficialGallery';
 import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
@@ -15,12 +17,14 @@ import { PanelGroups, MovePanelGroupDialog, ungrouped, type PanelGroupsState, ty
 import { WidgetSurface, type SurfaceAction } from './WidgetSurface';
 import { Icon } from './Icon';
 import { UpdateSettings, type UpdateState } from './UpdateSettings';
+import { DesktopSettingsLink, SettingsGroup, SettingsLayout, SettingsRow, SettingsSwitch, settingsTab, type SettingsTab } from './SettingsLayout';
 import type { PanelLayout } from './panel-layout';
 
 interface Package { id: string; name: string; version: string; digest?: string; capabilities?: string[]; defaultSize: { width: number; height: number }; minSize: { width: number; height: number } }
 interface Instance { id: string; packageId: string; location: 'desktop' | 'panel'; visible: boolean; pinned: boolean; width: number | null; height: number | null }
 const appThemes = [
-  { id: 'ink', name: '墨蓝', tone: '深色' },
+  { id: 'ink', name: '浮格蓝', tone: '深色' },
+  { id: 'ice-light', name: '浮格蓝', tone: '浅色' },
   { id: 'pine', name: '松烟', tone: '深色' },
   { id: 'oat', name: '燕麦', tone: '浅色' },
   { id: 'iris', name: '雾紫', tone: '浅色' },
@@ -109,7 +113,7 @@ export function App() {
   const [movingGroup, setMovingGroup] = useState<string>();
   const [dropGroup, setDropGroup] = useState<string | null>();
   const [focusedPackage, setFocusedPackage] = useState<string>();
-  const [tab, setTab] = useState<'gallery' | 'library' | 'instances' | 'checks'>(query.get('tab') === 'checks' ? 'checks' : 'library');
+  const [tab, setTab] = useState<SettingsTab>(() => query.has('notificationHistory') ? 'notifications' : settingsTab(query.get('tab')));
   const [notificationHistory, setNotificationHistory] = useState(() => {
     const id = query.get('notificationHistory');
     return id ? { id } : undefined;
@@ -196,9 +200,12 @@ export function App() {
     if (!isTauri() || edge || trial) return;
     void refresh();
     const off = listen('host:changed', refresh);
-    const nav = listen<string>('host:navigate', e => { if (e.payload === 'checks') setTab('checks'); });
+    const nav = listen<string>('host:navigate', e => {
+      setFocusedPackage(undefined);
+      setTab(settingsTab(e.payload));
+    });
     const notificationNav = listen<string>('host:notification-history', event => {
-      setTab('checks');
+      setTab('notifications');
       setNotificationHistory({ id: event.payload });
     });
     const geometry = listen<{ effective_ratio: number }>('host:panel-geometry', e => setEffective(e.payload.effective_ratio));
@@ -343,7 +350,8 @@ export function App() {
       summary: pkg?.summary };
   }) ?? [];
 
-  return <main className="management-shell"
+  const navigate = (tab: SettingsTab) => { setFocusedPackage(undefined); setTab(tab); };
+  return <main className="settings-shell"
     onDragOver={event => {
       if (!event.defaultPrevented) {
         event.preventDefault();
@@ -356,16 +364,19 @@ export function App() {
         void action('outside-panel').catch(error => setMessage(String(error)));
       }
     }}>
-    <aside><div className="brand">SoulDesk<small>桌面组件</small></div><nav aria-label="管理导航">{([['gallery', '官方广场', '◇'], ['library', '组件库', '＋'], ['instances', '已添加', '▦'], ['checks', '设置', '⚙']] as const).map(([id, label, icon]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => { setFocusedPackage(undefined); setTab(id); }}><span>{icon}</span>{label}{id === 'instances' && <small>{data?.instances.length ?? 0}</small>}</button>)}</nav><div className="aside-note">公开行情 · 本地提醒<br /><span className="muted">关闭管理窗口后，组件与后台继续运行。</span></div><span className="local-status"><i className={data ? 'dot' : 'dot offline'} />{data ? '核心后台在线' : '等待桌面宿主'}</span></aside>
-    <section className="management-content"><header className="topbar"><span>{tab === 'gallery' ? '官方广场' : tab === 'library' ? '组件库' : tab === 'instances' ? '已添加的组件' : '应用设置'}</span><div><button data-panel-toggle onClick={() => void run(() => action('toggle'))}>组件面板{shortcutEnabled && data?.panelShortcutRegistered && <kbd>{configuredShortcut}</kbd>}</button><button onClick={() => void run(() => action(data?.hiddenAll ? 'restore-all' : 'hide-all'))}>{data?.hiddenAll ? '恢复组件显示' : '隐藏全部'}</button></div></header>
-    <div className="content">{!isTauri() && <p className="notice">网页仅供布局预览，桌面操作需在 SoulDesk 中运行。</p>}{notice}{data?.diagnostics.error && <p role="alert" className="notice error">{data.diagnostics.error}</p>}
-      {shortcutUnavailable && tab !== 'checks' && <div className="notice error"><span role="alert">面板快捷键 {configuredShortcut} 未能注册。</span><button onClick={() => setTab('checks')}>快捷键设置</button></div>}
-      {data?.hiddenAll && <div className="notice">所有组件当前隐藏。请先恢复显示，再添加或显示单个组件。<button onClick={() => void run(() => action('restore-all'))}>恢复组件显示</button></div>}
+    <SettingsLayout tab={tab} onNavigate={navigate} version={data?.updates.currentVersion ?? appPackage.version} connected={!!data}
+      notice={<>
+        {!isTauri() && <p className="notice">网页仅供布局预览，桌面操作需在 SoulDesk 中运行。</p>}
+        {notice}{data?.diagnostics.error && <p role="alert" className="notice error">{data.diagnostics.error}</p>}
+        {shortcutUnavailable && tab !== 'shortcuts' && <div className="notice error"><span role="alert">面板快捷键 {configuredShortcut} 未能注册。</span><button onClick={() => navigate('shortcuts')}>快捷键设置</button></div>}
+        {data?.hiddenAll && (tab === 'gallery' || tab === 'library' || tab === 'instances') &&
+          <div className="notice">所有组件当前隐藏。请先恢复显示，再添加或显示单个组件。<button disabled={busy} onClick={() => void run(() => action('restore-all'))}>恢复组件显示</button></div>}
+      </>}>
       {tab === 'gallery' ? <OfficialGallery packages={data?.packages ?? []}
         instances={data?.instances ?? []} unavailable={busy || !data} canAdd={!data?.hiddenAll}
         onAdd={packageId => void run(() => invoke('create_instance', { packageId }), '已添加到侧边面板')}
         onUninstall={unregister} onManage={managePackageInstances} onRefresh={refresh} />
-      : tab === 'library' ? <><div className="heading"><div><small>添加到面板，按需摆到桌面</small><h1>从一个组件开始</h1><p>添加后出现在侧边面板当前分组，可从组件标题栏放到桌面。同一种组件可添加多份，各自保存配置。</p></div>
+      : tab === 'library' ? <><div className="heading"><p>新实例出现在侧边面板当前分组。同一种组件可以添加多份。</p>
         <div className="actions library-heading-actions">
           <button disabled={busy || !localPackages.length} onClick={() => setUpdatingAll(true)}>全部更新</button>
         </div>
@@ -375,13 +386,13 @@ export function App() {
         {pkg => {
           const count = data.instances.filter(instance => instance.packageId === pkg.id).length;
           return <article className="package" key={pkg.id}>
-            <div className="package-symbol" data-kind={pkg.id}>▦</div>
+            <div className="package-symbol" data-kind={pkg.id}><LayoutGrid aria-hidden /></div>
             <span className="badge">{pkg.category} · v{pkg.version}</span>
             <h2>{pkg.name}</h2>
             {pkg.summary && <p>{pkg.summary}</p>}
             <div className="package-actions">
               <button className="primary" disabled={busy || data.hiddenAll}
-                onClick={() => void run(() => invoke('create_instance', { packageId: pkg.id }), '已添加到侧边面板')}>＋ 添加到面板</button>
+                onClick={() => void run(() => invoke('create_instance', { packageId: pkg.id }), '已添加到侧边面板')}><Plus aria-hidden />添加到面板</button>
               <small>{count} 个实例</small>
             </div>
             <div className="gallery-actions actions">
@@ -392,7 +403,7 @@ export function App() {
         }}
       </WidgetBrowser>}
       {data?.packages.length === 0 && <div className="empty"><h2>还没有组件</h2><p>从官方广场安装组件，或导入本地 ZIP。</p><button onClick={() => setTab('gallery')}>浏览官方广场</button></div>}
-      <p className="muted">本地组件按你信任的代码运行，组件包可独立导入。部分联网组件需自行配置服务或登录。</p></> : tab === 'instances' ? <><div className="heading"><div><small>桌面与面板，互不牵连</small><h1>已添加的组件</h1><p>眼睛按钮仅隐藏视图，垃圾桶按钮需确认后删除实例及其配置与自选，价格警报独立保留。</p></div></div>
+      <p className="muted">请从可信来源导入组件。部分联网组件需配置服务或登录。</p></> : tab === 'instances' ? <>
       {focusedPackage && <p className="notice">正在管理 {data?.packages.find(p => p.id === focusedPackage)?.name ?? '组件'} 的实例。
         <button onClick={() => setFocusedPackage(undefined)}>显示全部</button></p>}
       {data && !managedInstances.length && <div className="empty"><h2>{focusedPackage ? '这个组件还没有实例' : '桌面还很安静'}</h2><p>到组件库添加组件。</p><button onClick={() => setTab('library')}>浏览组件库</button></div>}
@@ -405,7 +416,7 @@ export function App() {
           const width = (inPanel ? layout?.width : undefined) ?? instance.width ?? pkg?.defaultSize.width;
           const height = (inPanel ? layout?.height : undefined) ?? instance.height ?? pkg?.defaultSize.height;
           return <article className="instance-row" key={id}>
-            <div className="instance-title">
+            <span className="settings-item-icon"><LayoutGrid aria-hidden /></span><div className="instance-title">
               <h2>{name}</h2>
               <span className="badge">{category} · {inPanel ? '面板' : '桌面'} · {visible ? '已显示' : '已隐藏'}{pinned ? ' · 置顶' : ''}</span>
               <small>实例 {id.slice(0, 8)}{pkg && ' · v' + pkg.version}</small>
@@ -436,17 +447,40 @@ export function App() {
                   void run(() => invoke('reorder_instances', { ids }));
                 }}>列表前移</button>
                 <button className="danger" type="button" disabled={busy} onClick={() => {
-                  if (window.confirm('删除此实例及其配置和自选？已有价格警报与历史会保留，请在警报管理中另行暂停或删除。')) {
-                    void run(() => invoke('manage_instance', { instance: id, action: 'remove' }));
-                  }
+                  requestRemove(id);
                 }}>删除实例</button>
               </form>
             </details>
           </article>;
         }}
-      </WidgetBrowser>}</> : <>
-      <div className="heading"><div><small>按你的习惯运行</small><h1>应用设置</h1><p>组件启动时恢复上次的桌面位置，面板与管理窗口保持关闭。</p></div></div>
-      <section className="settings-panel app-theme-settings">
+      </WidgetBrowser>}</> : tab === 'general' ? <>
+      <DesktopSettingsLink onClick={() => navigate('desktop')} />
+      <SettingsGroup title="启动">
+        <SettingsRow id="autostart" icon={Power} title="开机启动" description="登录 Windows 后自动运行 SoulDesk。">
+          <SettingsSwitch label="开机启动" checked={data?.autostart === true} disabled={busy || data?.autostart == null}
+            onChange={enabled => void run(() => invoke('set_autostart', { enabled }), '开机启动设置已保存')} />
+        </SettingsRow>
+        <SettingsRow id="silent-startup" icon={Moon} title="静默启动" description="启动时恢复组件与挂件，设置窗口和侧栏保持关闭。">
+          <SettingsSwitch label="静默启动" checked={data?.silentStartup === true} disabled={busy || !data}
+            onChange={silent => void run(() => invoke('set_autostart', { silent }), '静默启动设置已保存')} />
+        </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title="桌面可见性">
+        <SettingsRow id="widget-visibility" icon={data?.hiddenAll ? EyeOff : Eye} title="组件显示"
+          description={data?.hiddenAll ? '所有组件已隐藏。有效的价格警报继续运行。' : '可临时隐藏全部组件。有效的价格警报继续运行。'}>
+          <button disabled={busy || !data} onClick={() => void run(() => action(data?.hiddenAll ? 'restore-all' : 'hide-all'))}>
+            {data?.hiddenAll ? '恢复组件显示' : '隐藏全部'}
+          </button>
+        </SettingsRow>
+        <SettingsRow id="side-panel-toggle" icon={PanelRight} title="组件侧栏" description="在屏幕边缘查看和使用已添加的组件。">
+          <button data-panel-toggle disabled={busy || !data} onClick={() => void run(() => action('toggle'))}>
+            {data?.panelOpen && !data.panelLowered ? '收起侧栏' : '打开侧栏'}
+            {shortcutEnabled && data?.panelShortcutRegistered && <kbd>{configuredShortcut?.replace(/\bSuper\b/gi, 'Win')}</kbd>}
+          </button>
+        </SettingsRow>
+      </SettingsGroup>
+      </> : tab === 'appearance' ? <>
+      <section id="app-theme" tabIndex={-1} className="settings-panel app-theme-settings">
         <fieldset className="app-theme-picker" disabled={!data}>
           <legend>应用主题</legend>
           <div className="app-theme-options">{appThemes.map(theme => <label className="app-theme-option" key={theme.id}>
@@ -459,14 +493,32 @@ export function App() {
             </span>
           </label>)}</div>
         </fieldset>
-        <p className="muted">应用于管理窗口、侧边面板和桌面组件的宿主工具栏。</p>
+        <p className="muted">应用于设置窗口、侧栏和桌面组件的宿主工具栏。</p>
       </section>
-      <section className="settings-panel"><h2>组件外观</h2><label className="check"><input type="checkbox" checked={widgetBackdrop} disabled={busy || !data} onChange={e => { void run(() => action(e.target.checked ? 'enable-widget-backdrop' : 'disable-widget-backdrop')); }} />显示宿主衬底</label><p className="muted">为普通组件的透明区域铺上半透明主题底色。</p></section>
-      <section className="settings-panel"><h2>桌面格子</h2><p>在桌面原地分组文件和快捷方式，保留原路径。</p><div className="actions"><button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid'))}>打开格子管理</button><button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid-restore'))}>恢复 Windows 桌面图标</button></div></section>
-      <NotificationSettings historyRequest={notificationHistory} />
-      <section className="settings-panel"><h2>组件面板</h2><p>未锁定时，移出面板或失焦 3 秒后收起，点击外部立即收起。锁定时，点击外部会置底，点击挂件切换置顶和置底。快捷键或双击桌面空白处可锁定并展开，或解锁并收起。</p>{panelControls}</section>
-      <section className="settings-panel">
-        <h2>快捷键与启动</h2>
+      <SettingsGroup title="组件外观">
+        <SettingsRow id="widget-backdrop" icon={Layers} title="宿主衬底" description="为普通组件的透明区域铺上半透明主题底色。">
+          <SettingsSwitch label="显示宿主衬底" checked={widgetBackdrop} disabled={busy || !data}
+            onChange={enabled => void run(() => action(enabled ? 'enable-widget-backdrop' : 'disable-widget-backdrop'))} />
+        </SettingsRow>
+      </SettingsGroup>
+      </> : tab === 'desktop' ? <>
+      <section className="settings-panel" id="panel-preferences" tabIndex={-1}>
+        <h2>侧栏行为</h2>
+        <p>未锁定时，移出侧栏或失焦 3 秒后收起，点击外部立即收起。锁定时，点击外部会置底，点击挂件切换置顶和置底。</p>
+        {panelControls}
+      </section>
+      <SettingsGroup title="桌面与格子">
+        <SettingsRow id="desktop-grid" icon={Grid2X2} title="桌面格子" description="在桌面上分组文件和快捷方式，保留原路径。">
+          <button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid'))}>打开格子管理<ArrowUpRight aria-hidden /></button>
+          <button disabled={busy || !data} onClick={() => void run(() => action('desktop-grid-restore'))}>恢复 Windows 桌面图标</button>
+        </SettingsRow>
+        <SettingsRow id="repair-windows" icon={Scan} title="找回屏幕外组件" description="将屏幕外的组件移回可操作的位置。">
+          <button disabled={busy || !data} onClick={() => void run(() => action('repair'), '已校正可达位置')}>找回组件</button>
+        </SettingsRow>
+      </SettingsGroup>
+      </> : tab === 'shortcuts' || tab === 'notifications' ? <>
+      {tab === 'shortcuts' && <section className="settings-panel" id="panel-shortcuts" tabIndex={-1}>
+        <h2>侧栏快捷键</h2>
         {shortcutUnavailable && <p role="alert" className="notice error">面板快捷键 {configuredShortcut} 未能注册。可更换键位，或释放原键后重新保存。</p>}
         <label className="check"><input type="checkbox" checked={shortcutEnabled} disabled={busy || !data} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_shortcut', { enabled }), '快捷键设置已保存'); }} />启用面板快捷键</label>
         <div className="setting-row">
@@ -479,15 +531,35 @@ export function App() {
             () => invoke('set_shortcut', { value: shortcutInput }), '快捷键已保存',
           ).then(saved => { if (saved) setShortcut(undefined); })}>保存</button>
         </div>
-        <label className="check"><input type="checkbox" disabled={busy || data?.autostart == null} checked={data?.autostart === true} onChange={e => { const enabled = e.target.checked; void run(() => invoke('set_autostart', { enabled }), '开机启动设置已保存'); }} />开机启动（登录 Windows 后）</label>
-        <label className="check"><input type="checkbox" disabled={busy || !data} checked={data?.silentStartup === true} onChange={e => { const silent = e.target.checked; void run(() => invoke('set_autostart', { silent }), '静默启动设置已保存'); }} />静默启动</label>
-        <p className="muted">桌面组件和挂件照常恢复。开启静默启动后，管理窗口和面板保持关闭。</p>
-        <button onClick={() => void run(() => action('repair'), '已校正可达位置')}>找回屏幕外组件</button>
+      </section>}
+      <NotificationSettings shortcutsOnly={tab === 'shortcuts'} historyRequest={notificationHistory} />
+      </> : tab === 'data' ? <>
+      <NetworkSettings />
+      <section className="settings-panel" id="local-data" tabIndex={-1}>
+        <h2>本地数据与诊断</h2>
+        <p>数据目录：{data?.diagnostics.dataRoot ?? '未连接'}</p>
+        <p>{data?.diagnostics.views ?? 0} 个宿主窗口 · {data?.diagnostics.sessions ?? 0} 个组件会话。</p>
+        <div className="actions">
+          <button disabled={busy || !data} onClick={() => void run(() => invoke('schedule_test', { notification: true, sound: false, delay: 3 }), '已安排通知测试')}>测试通知</button>
+          <button disabled={busy || !data} onClick={() => void run(() => invoke('schedule_test', { notification: false, sound: true, delay: 3 }), '已安排声音测试')}>测试声音</button>
+        </div>
       </section>
-      <UpdateSettings state={data?.updates} refresh={refresh} /><NetworkSettings /><section className="settings-panel"><h2>本地数据与诊断</h2><p>数据目录：{data?.diagnostics.dataRoot ?? '未连接'}</p><p className="muted">{data?.diagnostics.views ?? 0} 个宿主窗口 · {data?.diagnostics.sessions ?? 0} 个组件会话。隐藏组件释放展示，自选与有效规则继续运行。</p><div className="actions"><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: true, sound: false, delay: 3 }), '已安排通知测试')}>测试通知</button><button disabled={busy} onClick={() => void run(() => invoke('schedule_test', { notification: false, sound: true, delay: 3 }), '已安排声音测试')}>测试声音</button></div></section>
+      <SettingsGroup title="数据备份">
+        <SettingsRow id="backup" icon={DatabaseBackup} title="本地数据备份" description="创建并校验本地业务数据库的备份。">
+          <button disabled={busy || !data}
+            onClick={() => void run(() => invoke<string>('business_settings', { action: 'backup' }), path => `备份已校验：${path}`)}>创建备份</button>
+        </SettingsRow>
+      </SettingsGroup>
+      </> : <>
+      <div id="app-updates" tabIndex={-1}><UpdateSettings state={data?.updates} refresh={refresh} /></div>
+      <section className="settings-panel" id="licenses" tabIndex={-1}>
+        <h2>开源许可</h2>
+        <details><summary>Lucide 图标及许可</summary><pre className="settings-license">{lucideLicense}</pre></details>
+      </section>
       </>}
       {updatingAll && <UpdateAllWidgets packages={data?.packages ?? []} onCatalog={setLocalCatalog}
         onClose={() => setUpdatingAll(false)} onInstalled={refresh} />}
-    </div><footer className="statusbar"><span><i className="dot" /> 本地运行 · 组件隐藏不停止有效规则</span><span>SoulDesk {data?.updates.currentVersion ?? appPackage.version}</span></footer></section>
+      {removeDialog}
+    </SettingsLayout>
   </main>;
 }
