@@ -1648,7 +1648,7 @@ mod tests {
     fn reminders_history_keeps_recent_distinct_notifications_after_restart() {
         let (store, _) = fixture();
         let mut engine = Engine::default();
-        for index in 0..201 {
+        for index in 0..=1_000 {
             engine
                 .host_demo(
                     &store,
@@ -1679,9 +1679,189 @@ mod tests {
         drop(store);
         let reopened = Store::open(root).unwrap();
         let history = reminder_store::island_history(&reopened).unwrap();
-        assert_eq!(history.as_array().unwrap().len(), 200);
-        assert_eq!(history[0]["at"], clock(200).wall_ms);
-        assert_eq!(history[199]["at"], clock(1).wall_ms);
+        assert_eq!(history.as_array().unwrap().len(), 1_000);
+        assert_eq!(history[0]["at"], clock(1_000).wall_ms);
+        assert_eq!(history[999]["at"], clock(1).wall_ms);
+    }
+
+    #[test]
+    fn island_history_uses_shown_time_and_can_clear_without_removing_current_notices() {
+        let (store, _) = fixture();
+        let mut engine = Engine::default();
+        let day = 24 * 60 * 60 * 1000;
+        {
+            let db = store.db.lock().unwrap();
+            assert_eq!(reminder_store::island_history_days(&db).unwrap(), 3);
+            let old = Engine::demo_notice(HOST_NOTICE_OWNER, 0, Demo::Call, clock(0));
+            reminder_store::remember_island_notice(&db, &old, clock(0).wall_ms).unwrap();
+        }
+        reminder_store::prune_island_history(&store, clock(4 * day).wall_ms).unwrap();
+        assert_eq!(reminder_store::island_history(&store).unwrap(), json!([]));
+        assert!(
+            reminder_store::set_island_history_days(&store, clock(4 * day).wall_ms, 0).is_err()
+        );
+        reminder_store::set_island_history_days(&store, clock(4 * day).wall_ms, 7).unwrap();
+        for (index, sample) in [Demo::Info, Demo::Call, Demo::MarketUp]
+            .into_iter()
+            .enumerate()
+        {
+            let time = clock(4 * day + index as u64);
+            engine
+                .host_demo(
+                    &store,
+                    sample,
+                    Channel::Island,
+                    time,
+                    false,
+                    |_| unreachable!(),
+                )
+                .unwrap();
+        }
+        let target = engine.stack_target().unwrap();
+        engine
+            .shown_stack(&store, &target, clock(4 * day + 4))
+            .unwrap();
+        assert_eq!(
+            reminder_store::island_history(&store)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        reminder_store::clear_island_history(&store).unwrap();
+        engine
+            .shown_stack(&store, &target, clock(4 * day + 5))
+            .unwrap();
+        assert!(reminder_store::island_history(&store)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(engine.visible().count(), 3);
+        let reopened = Store::open(store.root.clone()).unwrap();
+        assert_eq!(
+            reminder_store::island_history_days(&reopened.db.lock().unwrap()).unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn high_frequency_notification_histories_reuse_disk_space_after_reaching_caps() {
+        use crate::alerts::{self, Direction, MarketKey, Mode, Observation, Rule};
+        use crate::{alert_store, reminder_store};
+
+        let (store, _) = fixture();
+        alert_store::history_settings(&store, Some(&Value::Null)).unwrap();
+        let key = MarketKey::spot("BTCUSDT");
+        let mut alerts = alert_store::Engine::default();
+        for index in 0..30 {
+            alert_store::save_rule(
+                &store,
+                &Rule {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    revision: 1,
+                    name: format!("隔离高频规则 {index}"),
+                    key: key.clone(),
+                    direction: Direction::Up,
+                    condition: Default::default(),
+                    threshold: "100".into(),
+                    mode: Mode::Repeat,
+                    cooldown_ms: 1_000,
+                    enabled: true,
+                    notification: false,
+                    notification_channel: Default::default(),
+                    sound: false,
+                },
+                None,
+            )
+            .unwrap();
+        }
+        let size = |name| {
+            std::fs::metadata(store.root.join(name))
+                .map(|m| m.len())
+                .unwrap_or(0)
+        };
+        let mut samples = Vec::new();
+        let mut total = 0;
+        for cycle in 0..8 {
+            let mut now = 0;
+            for shard in 0..50 {
+                let step = cycle * 50 + shard + 1;
+                let t = step * 1_000;
+                now = clock(t).wall_ms;
+                let quote = Observation {
+                    key: key.clone(),
+                    price: "100".into(),
+                    source_utc_ms: now,
+                    received_mono_ms: t,
+                    generation: 1,
+                    ordinal: step,
+                    recovered: false,
+                    valid: true,
+                };
+                let context = alerts::Context {
+                    clock: alerts::Clock {
+                        utc_ms: now,
+                        mono_ms: t,
+                    },
+                    generation: 1,
+                    source_now_utc_ms: now,
+                };
+                let events = alerts.process(&store, &quote, context).unwrap();
+                assert_eq!(events.len(), 30);
+                total += events.len();
+                let mut db = store.db.lock().unwrap();
+                let tx = db.transaction().unwrap();
+                for (index, event) in events.into_iter().enumerate() {
+                    let sample = [Demo::Info, Demo::Call, Demo::MarketUp][index % 3];
+                    let mut notice = Engine::demo_notice(HOST_NOTICE_OWNER, 0, sample, clock(t));
+                    notice.id = event.id;
+                    notice.message = "隔离高频通知".repeat(50);
+                    reminder_store::remember_island_notice(&tx, &notice, now).unwrap();
+                }
+                tx.commit().unwrap();
+            }
+            assert_eq!(alert_store::list_events(&store, 999, 100).unwrap().len(), 1);
+            assert!(alert_store::list_events(&store, 1000, 100)
+                .unwrap()
+                .is_empty());
+            let mut batches = 1;
+            while alert_store::prune_history(&store, now, &[], Some(now)).unwrap() {
+                batches += 1;
+                assert!(batches <= 3);
+            }
+            assert_eq!(
+                store
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row("SELECT count(*) FROM alert_events", [], |row| row
+                        .get::<_, u64>(0))
+                    .unwrap(),
+                1_000
+            );
+            let history = reminder_store::island_history(&store).unwrap();
+            assert_eq!(history.as_array().unwrap().len(), 1_000);
+            assert!(history
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["at"].as_u64().unwrap() >= now - 33_000));
+            store.reclaim_idle_wal().unwrap();
+            samples.push((size("workbench.sqlite"), size("workbench.sqlite-wal")));
+        }
+        println!(
+            "隔离高频验收 触发和灵动记录各 {total} 条，每轮清理后主库及 WAL 字节数 {samples:?}"
+        );
+        let baseline = samples[3].0;
+        assert!(samples[4..]
+            .iter()
+            .all(|&(main, wal)| main <= baseline + 256 * 1024 && wal <= 8 * 1024 * 1024));
+        assert!(alert_store::list_rules(&store)
+            .unwrap()
+            .iter()
+            .all(|(_, state)| state.sequence == 400));
     }
     #[test]
     fn reminders_one_corrupt_config_cannot_cancel_a_healthy_current_notification() {

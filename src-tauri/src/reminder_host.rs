@@ -238,6 +238,10 @@ fn require_notice(target: Option<Target>, id: &str) -> AppResult<Target> {
 pub(crate) enum SettingsCommand {
     Get,
     History,
+    HistoryRetention {
+        days: u32,
+    },
+    ClearHistory,
     Channel {
         channel: Channel,
         enabled: bool,
@@ -420,11 +424,20 @@ pub(crate) async fn notification_settings(
             let _native = core.store.native_actions.lock().map_err(err)?;
             match command {
                 SettingsCommand::Get => {}
-                SettingsCommand::History => {
+                command @ (SettingsCommand::History | SettingsCommand::HistoryRetention { .. } | SettingsCommand::ClearHistory) => {
+                    let now = service.clock()?.wall_ms;
+                    match command {
+                        SettingsCommand::HistoryRetention { days } => reminder_store::set_island_history_days(&core.store, now, days)?,
+                        SettingsCommand::ClearHistory => reminder_store::clear_island_history(&core.store)?,
+                        _ => reminder_store::prune_island_history(&core.store, now)?,
+                    }
                     let engine = service.engine.lock().map_err(err)?;
+                    let pending = engine.pending().into_iter().map(reminder_store::island_pending_entry).collect::<Vec<_>>();
+                    let days = reminder_store::island_history_days(&*core.store.db.lock().map_err(err)?)?;
                     return Ok(json!({
                         "shown": reminder_store::island_history(&core.store)?,
-                        "pending": engine.pending().into_iter().map(reminder_store::island_pending_entry).collect::<Vec<_>>()
+                        "pending": pending,
+                        "retentionDays": days
                     }));
                 }
                 SettingsCommand::Channel { channel, enabled } => {
@@ -722,7 +735,8 @@ impl Service {
         &self,
         store: &crate::store::Store,
         now: u64,
-    ) -> AppResult<()> {
+        source_now: Option<u64>,
+    ) -> AppResult<bool> {
         let engine = self.engine.lock().map_err(err)?;
         let active = engine
             .visible()
@@ -735,7 +749,7 @@ impl Service {
                     .map(|_| notice.id.as_str())
             })
             .collect::<Vec<_>>();
-        crate::alert_store::prune_history(store, now, &active)
+        crate::alert_store::prune_history(store, now, &active, source_now)
     }
 
     pub(crate) fn market_alert(

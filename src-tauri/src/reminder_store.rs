@@ -257,7 +257,11 @@ pub(crate) fn preference(db: &Connection, key: &str) -> AppResult<Option<String>
 }
 
 const ISLAND_HISTORY_PREFIX: &str = "notification.island.history/";
-const ISLAND_HISTORY_LIMIT: u32 = 200;
+const ISLAND_HISTORY_PATTERN: &str = "notification.island.history/*";
+const ISLAND_HISTORY_DAYS: &str = "notification.island.history_days";
+const DEFAULT_ISLAND_HISTORY_DAYS: u32 = 3;
+const ISLAND_HISTORY_LIMIT: u32 = 1000;
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 
 fn island_entry(notice: &crate::reminder_engine::Notice, at: u64) -> Value {
     use crate::reminder_engine::{NoticeKind, HOST_NOTICE_OWNER};
@@ -303,10 +307,61 @@ pub(crate) fn remember_island_notice(
                 SELECT rowid FROM app_settings WHERE key GLOB ?1
                 ORDER BY rowid DESC LIMIT -1 OFFSET ?2
             )",
-            params![format!("{ISLAND_HISTORY_PREFIX}*"), ISLAND_HISTORY_LIMIT],
+            params![ISLAND_HISTORY_PATTERN, ISLAND_HISTORY_LIMIT],
         )
         .map_err(err)?;
     }
+    Ok(())
+}
+
+pub(crate) fn island_history_days(db: &Connection) -> AppResult<u32> {
+    Ok(preference(db, ISLAND_HISTORY_DAYS)?
+        .and_then(|value| value.parse().ok())
+        .filter(|&days| days > 0)
+        .unwrap_or(DEFAULT_ISLAND_HISTORY_DAYS))
+}
+
+fn remove_expired_island_history(db: &Connection, now: u64, days: u32) -> AppResult<()> {
+    db.execute(
+        "DELETE FROM app_settings WHERE key GLOB ?1 AND
+           CASE WHEN json_valid(value) THEN coalesce(json_extract(value,'$.at'),json_extract(value,'$.shownAt'),0)
+                ELSE 0 END < ?2",
+        params![ISLAND_HISTORY_PATTERN, now.saturating_sub(u64::from(days) * DAY_MS)],
+    ).map_err(err)?;
+    Ok(())
+}
+
+pub(crate) fn prune_island_history(store: &Store, now: u64) -> AppResult<()> {
+    let db = store.db.lock().map_err(err)?;
+    remove_expired_island_history(&db, now, island_history_days(&db)?)
+}
+
+pub(crate) fn set_island_history_days(store: &Store, now: u64, days: u32) -> AppResult<()> {
+    if days == 0 {
+        return Err("INVALID_ARGUMENT: 保留天数必须为正整数".into());
+    }
+    let mut db = store.db.lock().map_err(err)?;
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(err)?;
+    tx.execute(
+        "INSERT INTO app_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        params![ISLAND_HISTORY_DAYS, days.to_string()],
+    ).map_err(err)?;
+    remove_expired_island_history(&tx, now, days)?;
+    tx.commit().map_err(err)
+}
+
+pub(crate) fn clear_island_history(store: &Store) -> AppResult<()> {
+    store
+        .db
+        .lock()
+        .map_err(err)?
+        .execute(
+            "DELETE FROM app_settings WHERE key GLOB ?1",
+            [ISLAND_HISTORY_PATTERN],
+        )
+        .map_err(err)?;
     Ok(())
 }
 
@@ -317,7 +372,7 @@ pub(crate) fn island_history(store: &Store) -> AppResult<Value> {
         .map_err(err)?;
     let rows = query
         .query_map(
-            params![format!("{ISLAND_HISTORY_PREFIX}*"), ISLAND_HISTORY_LIMIT],
+            params![ISLAND_HISTORY_PATTERN, ISLAND_HISTORY_LIMIT],
             |row| row.get::<_, String>(0),
         )
         .map_err(err)?;

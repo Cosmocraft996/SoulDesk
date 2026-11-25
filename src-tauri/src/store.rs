@@ -221,6 +221,37 @@ impl Store {
             .map_err(err)?;
         writeln!(file, "{line}").map_err(err)
     }
+    // 这是 WAL 重置时的保留目标。其他连接占用期间由后续空闲检查点重试。
+    const WAL_RETAIN_BYTES: u64 = 8 * 1024 * 1024;
+
+    pub(crate) fn reclaim_idle_wal(&self) -> AppResult<()> {
+        let size = match std::fs::metadata(self.root.join("workbench.sqlite-wal")) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(err(error)),
+        };
+        if size <= Self::WAL_RETAIN_BYTES {
+            return Ok(());
+        }
+        let db = match self.db.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(()),
+            Err(error) => return Err(err(error)),
+        };
+        // 复用单进程主连接，回收失败时恢复原忙等待策略。
+        let wait_ms: u64 = db
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .map_err(err)?;
+        db.busy_timeout(std::time::Duration::ZERO).map_err(err)?;
+        let checkpoint = db
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .map_err(err);
+        let restore = db
+            .busy_timeout(std::time::Duration::from_millis(wait_ms))
+            .map_err(err);
+        checkpoint.and(restore)
+    }
+
     pub fn open(root: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(root.join("widgets")).map_err(err)?;
         let mut db = Connection::open(root.join("workbench.sqlite")).map_err(err)?;
@@ -319,6 +350,8 @@ impl Store {
             [],
         )
         .map_err(err)?;
+        db.pragma_update(None, "journal_size_limit", Self::WAL_RETAIN_BYTES)
+            .map_err(err)?;
         Ok(Self {
             root,
             db: Mutex::new(db),
@@ -546,6 +579,39 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_history_wal_reclaims_space_after_a_large_batch() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-history-wal-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root).unwrap();
+        let wal = store.root.join("workbench.sqlite-wal");
+        let bytes = Store::WAL_RETAIN_BYTES + 4 * 1024;
+        {
+            let db = store.db.lock().unwrap();
+            db.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+            db.busy_timeout(std::time::Duration::from_millis(321))
+                .unwrap();
+            db.execute("CREATE TABLE test_wal_batch(payload BLOB)", [])
+                .unwrap();
+            db.execute("INSERT INTO test_wal_batch VALUES (zeroblob(?1))", [bytes])
+                .unwrap();
+        }
+        assert!(std::fs::metadata(&wal).unwrap().len() > Store::WAL_RETAIN_BYTES);
+        store.reclaim_idle_wal().unwrap();
+        assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+        let db = store.db.lock().unwrap();
+        let retained: u64 = db
+            .query_row("SELECT length(payload) FROM test_wal_batch", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(retained, bytes);
+        let wait_ms: u64 = db
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .unwrap();
+        assert_eq!(wait_ms, 321);
+    }
 
     #[test]
     fn app_theme_persists_and_uses_default_for_unknown_values() {

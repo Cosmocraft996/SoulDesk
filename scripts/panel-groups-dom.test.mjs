@@ -87,7 +87,13 @@ async function fixture({ legacy = false, active = null, locked = false, query = 
       f.calls.push([command, args]);
       if (command === 'snapshot') return { ...structuredClone(state), panelScroll: positions.get(state.panelGroups?.active ?? null) };
       if (command === 'notification_settings') {
-        const { type, percent } = args.command;
+        const { type, percent, days } = args.command;
+        if (['history', 'history-retention', 'clear-history'].includes(type)) {
+          const history = f.islandHistory ??= { retentionDays: 3, shown: [], pending: [] };
+          if (type === 'history-retention') history.retentionDays = days;
+          if (type === 'clear-history') history.shown = [];
+          return structuredClone(history);
+        }
         if (type === 'opacity' || type === 'volume') notificationPreferences[type] = percent;
         return structuredClone(notificationPreferences);
       }
@@ -569,6 +575,31 @@ test('灵动通知测试可发送上涨、下跌和有声来电样例', async ()
     }
     const commands = f.calls.filter(([name, args]) => name === 'notification_settings' && args.command.type === 'test').map(([, args]) => args.command);
     assert.deepEqual(commands, variants.map(sample => ({ type: 'test', channel: 'island', sample })));
+  } finally { await f.close(); }
+});
+
+test('灵动通知历史可保存保留天数并仅清空已显示记录', async () => {
+  const f = await fixture({ query: '?tab=checks' });
+  const entry = (id, title) => ({ id, title, kind: 'info', source: 'SoulDesk', at: 1 });
+  f.islandHistory = { retentionDays: 3, shown: [entry('shown', '已显示测试')], pending: [entry('pending', '正在排队测试')] };
+  try {
+    await click(textButton(document, '查看灵动通知历史'));
+    const days = document.querySelector('#island-history-days');
+    assert.equal(days.value, '3');
+    await input(days, '0');
+    assert.equal(textButton(document, '保存保留天数').disabled, true);
+    await input(days, '7');
+    await click(textButton(document, '保存保留天数'));
+    assert.equal(f.islandHistory.retentionDays, 7);
+    await click(textButton(document, '清空已显示历史'));
+    await click(document.querySelector('[aria-label="清空历史确认"] button:last-child'));
+    assert.match(document.body.textContent, /已显示测试/);
+    await click(textButton(document, '清空已显示历史'));
+    await click(textButton(document, '确认清空'));
+    assert.doesNotMatch(document.body.textContent, /已显示测试/);
+    assert.match(document.body.textContent, /正在排队测试/);
+    assert.deepEqual(f.calls.filter(([name, args]) => name === 'notification_settings' && ['history-retention', 'clear-history'].includes(args.command.type)).map(([, args]) => args.command),
+      [{ type: 'history-retention', days: 7 }, { type: 'clear-history' }]);
   } finally { await f.close(); }
 });
 

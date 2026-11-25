@@ -30,7 +30,8 @@ const samples = [
 ] as const;
 type Sample = typeof samples[number][0];
 type HistoryEntry = { id: string; kind: Sample | 'market-alert'; title: string; message: string; source: string; at?: number; shownAt?: number };
-type History = { shown: HistoryEntry[]; pending: HistoryEntry[] };
+type History = { shown: HistoryEntry[]; pending: HistoryEntry[]; retentionDays: number };
+type HistoryCommand = { type: 'history-retention'; days: number } | { type: 'clear-history' };
 type Command =
   | { type: 'channel'; channel: Channel; enabled: boolean }
   | { type: 'calls'; enabled: boolean }
@@ -114,6 +115,9 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
   const [historyOpen, setHistoryOpen] = useState(!!historyRequest);
   const [historyError, setHistoryError] = useState('');
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [retentionDraft, setRetentionDraft] = useState<string>();
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
   const historyPanel = useRef<HTMLDivElement>(null);
   const selectedEntry = useRef<HTMLLIElement>(null);
   const previewRequest = useRef<AbortController>(null);
@@ -221,6 +225,23 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
     }
   }, [historyOpen, historyRequest, history, historyError]);
 
+  async function changeHistory(command: HistoryCommand) {
+    setHistoryBusy(true);
+    setHistoryError('');
+    try {
+      setHistory(await invoke<History>('notification_settings', { command }));
+      if (command.type === 'history-retention') setRetentionDraft(undefined);
+      setConfirmHistoryClear(false);
+    } catch (failure) {
+      setHistoryError(String(failure));
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  const historyDays = Number(retentionDraft ?? history?.retentionDays);
+  const validHistoryDays = Number.isInteger(historyDays) && historyDays >= 1 && historyDays <= 4294967295;
+
   function entries(values: HistoryEntry[]) {
     return <ul className="notification-history">
       {values.map(entry => {
@@ -305,13 +326,38 @@ export function NotificationSettings({ historyRequest }: { historyRequest?: { id
         onClick={() => void change({ type: 'test', channel: 'island', sample })}>测试灵动通知</button>
     </div>
     <div className="setting-row">
-      <button type="button" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起灵动通知历史' : '查看灵动通知历史'}</button>
-      {historyOpen && <button type="button" onClick={() => setHistoryRefresh(value => value + 1)}>刷新记录</button>}
+      <button type="button" disabled={historyBusy} aria-expanded={historyOpen} onClick={() => {
+        setConfirmHistoryClear(false);
+        setHistoryOpen(!historyOpen);
+      }}>{historyOpen ? '收起灵动通知历史' : '查看灵动通知历史'}</button>
+      {historyOpen && <button type="button" disabled={historyBusy} onClick={() => setHistoryRefresh(value => value + 1)}>刷新记录</button>}
     </div>
-    {historyOpen && <div ref={historyPanel}>{historyError
-      ? <p role="alert" className="notice error">{historyError}</p>
-      : history === undefined ? <p role="status">正在读取历史</p>
-      : <>
+    {historyOpen && <div ref={historyPanel}>
+      {historyError && <p role="alert" className="notice error">{historyError}</p>}
+      {!history && !historyError && <p role="status">正在读取历史</p>}
+      {history && <>
+        <form className="setting-row" onSubmit={event => {
+          event.preventDefault();
+          if (validHistoryDays && !historyBusy && historyDays !== history.retentionDays) {
+            void changeHistory({ type: 'history-retention', days: historyDays });
+          }
+        }}>
+          <label htmlFor="island-history-days">保留天数</label>
+          <input id="island-history-days" type="number" min="1" max="4294967295" step="1" required
+            disabled={historyBusy} value={retentionDraft ?? String(history.retentionDays)}
+            onChange={event => setRetentionDraft(event.target.value)} />
+          <button type="submit" disabled={historyBusy || !validHistoryDays || historyDays === history.retentionDays}>保存保留天数</button>
+        </form>
+        <div className="setting-row">
+          <span>已显示历史最多保留 1000 条</span>
+          {!confirmHistoryClear && <button type="button" disabled={historyBusy || !history.shown.length}
+            onClick={() => setConfirmHistoryClear(true)}>清空已显示历史</button>}
+        </div>
+        {confirmHistoryClear && <div className="setting-row" role="group" aria-label="清空历史确认">
+          <span>清空所有已显示的灵动通知历史？</span>
+          <button type="button" disabled={historyBusy} onClick={() => void changeHistory({ type: 'clear-history' })}>确认清空</button>
+          <button type="button" disabled={historyBusy} onClick={() => setConfirmHistoryClear(false)}>取消</button>
+        </div>}
         {(history.pending.length > 0 || historyRequest?.id === 'pending') && <>
           <h3>排队中 · {history.pending.length} 条</h3>
           {history.pending.length > 0 ? entries(history.pending) : <p className="muted">当前没有排队通知</p>}

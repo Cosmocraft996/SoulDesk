@@ -123,7 +123,7 @@ SDK经消息端口接收带订阅标识与递增序号的事件；宿主容器�
 
 `notification: true` 开启弹窗，`notificationChannel` 默认 `windows`，也可选 `island`。灵动行情铃声由宿主设置统一管理，旧 `sound` 字段保留用于读取已有规则。`alerts.history` 使用 `offset/limit`（最多 100），返回触发原因及递送结果。灵动行情事件的 `sound: 'island'` 表示由灵动通知管理。`alerts.retry` 接收事件 ID 及 `channel: 'notification'`，对失败、结果不确定或过期的弹窗累计最多尝试 3 次。`sent` 表示系统调用成功或灵动队列已受理。
 
-`alerts.historySettings` 传 `{}` 读取全宿主保留设置，传 `{days:正整数}` 修改保留天数，传 `{days:null}` 关闭自动清理，返回 `{days}`。默认 3 天。`alerts.historyClear` 传 `{}` 清空当前触发历史并返回 `{cleared}`，规则和正在进行的通知递送继续有效。
+`alerts.historySettings` 传 `{}` 读取全宿主保留设置，传 `{days:正整数}` 修改保留天数，传 `{days:null}` 关闭按天清理，返回 `{days}`。默认 3 天。`alerts.history` 的全局分页上限为最近 1000 条。`alerts.historyClear` 传 `{}` 清空当前触发历史并返回 `{cleared}`，规则和正在进行的通知递送继续有效。
 
 隐藏试加载只接收隔离配置和存储。组件应在 `host.preview` 为true时跳过真实行情/警报和公开内容，先完成静态界面初始化，再 `await host.ready()`。本地表单的提交事件已允许；内容安全策略仍禁止表单导航和网页直接请求外部接口，HTTPS图片仅向声明内容能力的包开放。确认交互使用HTML `dialog`；容器不开放原生alert/confirm/prompt。
 

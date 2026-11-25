@@ -896,6 +896,7 @@ pub fn start(app: &AppHandle) {
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut previous = String::new();
         let mut last_history_cleanup: Option<std::time::Instant> = None;
+        let mut prune_alert_backlog = false;
         loop {
             timer.tick().await;
             let core = handle.state::<Core>();
@@ -905,12 +906,34 @@ pub fn start(app: &AppHandle) {
                 }
                 break;
             }
-            if last_history_cleanup.is_none_or(|at| at.elapsed().as_secs() >= 60) {
+            let cleanup_due = last_history_cleanup.is_none_or(|at| at.elapsed().as_secs() >= 60);
+            let now = crate::store::now_ms();
+            if cleanup_due {
                 last_history_cleanup = Some(std::time::Instant::now());
-                if let Err(error) = core
-                    .reminders
-                    .prune_alert_history(&core.store, crate::store::now_ms())
-                {
+                if let Err(error) = crate::reminder_store::prune_island_history(&core.store, now) {
+                    core.report(error);
+                }
+            }
+            if cleanup_due || prune_alert_backlog {
+                let source_now = core
+                    .business
+                    .feed
+                    .source_now()
+                    .or_else(|| core.business.spot.source_now());
+                prune_alert_backlog =
+                    match core
+                        .reminders
+                        .prune_alert_history(&core.store, now, source_now)
+                    {
+                        Ok(more) => more,
+                        Err(error) => {
+                            core.report(error);
+                            false
+                        }
+                    };
+            }
+            if cleanup_due {
+                if let Err(error) = core.store.reclaim_idle_wal() {
                     core.report(error);
                 }
             }

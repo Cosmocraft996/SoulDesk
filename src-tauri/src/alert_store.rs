@@ -10,6 +10,8 @@ use std::collections::HashMap;
 const HISTORY_DAYS_KEY: &str = "alerts.history.retention_days";
 const DEFAULT_HISTORY_DAYS: u32 = 3;
 const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
+const HISTORY_LIMIT: u64 = 1_000;
+const HISTORY_PRUNE_BATCH: usize = 1_000;
 
 pub fn save_rule(store: &Store, rule: &Rule, expected_revision: Option<u64>) -> AppResult<()> {
     rule.validate()?;
@@ -127,14 +129,7 @@ impl Engine {
                 .map_err(err)?;
             }
             if let Some(event) = result.event {
-                let sound = if event.notification
-                    && event.notification_channel == alerts::NotificationChannel::Island
-                {
-                    "island"
-                } else {
-                    "suppressed"
-                };
-                tx.execute("INSERT INTO alert_events(id,rule_id,revision,sequence,event,created,notification,sound) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![event.id,event.rule_id,event.revision,event.sequence,serde_json::to_string(&event).map_err(err)?,event.created_utc_ms,if event.notification {"pending"}else{"suppressed"},sound]).map_err(err)?;
+                insert_event(&tx, &event)?;
                 events.push(event);
             }
             updates.push((rule.id, (rule.revision, result.state)));
@@ -154,21 +149,40 @@ impl Engine {
     }
 }
 
+fn insert_event(db: &Connection, event: &AlertEvent) -> AppResult<()> {
+    let sound = if event.notification
+        && event.notification_channel == alerts::NotificationChannel::Island
+    {
+        "island"
+    } else {
+        "suppressed"
+    };
+    db.execute("INSERT INTO alert_events(id,rule_id,revision,sequence,event,created,notification,sound) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![event.id,event.rule_id,event.revision,event.sequence,serde_json::to_string(event).map_err(err)?,event.created_utc_ms,if event.notification {"pending"}else{"suppressed"},sound]).map_err(err)?;
+    Ok(())
+}
+
 pub fn list_events(store: &Store, offset: u64, limit: u32) -> AppResult<Vec<Value>> {
+    let remaining = HISTORY_LIMIT.saturating_sub(offset);
+    if remaining == 0 {
+        return Ok(Vec::new());
+    }
     let db = store.db.lock().map_err(err)?;
     let mut query=db.prepare("SELECT event,notification,sound,notification_attempts,sound_attempts,notification_error,sound_error FROM alert_events WHERE coalesce(json_extract(event,'$.historyCleared'),0)=0 ORDER BY created DESC,rowid DESC LIMIT ?1 OFFSET ?2").map_err(err)?;
     let rows = query
-        .query_map(params![limit.clamp(1, 100), offset], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, u32>(3)?,
-                r.get::<_, u32>(4)?,
-                r.get::<_, Option<String>>(5)?,
-                r.get::<_, Option<String>>(6)?,
-            ))
-        })
+        .query_map(
+            params![u64::from(limit.clamp(1, 100)).min(remaining), offset],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, u32>(3)?,
+                    r.get::<_, u32>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                ))
+            },
+        )
         .map_err(err)?;
     rows.map(|row| {
         let (event, n, s, na, sa, ne, se) = row.map_err(err)?;
@@ -220,7 +234,12 @@ pub(crate) fn clear_history(store: &Store) -> AppResult<usize> {
     ).map_err(err)
 }
 
-pub(crate) fn prune_history(store: &Store, now: u64, active: &[&str]) -> AppResult<()> {
+pub(crate) fn prune_history(
+    store: &Store,
+    now: u64,
+    active: &[&str],
+    source_now: Option<u64>,
+) -> AppResult<bool> {
     let mut db = store.db.lock().map_err(err)?;
     let tx = db
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -228,25 +247,45 @@ pub(crate) fn prune_history(store: &Store, now: u64, active: &[&str]) -> AppResu
     let cutoff = |days: u32| now.saturating_sub(u64::from(days) * DAY_MS);
     let visible_cutoff = history_days(&tx)?.map(cutoff).unwrap_or(0);
     let cleared_cutoff = cutoff(DEFAULT_HISTORY_DAYS).max(visible_cutoff);
-    tx.execute(
-        "DELETE FROM alert_events
-         WHERE (created < ?1 OR (created < ?2 AND json_extract(event,'$.historyCleared')=1))
-           AND notification NOT IN ('pending','sending')
-           AND id NOT IN (SELECT value FROM json_each(?3))",
-        params![
-            visible_cutoff,
-            cleared_cutoff,
-            serde_json::to_string(active).map_err(err)?
-        ],
-    )
-    .map_err(err)?;
-    tx.execute(
-        "UPDATE alert_events SET event=json_set(event,'$.historyCleared',1)
-         WHERE created < ?1 AND coalesce(json_extract(event,'$.historyCleared'),0)=0",
-        [visible_cutoff],
-    )
-    .map_err(err)?;
-    tx.commit().map_err(err)
+    if let Some(source_now) = source_now {
+        expire_pending_notifications(&tx, source_now)?;
+    }
+    let (oldest_kept, oldest_rowid) = tx.query_row(
+        "SELECT created,rowid FROM alert_events ORDER BY created DESC,rowid DESC LIMIT 1 OFFSET ?1",
+        [HISTORY_LIMIT - 1],
+        |row| Ok((Some(row.get::<_, u64>(0)?), Some(row.get::<_, i64>(1)?))),
+    ).optional().map_err(err)?.unwrap_or_default();
+    let removed = tx
+        .execute(
+            "DELETE FROM alert_events WHERE rowid IN (
+           SELECT rowid FROM alert_events
+           WHERE (created < ?1 OR (created < ?2 AND json_extract(event,'$.historyCleared')=1)
+                    OR (created,rowid) < (?3,?4))
+             AND notification NOT IN ('pending','sending')
+             AND id NOT IN (SELECT value FROM json_each(?5))
+           ORDER BY created,rowid LIMIT ?6
+         )",
+            params![
+                visible_cutoff,
+                cleared_cutoff,
+                oldest_kept,
+                oldest_rowid,
+                serde_json::to_string(active).map_err(err)?,
+                HISTORY_PRUNE_BATCH,
+            ],
+        )
+        .map_err(err)?;
+    let more = removed == HISTORY_PRUNE_BATCH;
+    if !more {
+        tx.execute(
+            "UPDATE alert_events SET event=json_set(event,'$.historyCleared',1)
+             WHERE created < ?1 AND coalesce(json_extract(event,'$.historyCleared'),0)=0",
+            [visible_cutoff],
+        )
+        .map_err(err)?;
+    }
+    tx.commit().map_err(err)?;
+    Ok(more)
 }
 
 pub(crate) fn notification_event(store: &Store, id: &str) -> AppResult<AlertEvent> {
@@ -364,6 +403,11 @@ pub fn retry_delivery(store: &Store, id: &str, channel: Channel) -> AppResult<()
     }
     Ok(())
 }
+fn expire_pending_notifications(db: &Connection, now: u64) -> AppResult<()> {
+    db.execute("UPDATE alert_events SET notification='expired' WHERE notification='pending' AND created<?1 AND coalesce(notification_error,'')!='用户主动重试'",[now.saturating_sub(120_000)]).map_err(err)?;
+    Ok(())
+}
+
 pub fn pending_deliveries(store: &Store, now: u64) -> AppResult<Vec<AlertEvent>> {
     let db = store.db.lock().map_err(err)?;
     // 已生成但尚未播出的旧版独立提示音停止排队，历史结果照常保留。
@@ -372,7 +416,7 @@ pub fn pending_deliveries(store: &Store, now: u64) -> AppResult<Vec<AlertEvent>>
         [],
     )
     .map_err(err)?;
-    db.execute("UPDATE alert_events SET notification='expired' WHERE notification='pending' AND created<?1 AND coalesce(notification_error,'')!='用户主动重试'",[now.saturating_sub(120_000)]).map_err(err)?;
+    expire_pending_notifications(&db, now)?;
     let mut query=db.prepare("SELECT event FROM alert_events WHERE notification='pending' AND notification_attempts<3 ORDER BY created,rowid LIMIT 50").map_err(err)?;
     let rows = query
         .query_map([], |r| r.get::<_, String>(0))
@@ -668,7 +712,7 @@ mod tests {
             assert!(claim_delivery(&store, &event.id, Channel::Notification).unwrap());
             finish_delivery(&store, &event.id, Channel::Notification, Ok(())).unwrap();
         }
-        prune_history(&store, recent.created_utc_ms, &[&active.id]).unwrap();
+        prune_history(&store, recent.created_utc_ms, &[&active.id], None).unwrap();
         assert!(notification_event(&store, &old.id).is_err());
         assert!(notification_event(&store, &active.id).is_ok());
         assert_eq!(list_events(&store, 0, 20).unwrap().len(), 1);
@@ -697,9 +741,56 @@ mod tests {
             history_settings(&store, None).unwrap(),
             json!({"days":null})
         );
-        prune_history(&store, recent.created_utc_ms + 8 * DAY_MS, &[]).unwrap();
+        prune_history(&store, recent.created_utc_ms + 8 * DAY_MS, &[], None).unwrap();
         assert!(notification_event(&store, &active.id).is_err());
         assert!(notification_event(&store, &pending.id).is_err());
         assert_eq!(list_events(&store, 0, 20).unwrap()[0]["id"], after_clear.id);
+    }
+
+    #[test]
+    fn history_count_cleanup_keeps_live_notice_targets_and_expires_stale_deliveries() {
+        let root =
+            std::env::temp_dir().join(format!("souldesk-history-count-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(root).unwrap();
+        history_settings(&store, Some(&Value::Null)).unwrap();
+        let r = Rule {
+            mode: Mode::Repeat,
+            ..rule()
+        };
+        save_rule(&store, &r, None).unwrap();
+        let mut engine = Engine::default();
+        let [expired, active, sending, latest] = [0, 20_000, 40_000, 150_000].map(|t| {
+            let (q, c) = quote(&r, "100", t);
+            engine.process(&store, &q, c).unwrap().remove(0)
+        });
+        assert!(claim_delivery(&store, &active.id, Channel::Notification).unwrap());
+        finish_delivery(&store, &active.id, Channel::Notification, Ok(())).unwrap();
+        assert!(claim_delivery(&store, &sending.id, Channel::Notification).unwrap());
+        {
+            let mut db = store.db.lock().unwrap();
+            let tx = db.transaction().unwrap();
+            for index in 1..=HISTORY_LIMIT {
+                insert_event(
+                    &tx,
+                    &AlertEvent {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        sequence: latest.sequence + index,
+                        notification: false,
+                        ..latest.clone()
+                    },
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let now = latest.created_utc_ms;
+        prune_history(&store, now, &[&active.id], None).unwrap();
+        assert!(notification_event(&store, &expired.id).is_ok());
+        prune_history(&store, now, &[&active.id], Some(now)).unwrap();
+        assert!(notification_event(&store, &expired.id).is_err());
+        assert!(notification_event(&store, &active.id).is_ok());
+        assert!(notification_event(&store, &sending.id).is_ok());
+        assert_eq!(list_events(&store, HISTORY_LIMIT - 1, 20).unwrap().len(), 1);
+        assert!(list_events(&store, HISTORY_LIMIT, 20).unwrap().is_empty());
     }
 }
