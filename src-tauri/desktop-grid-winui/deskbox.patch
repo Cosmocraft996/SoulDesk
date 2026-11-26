@@ -27,9 +27,26 @@ diff --git a/src/DeskBox/App.xaml.cs b/src/DeskBox/App.xaml.cs
          {
              Log("OnLaunched skipped: already launched");
 diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
+index 3e8d1af..19f0853 100644
 --- a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
 +++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs
-@@ -1143,6 +1143,13 @@
+@@ -335,6 +335,15 @@ public sealed partial class FileSurfaceContent :
+ 
+     internal async Task RefreshAsync()
+     {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null && ViewModel.MappedFolderPath is null)
++        {
++            await ViewModel.RefreshReferenceGridAsync();
++            _lastDiskReconciliationUtc = DateTime.UtcNow;
++            UpdateEmptyState();
++            return;
++        }
++#endif
+         await ViewModel.RefreshFolderContentsAsync();
+         _lastDiskReconciliationUtc = DateTime.UtcNow;
+         UpdateEmptyState();
+@@ -1143,6 +1152,13 @@ public sealed partial class FileSurfaceContent :
          WidgetItem item,
          Func<FrameworkElement, Windows.Foundation.Point> getPosition)
      {
@@ -43,7 +60,7 @@ diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/sr
          if (Win32Helper.GetCursorPos(out Win32Helper.POINT contextPoint))
          {
              _lastItemContextScreenPoint = (contextPoint.X, contextPoint.Y);
-@@ -1492,8 +1499,12 @@
+@@ -1492,8 +1508,12 @@ public sealed partial class FileSurfaceContent :
          // Copy so IM-style receivers can never resolve the drop to Move
          // and delete the original (feedback 500); Windows 11 keeps Copy|Move
          // plus the preference below.
@@ -56,7 +73,7 @@ diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/sr
          _activeDragAllowedOperations = e.AllowedOperations;
          // TryPrepare always writes None; the user's drag-out setting is the
          // actual preferred effect. It only reaches Windows 11 targets; on
-@@ -1501,6 +1512,9 @@
+@@ -1501,6 +1521,9 @@ public sealed partial class FileSurfaceContent :
          e.Data.RequestedOperation =
              FileItemDragPackage.ResolveDragOutPreferredOperation(
                  _settingsService.Settings.FileWidget.ManagedDragOutAction);
@@ -66,7 +83,7 @@ diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/sr
          _sourceDragSession.Begin(_activeDragSessionId);
          MaybeShowDragOutModifierTip(e.AllowedOperations);
          // The OLE IDataObject cannot expose the in-app token to our own
-@@ -2555,6 +2569,14 @@
+@@ -2555,6 +2578,14 @@ public sealed partial class FileSurfaceContent :
  
      private void Root_DragOver(object sender, DragEventArgs e)
      {
@@ -81,7 +98,7 @@ diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/sr
          ApplySurfaceDragOverFeedback(
              e,
              allowInternalReorderPreview: true);
-@@ -2562,6 +2584,14 @@
+@@ -2562,6 +2593,14 @@ public sealed partial class FileSurfaceContent :
  
      internal void ApplyHostEdgeDragOverFeedback(DragEventArgs e)
      {
@@ -96,7 +113,7 @@ diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.xaml.cs b/sr
          ApplySurfaceDragOverFeedback(
              e,
              allowInternalReorderPreview: false);
-@@ -3048,6 +3078,13 @@
+@@ -3048,6 +3087,13 @@ public sealed partial class FileSurfaceContent :
      private async void Root_Drop(object sender, DragEventArgs e)
      {
          e.Handled = true;
@@ -139,6 +156,7 @@ diff --git a/src/DeskBox/Controls/WidgetShell.xaml.cs b/src/DeskBox/Controls/Wid
              RaiseTitleBarClickCollapse(e);
          }
 diff --git a/src/DeskBox/DeskBox.csproj b/src/DeskBox/DeskBox.csproj
+index 755c127..19b2fd7 100644
 --- a/src/DeskBox/DeskBox.csproj
 +++ b/src/DeskBox/DeskBox.csproj
 @@ -14,6 +14,8 @@
@@ -150,7 +168,16 @@ diff --git a/src/DeskBox/DeskBox.csproj b/src/DeskBox/DeskBox.csproj
      <WindowsPackageType>None</WindowsPackageType>
      <PublishSingleFile>false</PublishSingleFile>
      <Nullable>enable</Nullable>
-@@ -327,14 +329,14 @@
+@@ -298,6 +300,8 @@
+     </Content>
+     <EmbeddedResource Include="Assets\Cities\cities.json" />
+     <EmbeddedResource Include="Strings\zh-CN.json" />
++    <EmbeddedResource Include="Views\ReferenceSettingsCatalog.json" LogicalName="DeskBox.ReferenceSettingsCatalog.json"
++        Condition="'$(SoulDeskGridPreview)' == 'true'" />
+     <EmbeddedResource Include="Strings\zh-TW.json" />
+     <EmbeddedResource Include="Strings\en-US.json" />
+     <EmbeddedResource Include="Strings\ja-JP.json" />
+@@ -327,14 +331,14 @@
      <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
    </PropertyGroup>
  
@@ -167,7 +194,7 @@ diff --git a/src/DeskBox/DeskBox.csproj b/src/DeskBox/DeskBox.csproj
      <ItemGroup>
        <DeskBoxUpdaterOutput Include="..\DeskBox.Updater\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\DeskBox.Updater.*" Condition="'$(RuntimeIdentifier)' != ''" />
        <DeskBoxUpdaterOutput Include="..\DeskBox.Updater\bin\$(Platform)\$(Configuration)\$(TargetFramework)\DeskBox.Updater.*" Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' != 'AnyCPU' and '$(Platform)' != ''" />
-@@ -343,7 +345,7 @@
+@@ -343,7 +347,7 @@
      <Copy SourceFiles="@(DeskBoxUpdaterOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
    </Target>
  
@@ -404,7 +431,7 @@ index 47a61e8..6020263 100644
          Config.ViewMode = ViewMode;
          _settingsService.SaveDebounced();
 diff --git a/src/DeskBox/Views/ContentWidgetWindow.Commands.cs b/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
-index ae01bba..5d71eac 100644
+index ae01bba..dff044f 100644
 --- a/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
 +++ b/src/DeskBox/Views/ContentWidgetWindow.Commands.cs
 @@ -95,6 +95,13 @@ public sealed partial class ContentWidgetWindow
@@ -448,7 +475,42 @@ index ae01bba..5d71eac 100644
          var flyout = new MenuFlyout();
  
          if (CurrentContent is GlanceWidgetContentAdapter glance)
-@@ -947,6 +967,10 @@ public sealed partial class ContentWidgetWindow
+@@ -505,6 +525,14 @@ public sealed partial class ContentWidgetWindow
+             App.Current.LocalizationService,
+             App.Current.WidgetManager,
+             SetChromeModeOverride);
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null)
++        {
++            e.CloseWidgetItem = ReferenceGridMenuItem(GetFeatureWidgetCloseMenuText(), "\uE7E8",
++                () => SubmitReferenceGridSetting("hidden", bool.TrueString));
++            return;
++        }
++#endif
+ 
+         bool showCloseWhenClosed = false;
+         IDisposable? closeWidgetFlyoutHandoff = null;
+@@ -922,6 +950,9 @@ public sealed partial class ContentWidgetWindow
+         }
+ 
+         WidgetChromeModeNames.SetOverrideMode(_config, mode);
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(_config, "artwork", ReferenceGridPreview.ArtworkKeys);
++#endif
+         SettingsService.UpdateWidget(_config);
+         ApplyAppearancePreview();
+     }
+@@ -929,6 +960,9 @@ public sealed partial class ContentWidgetWindow
+     private void SetWidgetBorderModeOverride(string? mode)
+     {
+         WidgetBorderCustomization.SetModeOverride(_config, mode);
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(_config, "artwork", ReferenceGridPreview.ArtworkKeys);
++#endif
+         SettingsService.UpdateWidget(_config);
+         ApplyAppearancePreview();
+     }
+@@ -947,6 +981,10 @@ public sealed partial class ContentWidgetWindow
  
      private void SetPositionLocked(bool value)
      {
@@ -459,7 +521,7 @@ index ae01bba..5d71eac 100644
          if (_config.IsPositionLocked == value)
          {
              return;
-@@ -977,6 +1001,10 @@ public sealed partial class ContentWidgetWindow
+@@ -977,6 +1015,10 @@ public sealed partial class ContentWidgetWindow
  
      private void SetSizeLocked(bool value)
      {
@@ -470,7 +532,7 @@ index ae01bba..5d71eac 100644
          if (_config.IsSizeLocked == value)
          {
              return;
-@@ -1046,6 +1074,9 @@ public sealed partial class ContentWidgetWindow
+@@ -1046,6 +1088,9 @@ public sealed partial class ContentWidgetWindow
          var editor = new TextBox
          {
              Text = _titleViewModel.DisplayName,
@@ -480,7 +542,7 @@ index ae01bba..5d71eac 100644
              PlaceholderText = localization.T("Widget.TitlePlaceholder"),
              Width = Math.Clamp(titleWidth, 120, 220),
              MaxWidth = 220,
-@@ -1113,7 +1144,15 @@ public sealed partial class ContentWidgetWindow
+@@ -1113,7 +1158,15 @@ public sealed partial class ContentWidgetWindow
          {
              if (!string.IsNullOrEmpty(newName))
              {
@@ -1315,10 +1377,10 @@ index 6bb1355..477ad36 100644
              return;
 diff --git a/src/DeskBox/App.ReferenceGridPreview.cs b/src/DeskBox/App.ReferenceGridPreview.cs
 new file mode 100644
-index 0000000..85f3a01
+index 0000000..587b86c
 --- /dev/null
 +++ b/src/DeskBox/App.ReferenceGridPreview.cs
-@@ -0,0 +1,418 @@
+@@ -0,0 +1,530 @@
 +#if SOULDESK_GRID_PREVIEW
 +using DeskBox.Controls.WidgetContents;
 +using DeskBox.Models;
@@ -1341,6 +1403,7 @@ index 0000000..85f3a01
 +    private ReferenceWindow[] _referenceDefinitions = [];
 +    private bool _replacingReferenceWindows;
 +    private bool _pollingReferenceRenderer;
++    private (string? Path, DateTime Stamp) _referenceBackground;
 +    private static void RecordReferenceStartup(string stage) => ReferenceGridEntry.Record(stage);
 +
 +    internal IEnumerable<IntPtr> ReferenceGridWindowHandles() =>
@@ -1366,6 +1429,7 @@ index 0000000..85f3a01
 +        if (_referenceGrid.Renderer is not null)
 +        {
 +            SettingsService.Settings.WidgetCollapseBehavior = ReadReferenceDefaultMode(_referenceGrid.Renderer.State);
++            ReferenceGridPreferences.Apply(SettingsService.Settings, _referenceGrid.Renderer.State);
 +            UpdateReferenceStackRules(_referenceGrid.Renderer.State);
 +        }
 +        if (_referenceGrid.Renderer?.State.DesktopLayer is not null)
@@ -1376,7 +1440,11 @@ index 0000000..85f3a01
 +        RecordReferenceStartup("appearance-ready");
 +        FileService = new FileService(LocalizationService);
 +        OrganizerService = new OrganizerService(SettingsService, FileService, () => _referenceGrid.FixtureRoot);
-+        ResizeGuideOverlay = new ResizeGuideOverlayService();
++        ResizeGuideOverlay = new ResizeGuideOverlayService
++        {
++            IsSnapEnabled = SettingsService.Settings.ResizeSnapEnabled,
++            SnapSpacingDips = SettingsService.Settings.WidgetSnapSpacing
++        };
 +        RecordReferenceStartup("services-ready");
 +        return true;
 +    }
@@ -1392,6 +1460,11 @@ index 0000000..85f3a01
 +            RecordReferenceStartup("dispatcher-ready");
 +
 +            var preview = _referenceGrid!;
++            if (preview.Renderer is { State.SettingsOnly: true } settings)
++            {
++                ShowReferenceSettings(settings);
++                return;
++            }
 +            await SetReferenceWindowsAsync(ReferenceDefinitions(preview.Renderer?.State));
 +            RecordReferenceStartup("first-frame");
 +            preview.MembershipChanged += () => UiDispatcherQueue.TryEnqueue(async () =>
@@ -1420,6 +1493,9 @@ index 0000000..85f3a01
 +            var report = new
 +            {
 +                importPassed,
++                menu = preview.Renderer is not null && !ReferenceGridPreview.UsesDesktop && _referenceWindows.Count > 0 &&
++                    File.Exists(Path.Combine(Path.GetDirectoryName(ReferenceGridPreview.Root)!, "test-reference-menu.request"))
++                        ? _referenceWindows[0].Window.VerifyReferenceMenu() : null,
 +                windows = _referenceWindows.Select(entry => new
 +                {
 +                    name = entry.Window.Config.Name,
@@ -1447,11 +1523,95 @@ index 0000000..85f3a01
 +        }
 +    }
 +
++    internal bool ApplyReferencePreferences(ReferenceGridRenderer.Snapshot state)
++    {
++        var settings = SettingsService.Settings;
++        var appearance = (settings.Theme, settings.AccentColorMode, settings.CustomAccentColor);
++        bool changed = ReferenceGridPreferences.Apply(settings, state);
++        if (appearance != (settings.Theme, settings.AccentColorMode, settings.CustomAccentColor))
++            ThemeService.RefreshAppearance();
++        return changed;
++    }
++
++    private void RefreshReferenceBackground()
++    {
++        var settings = SettingsService.Settings;
++        var assets = WidgetTitleIconAssetStore.Current;
++        string? path = settings.WidgetBackgroundMode switch
++        {
++            "UnifiedImage" => assets.ResolveUnifiedBackgroundPath(settings.WidgetBackgroundUnifiedImage),
++            "Panorama" => assets.ResolvePanoramaBackgroundPath(settings.WidgetBackgroundPanoramaImage),
++            _ => null
++        };
++        var current = (path, path is null ? default : File.GetLastWriteTimeUtc(path));
++        if (current == _referenceBackground)
++            return;
++        _referenceBackground = current;
++        foreach (var entry in _referenceWindows) entry.Window.ApplyReferenceArtwork();
++    }
++
++    private static int? ReferenceOpacity(ReferenceGridRenderer.BoxData? box) =>
++        box is { UseCustomOpacity: true } or { Opacity: not 90 } ? box.Opacity : null;
++
 +    private sealed record ReferenceWindow(string Box, string Group, string Title, RectInt32 Bounds, int Width, int Height,
 +        bool Collapsed, WidgetCollapseBehavior Mode, ViewMode View, WidgetSortMode Sort,
 +        ReferenceGridRenderer.BoxData? Saved, ReferenceGridRenderer.Tab? Tab, (string Id, string Name)[] Tabs)
 +    {
 +        internal bool Descending => Tab?.SortDescending ?? (Tab?.Sort is "date" or "size");
++    }
++
++    private void ShowReferenceSettings(ReferenceGridRenderer renderer)
++    {
++        var window = new ReferenceSettingsWindow(renderer);
++        ThemeService.TrackWindow(window);
++        long focus = renderer.State.SettingsFocus;
++        var timer = UiDispatcherQueue.CreateTimer();
++        timer.Interval = TimeSpan.FromMilliseconds(250);
++        timer.Tick += (_, _) =>
++        {
++            try
++            {
++                if (!renderer.OwnerAlive || renderer.State.Closing)
++                {
++                    window.Close();
++                    return;
++                }
++                if (!renderer.Refresh()) return;
++                ApplyReferencePreferences(renderer.State);
++                window.ApplySnapshot();
++                if (focus != renderer.State.SettingsFocus)
++                {
++                    focus = renderer.State.SettingsFocus;
++                    window.Present();
++                }
++            }
++            catch (Exception error)
++            {
++                File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-error.txt"), error.ToString());
++                window.Close();
++            }
++        };
++        window.Closed += (_, _) => { timer.Stop(); Exit(); };
++        window.Present();
++        timer.Start();
++        File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-ready.json"),
++            JsonSerializer.Serialize(new { settings = true, handle = WinRT.Interop.WindowNative.GetWindowHandle(window).ToInt64() }));
++        string workspace = Path.GetDirectoryName(ReferenceGridPreview.Root)!;
++        if (renderer.State.Isolated && File.Exists(Path.Combine(workspace, "test-reference-settings.request")))
++            _ = VerifyReferenceSettingsAsync(window);
++    }
++
++    private static async Task VerifyReferenceSettingsAsync(ReferenceSettingsWindow window)
++    {
++        try
++        {
++            var report = await window.VerifyIsolatedSettingsAsync();
++            File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "settings-test.json"), JsonSerializer.Serialize(report));
++        }
++        catch (Exception error)
++        {
++            File.WriteAllText(Path.Combine(ReferenceGridPreview.Root, "preview-error.txt"), error.ToString());
++        }
 +    }
 +
 +    private static ReferenceWindow[] ReferenceDefinitions(ReferenceGridRenderer.Snapshot? snapshot)
@@ -1504,8 +1664,9 @@ index 0000000..85f3a01
 +        WidgetCollapseBehaviorNames.SetOverride(config, item.Mode);
 +        WidgetCompactExpansionDirectionPolicy.SetOverride(config, item.Saved?.ExpansionDirection);
 +        FileWidgetFolderOpenBehaviorNames.SetOverride(config, item.Tab?.FolderOpen);
-+        ReferenceGridPreview.SetStackPreference(config, item.Tab?.StackByType ?? false);
-+        ReferenceGridPreview.SetAppearance(config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++        ReferenceGridPreview.SetStackPreference(config, ReferenceGridPreview.StackOverride(item.Tab));
++        config.IconSizeOverride = item.Tab?.IconSize;
++        ReferenceGridPreview.SetAppearance(config, item.Saved?.Color, ReferenceOpacity(item.Saved));
 +        ReferenceGridPreview.ApplyMetadata(config, ReferenceGridPreview.StackKeys, item.Tab?.StackSettings);
 +        ReferenceGridPreview.ApplyMetadata(config, ReferenceGridPreview.ArtworkKeys, item.Tab?.Artwork,
 +            WidgetBackgroundCustomization.ColorMetadataKey);
@@ -1557,11 +1718,14 @@ index 0000000..85f3a01
 +                            item.Saved?.GroupNavigation != old.Saved?.GroupNavigation ||
 +                            item.Saved?.GroupTitleDisplay != old.Saved?.GroupTitleDisplay ||
 +                            item.Saved?.GroupWheel != old.Saved?.GroupWheel ||
-+                            item.Saved?.GroupHover != old.Saved?.GroupHover)
++                            item.Saved?.GroupHover != old.Saved?.GroupHover ||
++                            item.Saved?.GroupHoverOverride != old.Saved?.GroupHoverOverride)
 +                            existing.RefreshReferenceGroupTabs();
 +                        currentContent.ViewModel.ApplyReferencePresentation(item.View, item.Sort, item.Descending,
-+                            item.Tab?.StackByType ?? false);
++                            ReferenceGridPreview.StackOverride(item.Tab));
 +                        currentContent.ViewModel.ApplyReferenceStackSettings(item.Tab?.StackSettings);
++                        if (item.Tab?.IconSize != old.Tab?.IconSize)
++                            currentContent.ViewModel.SetIconSizeOverride(item.Tab?.IconSize);
 +                        if (item.Tab is { } tab && old.Tab is { } previousTab &&
 +                            !tab.Items.SequenceEqual(previousTab.Items, StringComparer.OrdinalIgnoreCase))
 +                            await currentContent.ViewModel.RefreshReferenceGridAsync();
@@ -1577,16 +1741,16 @@ index 0000000..85f3a01
 +                        existing.ApplyReferenceExpansionDirection(item.Saved?.ExpansionDirection);
 +                    if (item.Saved?.CapsuleWidth != old.Saved?.CapsuleWidth)
 +                        existing.ApplyReferenceCompactWidth(item.Saved?.CapsuleWidth);
-+                    bool changedColor = item.Saved?.Color != old.Saved?.Color || item.Saved?.Opacity != old.Saved?.Opacity;
++                    bool changedColor = item.Saved?.Color != old.Saved?.Color || ReferenceOpacity(item.Saved) != ReferenceOpacity(old.Saved);
 +                    if (changedColor)
-+                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, ReferenceOpacity(item.Saved));
 +                    bool changedArtwork = ReferenceGridPreview.ApplyMetadata(existing.Config, ReferenceGridPreview.ArtworkKeys,
 +                        item.Tab?.Artwork, WidgetBackgroundCustomization.ColorMetadataKey);
 +                    if (!changedColor && !Equals(item.Tab?.Artwork?.GetValueOrDefault(WidgetBackgroundCustomization.ColorMetadataKey),
 +                            old.Tab?.Artwork?.GetValueOrDefault(WidgetBackgroundCustomization.ColorMetadataKey)) &&
 +                        item.Tab?.Artwork?.ContainsKey(WidgetBackgroundCustomization.ColorMetadataKey) != true)
 +                    {
-+                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, item.Saved?.Opacity ?? 90);
++                        ReferenceGridPreview.SetAppearance(existing.Config, item.Saved?.Color, ReferenceOpacity(item.Saved));
 +                        changedArtwork = true;
 +                    }
 +                    if (changedColor || changedArtwork)
@@ -1607,6 +1771,7 @@ index 0000000..85f3a01
 +                {
 +                    Title = item.Title + " · 桌面格子",
 +                };
++                ThemeService.TrackWindow(window);
 +                _referenceWindows.Add((window, content));
 +                created.Add((window, content));
 +                next.Add((window, content));
@@ -1645,7 +1810,7 @@ index 0000000..85f3a01
 +                entry.Window.SetReferenceGridVisible(_referenceGrid?.Renderer?.State.Visible ?? true);
 +            foreach (var entry in previous)
 +            {
-+                if (!next.Contains(entry))
++                if (!next.Any(current => ReferenceEquals(current.Window, entry.Window)))
 +                    entry.Window.Close();
 +            }
 +            _referenceWindows.Clear();
@@ -1713,7 +1878,16 @@ index 0000000..85f3a01
 +                        return;
 +                    }
 +                    string defaultMode = ReadReferenceDefaultMode(renderer.State);
++                    bool changedPreferences = ApplyReferencePreferences(renderer.State);
 +                    UpdateReferenceStackRules(renderer.State);
++                    RefreshReferenceBackground();
++                    if (changedPreferences)
++                    {
++                        ResizeGuideOverlay.IsSnapEnabled = SettingsService.Settings.ResizeSnapEnabled;
++                        ResizeGuideOverlay.SnapSpacingDips = SettingsService.Settings.WidgetSnapSpacing;
++                        SettingsService.NotifyReferenceSettingsChanged();
++                        foreach (var entry in _referenceWindows) entry.Window.RefreshReferenceGroupTabs();
++                    }
 +                    bool changedDefaultMode = SettingsService.Settings.WidgetCollapseBehavior != defaultMode;
 +                    SettingsService.Settings.WidgetCollapseBehavior = defaultMode;
 +                    await SetReferenceWindowsAsync(ReferenceDefinitions(renderer.State),
@@ -1792,10 +1966,10 @@ new file mode 100644
 +#endif
 diff --git a/src/DeskBox/Services/ReferenceGridPreview.cs b/src/DeskBox/Services/ReferenceGridPreview.cs
 new file mode 100644
-index 0000000..ebe37c9
+index 0000000..96f4a41
 --- /dev/null
 +++ b/src/DeskBox/Services/ReferenceGridPreview.cs
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,387 @@
 +#if SOULDESK_GRID_PREVIEW
 +using System.Text.Json;
 +using DeskBox.Controls;
@@ -1824,7 +1998,9 @@ index 0000000..ebe37c9
 +    [
 +        WidgetTitleIconCustomization.EmojiMetadataKey, WidgetTitleIconCustomization.ImageMetadataKey,
 +        WidgetBackgroundCustomization.ImageMetadataKey, WidgetBackgroundCustomization.FitMetadataKey,
-+        WidgetBackgroundCustomization.DimMetadataKey, WidgetBackgroundCustomization.ColorMetadataKey
++        WidgetBackgroundCustomization.DimMetadataKey, WidgetBackgroundCustomization.ColorMetadataKey,
++        WidgetBorderCustomization.ModeMetadataKey, WidgetChromeModeNames.MetadataKey,
++        WidgetForegroundSettings.ModeOverrideMetadataKey, WidgetForegroundSettings.ColorOverrideMetadataKey
 +    ];
 +    internal string AssetDirectory => Path.Combine(Path.GetDirectoryName(Root)!, "artwork");
 +    private const string Marker = "souldesk-deskbox-grid-preview-v1";
@@ -1844,7 +2020,7 @@ index 0000000..ebe37c9
 +        FixtureRoot = Path.Combine(workspace, "fixtures");
 +        if (IsRenderer)
 +        {
-+            Renderer = new ReferenceGridRenderer(Root, UsesDesktop);
++            Renderer = new ReferenceGridRenderer(Root, UsesDesktop, IsSettings);
 +            _groups = [];
 +            return;
 +        }
@@ -1860,12 +2036,20 @@ index 0000000..ebe37c9
 +
 +    public static ReferenceGridPreview Initialize() => Current ??= new();
 +
-+    private static bool IsRenderer => Environment.GetCommandLineArgs()[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop";
++    private static bool IsRenderer => Environment.GetCommandLineArgs()[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop"
++        or "--souldesk-grid-settings";
++    private static bool IsSettings => Environment.GetCommandLineArgs()[1] == "--souldesk-grid-settings";
 +    internal static bool UsesDesktop => Environment.GetCommandLineArgs()[1] == "--souldesk-grid-desktop";
 +    public string FixtureRoot { get; }
 +    internal ReferenceGridRenderer? Renderer { get; }
 +    private string StatePath { get; } = Path.Combine(Root, "reference-groups.json");
 +    internal event Action? MembershipChanged;
++
++    internal static bool GroupWheel(ReferenceGridRenderer.BoxData box) =>
++        box.GroupWheel ?? App.Current.SettingsService.Settings.WidgetGroupWheelSwitchEnabled;
++
++    internal static bool GroupHover(ReferenceGridRenderer.BoxData box) =>
++        box.GroupHoverOverride ?? (box.GroupHover || App.Current.SettingsService.Settings.WidgetGroupHoverSwitchEnabled);
 +
 +    internal WidgetGroupPresentation? GroupPresentation(WidgetConfig config)
 +    {
@@ -1879,9 +2063,9 @@ index 0000000..ebe37c9
 +            WidgetTitleIconAssetStore.Current.ResolveImagePath(tab.Id,
 +                tab.Artwork?.GetValueOrDefault(WidgetTitleIconCustomization.ImageMetadataKey)))).ToArray();
 +        return new WidgetGroupPresentation(box.Id, box.Id, box.Active,
-+            WidgetGroupNavigationStyles.Normalize(box.GroupNavigation, allowFollowDefault: false),
-+            WidgetGroupTitleDisplayModes.Normalize(box.GroupTitleDisplay, allowFollowDefault: false),
-+            box.GroupWheel ?? true, box.GroupHover, members);
++            WidgetGroupNavigationStyles.Normalize(box.GroupNavigation ?? App.Current.SettingsService.Settings.WidgetGroupDefaultNavigationStyle, allowFollowDefault: false),
++            WidgetGroupTitleDisplayModes.Normalize(box.GroupTitleDisplay ?? App.Current.SettingsService.Settings.WidgetGroupDefaultTitleDisplayMode, allowFollowDefault: false),
++            GroupWheel(box), GroupHover(box), members);
 +    }
 +
 +    internal Task<bool>? SubmitBoxAsync(WidgetConfig config, string action, string? tab = null,
@@ -1934,16 +2118,28 @@ index 0000000..ebe37c9
 +    internal bool CanReadMappedFolder(string folder) => UsesDesktop || IsFixtureLocation(folder);
 +
 +    internal static bool UsesAutomaticStacks(WidgetConfig config) =>
-+        config.Metadata.TryGetValue(StackKey, out string? value) && value == "true";
++        AutomaticStackOverride(config) ?? App.Current.SettingsService.Settings.FileStackAutoStacking;
 +
-+    internal static void SetStackPreference(WidgetConfig config, bool value) =>
-+        config.Metadata[StackKey] = value ? "true" : "false";
++    internal static bool? AutomaticStackOverride(WidgetConfig config) =>
++        config.Metadata.TryGetValue(StackKey, out string? value) ? value == "true" : null;
 +
-+    internal static void SetAppearance(WidgetConfig config, string? color, int opacity)
++    internal static bool? StackOverride(ReferenceGridRenderer.Tab? tab) =>
++        tab?.AutoStack ?? (tab?.StackByType == true ? true : null);
++
++    internal static void SetStackPreference(WidgetConfig config, bool? value)
++    {
++        if (value is bool enabled) config.Metadata[StackKey] = enabled ? "true" : "false";
++        else config.Metadata.Remove(StackKey);
++    }
++
++    internal static void SetAppearance(WidgetConfig config, string? color, int? opacity)
 +    {
 +        WidgetBackgroundCustomization.SetColorOverride(config,
 +            color is not (null or "#283635") && AccentColorHelper.TryParseHex(color, out var parsed) ? parsed : null);
-+        config.Metadata[OpacityKey] = Math.Clamp(opacity, 35, 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
++        if (opacity is int value)
++            config.Metadata[OpacityKey] = Math.Clamp(value, 35, 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
++        else
++            config.Metadata.Remove(OpacityKey);
 +    }
 +
 +    internal Task<bool>? SavePositionAsync(WidgetConfig config, RectInt32 bounds, bool resize, double? capsuleWidth)
@@ -1962,6 +2158,22 @@ index 0000000..ebe37c9
 +    {
 +        try { await operation; }
 +        catch (Exception error) { App.Log($"保存桌面格子设置失败 {error.Message}"); }
++    }
++
++    internal static T DisableMenu<T>(T item, string reason = "暂未接入 SoulDesk")
++        where T : Microsoft.UI.Xaml.Controls.MenuFlyoutItemBase
++    {
++        if (item is Microsoft.UI.Xaml.Controls.MenuFlyoutSubItem submenu && submenu.Items.Count > 0)
++        {
++            foreach (var child in submenu.Items) DisableMenu(child, reason);
++        }
++        else if (item is Microsoft.UI.Xaml.Controls.MenuFlyoutItem command)
++        {
++            command.IsEnabled = false;
++            command.Text += " · " + reason;
++            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(command, reason);
++        }
++        return item;
 +    }
 +
 +    public IReadOnlyList<string> GetFiles(string group)
@@ -2098,7 +2310,7 @@ index 0000000..ebe37c9
 +                    name.StartsWith("deskbox-preview-", StringComparison.Ordinal) &&
 +                    IsRegularFile(Path.Combine(root, "isolated-test-data.marker")) &&
 +                    File.ReadAllText(Path.Combine(root, "isolated-test-data.marker")).Trim() == Marker;
-+                bool engine = args[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop" &&
++                bool engine = args[1] is "--souldesk-grid-renderer" or "--souldesk-grid-desktop" or "--souldesk-grid-settings" &&
 +                    name.StartsWith("deskbox-renderer-", StringComparison.Ordinal) &&
 +                    Guid.TryParseExact(name["deskbox-renderer-".Length..], "N", out _) &&
 +                    IsRegularFile(Path.Combine(root, "state.json"));
@@ -2106,13 +2318,14 @@ index 0000000..ebe37c9
 +                    Path.GetFileName(parent).StartsWith("desktop-integration-", StringComparison.Ordinal) &&
 +                    IsRegularFile(Path.Combine(parent, "isolated-test-data.marker"));
 +                bool desktop = engine && args[1] == "--souldesk-grid-desktop";
++                bool settings = engine && args[1] == "--souldesk-grid-settings";
 +                if (!root.StartsWith(@"\\") && NoReparseDirectories(root) &&
 +                    (normalPreview && NoReparseDirectories(Path.Combine(root, "fixtures")) ||
-+                        enginePreview && NoReparseDirectories(Path.Combine(parent, "fixtures")) || desktop))
++                        enginePreview && NoReparseDirectories(Path.Combine(parent, "fixtures")) || desktop || settings))
 +                {
 +                    foreach (string ownedPath in new[] { "data", "reference-groups.json", "reference-groups.json.pending",
 +                        "DeskBox.log", "preview-startup.log", "preview-ready.json", "preview-error.txt", "request.json",
-+                        "pulse.json", "pulse.tmp" })
++                        "pulse.json", "pulse.tmp", "settings-test.json" })
 +                    {
 +                        string entry = Path.Combine(root, ownedPath);
 +                        if (Path.Exists(entry) && (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
@@ -2146,10 +2359,10 @@ index 0000000..ebe37c9
 +#endif
 diff --git a/src/DeskBox/Services/ReferenceGridRenderer.cs b/src/DeskBox/Services/ReferenceGridRenderer.cs
 new file mode 100644
-index 0000000..b495694
+index 0000000..466fabd
 --- /dev/null
 +++ b/src/DeskBox/Services/ReferenceGridRenderer.cs
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,221 @@
 +#if SOULDESK_GRID_PREVIEW
 +using System.Diagnostics;
 +using System.Globalization;
@@ -2164,11 +2377,11 @@ index 0000000..b495694
 +{
 +    internal sealed record Tab(string Id, string Name, string? Folder, string Sort, bool List,
 +        bool StackByType, string[] Items, bool? SortDescending, string? FolderOpen,
-+        Dictionary<string, string>? StackSettings, Dictionary<string, string>? Artwork);
++        Dictionary<string, string>? StackSettings, Dictionary<string, string>? Artwork, bool? AutoStack, double? IconSize);
 +    internal sealed record BoxData(string Id, bool Collapsed, bool Locked, bool HoverExpand,
 +        string Active, Tab[] Tabs, string? CollapseMode, bool? PositionLocked, bool? SizeLocked,
 +        string? ExpansionDirection, string? Color, int Opacity, double? CapsuleWidth,
-+        string? GroupNavigation, string? GroupTitleDisplay, bool? GroupWheel, bool GroupHover, string? BoundMonitor)
++        string? GroupNavigation, string? GroupTitleDisplay, bool? GroupWheel, bool GroupHover, string? BoundMonitor, bool? GroupHoverOverride, bool UseCustomOpacity)
 +    {
 +        internal bool LocksPosition => PositionLocked ?? Locked;
 +        internal bool LocksSize => SizeLocked ?? Locked;
@@ -2179,11 +2392,15 @@ index 0000000..b495694
 +    internal sealed record DisplayInfo(string Id, string Name, bool Primary);
 +    internal sealed record Move(string Box, RectInt32 Bounds);
 +    internal sealed record StackRule(string Id, string Name, string[] Extensions);
++    internal sealed record Preference(string Row, string Key, string Kind, string[]? Values, string[]? Labels,
++        double Min, double Max, double Step);
 +    internal sealed record Snapshot(int Version, int MaximumTabs, int OwnerPid, string OwnerStarted, string Session,
 +        long Revision, bool Visible, bool Closing, DesktopIdentity? DesktopLayer, string? DesktopStarted,
 +        Placement[] Boxes, string[] Files,
 +        string? Completed, string[] Accepted, string? Error, string? DefaultCollapseMode,
-+        DisplayInfo[]? Displays, string? CapsuleBar, int CapsuleSpacing, bool CoordinatedMove, StackRule[]? StackRules);
++        DisplayInfo[]? Displays, string? CapsuleBar, int CapsuleSpacing, bool CoordinatedMove, StackRule[]? StackRules,
++        bool SettingsOnly, bool Isolated, bool AutoSort, bool IncludePublic, bool SearchIndexed, string? EverythingCli,
++        long SettingsFocus, string? SettingsPage, Dictionary<string, string>? Preferences, Preference[]? PreferenceRows, string? NewWidgetMonitor);
 +
 +    private readonly string _directory;
 +    private readonly SemaphoreSlim _submissions = new(1);
@@ -2192,12 +2409,13 @@ index 0000000..b495694
 +    private HashSet<string> _allowed;
 +    private long _pulse;
 +
-+    internal ReferenceGridRenderer(string directory, bool desktop)
++    internal ReferenceGridRenderer(string directory, bool desktop, bool settingsOnly = false)
 +    {
 +        _directory = directory;
 +        _state = Read();
 +        if (_state.Version != 1 || Path.GetFileName(directory) != "deskbox-renderer-" + _state.Session ||
-+            !Guid.TryParseExact(_state.Session, "N", out _) || desktop != (_state.DesktopLayer is not null))
++            !Guid.TryParseExact(_state.Session, "N", out _) || desktop != (_state.DesktopLayer is not null) ||
++            _state.SettingsOnly != settingsOnly)
 +            throw new InvalidDataException("无法确认 SoulDesk 格子会话。");
 +        _owner = Process.GetProcessById(_state.OwnerPid);
 +        if (_owner.HasExited || _owner.SessionId != Process.GetCurrentProcess().SessionId ||
@@ -2253,7 +2471,8 @@ index 0000000..b495694
 +        Snapshot next = Read();
 +        if (next.Session != _state.Session || next.OwnerStarted != _state.OwnerStarted ||
 +            next.OwnerPid != _state.OwnerPid || next.Version != _state.Version || next.Revision < _state.Revision ||
-+            next.DesktopLayer != _state.DesktopLayer || next.DesktopStarted != _state.DesktopStarted)
++            next.DesktopLayer != _state.DesktopLayer || next.DesktopStarted != _state.DesktopStarted ||
++            next.SettingsOnly != _state.SettingsOnly)
 +            throw new InvalidDataException("SoulDesk 格子会话已改变。");
 +        bool changed = next.Revision != _state.Revision;
 +        if (changed)
@@ -2367,7 +2586,7 @@ index 0000000..b495694
 +#endif
 diff --git a/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs b/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs
 new file mode 100644
-index 0000000..6d44305
+index 0000000..fec4e04
 --- /dev/null
 +++ b/src/DeskBox/ViewModels/WidgetViewModel.ReferenceGridPreview.cs
 @@ -0,0 +1,77 @@
@@ -2400,7 +2619,7 @@ index 0000000..6d44305
 +        StartItemHydration();
 +    }
 +
-+    internal void ApplyReferencePresentation(ViewMode view, WidgetSortMode sort, bool descending, bool stack)
++    internal void ApplyReferencePresentation(ViewMode view, WidgetSortMode sort, bool descending, bool? stack)
 +    {
 +        if (ViewMode != view)
 +            Config.ViewMode = ViewMode = view;
@@ -2411,7 +2630,7 @@ index 0000000..6d44305
 +            SortItems();
 +            OnPropertyChanged(nameof(SortModeLabel));
 +        }
-+        if (ReferenceGridPreview.UsesAutomaticStacks(Config) != stack)
++        if (ReferenceGridPreview.AutomaticStackOverride(Config) != stack)
 +        {
 +            ReferenceGridPreview.SetStackPreference(Config, stack);
 +            RebuildStackDisplayItems();
@@ -2450,10 +2669,10 @@ index 0000000..6d44305
 +#endif
 diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs
 new file mode 100644
-index 0000000..53aaffa
+index 0000000..5d64d21
 --- /dev/null
 +++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.ReferenceGridPreview.cs
-@@ -0,0 +1,175 @@
+@@ -0,0 +1,174 @@
 +#if SOULDESK_GRID_PREVIEW
 +using DeskBox.Models;
 +using DeskBox.Services;
@@ -2480,54 +2699,53 @@ index 0000000..53aaffa
 +        bool mapped = ViewModel.MappedFolderPath is not null;
 +        if (!(mapped ? workspace.CanReadMappedFolder(item.Path) : workspace.IsFixturePath(item.Path)))
 +            return;
-+        var menu = new MenuFlyout();
-+        var open = new MenuFlyoutItem { Text = "打开", Icon = new FontIcon { Glyph = "\uE8E5" } };
-+        open.Click += async (_, _) =>
-+        {
-+            try
-+            {
-+                if (!item.IsFolder || !await ViewModel.NavigateIntoFolderAsync(item))
-+                    await ViewModel.OpenItemAsync(item, IntPtr.Zero);
-+            }
-+            catch (Exception error) { App.Log($"打开格子项目失败 {error.Message}"); }
-+        };
-+        var reveal = new MenuFlyoutItem { Text = "定位原文件", Icon = new FontIcon { Glyph = "\uE8B7" } };
-+        reveal.Click += (_, _) => ViewModel.ShowInExplorer(item);
-+        var copy = new MenuFlyoutItem { Text = "复制原路径", Icon = new FontIcon { Glyph = "\uE8C8" } };
-+        copy.Click += (_, _) => CopyPathsToClipboard([item]);
-+        menu.Items.Add(open);
-+        menu.Items.Add(reveal);
-+        menu.Items.Add(copy);
 +        var active = GetActiveItemsView();
 +        if (!active.SelectedItems.Contains(item))
 +        {
 +            active.SelectedItems.Clear();
 +            active.SelectedItems.Add(item);
 +        }
-+        var selected = GetSelectedItems().Where(member => member is not WidgetStackItem).ToArray();
-+        if (ViewModel.FileStacksEnabled && selected.Length > 1)
++        var selection = GetSelectedItems().Where(member => member is not WidgetStackItem).ToArray();
++        var menu = selection.Length > 1 ? CreateMultiSelectionFlyout() : CreateItemFlyout(item);
++        var supported = new HashSet<string>(new[]
 +        {
-+            var create = new MenuFlyoutItem { Text = "创建自定义堆栈", Icon = new FontIcon { Glyph = "\uE81E" } };
-+            create.Click += (_, _) => ApplyStackProjectionChange(() => ViewModel.CreateManualStack(selected));
++            T("Widget.Open"), T("Widget.ShowInExplorer"), T("Widget.CopyPath"), T("Common.Properties"),
++            T("Widget.Stack.RemoveItem"), T("Widget.Stack.Start"), T("Common.Copy"),
++            T("Widget.RunAsAdministrator"), T("Widget.CreateShortcut"),
++        }, StringComparer.Ordinal);
++        if (mapped) supported.Add(T("Widget.ExtractAll"));
++        foreach (var entry in menu.Items)
++        {
++            if (entry is MenuFlyoutSubItem submenu && submenu.Text != T("Widget.OpenWith") &&
++                submenu.Text != T("Widget.CompressTo"))
++            {
++                submenu.IsEnabled = false;
++                submenu.Text += " · 暂未接入 SoulDesk";
++            }
++            else if (entry is MenuFlyoutItem command && !supported.Contains(command.Text))
++                ReferenceGridPreview.DisableMenu(entry);
++        }
++        if (selection.Length > 1 && ViewModel.FileStacksEnabled &&
++            !menu.Items.OfType<MenuFlyoutItem>().Any(command => command.Text == T("Widget.Stack.Start")))
++        {
++            var create = new MenuFlyoutItem { Text = T("Widget.Stack.Start"), Icon = new FontIcon { Glyph = "\uE81E" } };
++            create.Click += (_, _) => ApplyStackProjectionChange(() => ViewModel.CreateManualStack(selection));
 +            menu.Items.Add(create);
 +        }
-+        if (ViewModel.CanRemoveItemFromStack(item))
-+        {
-+            var unstack = new MenuFlyoutItem { Text = "移出堆栈", Icon = new FontIcon { Glyph = "\uE74D" } };
-+            unstack.Click += (_, _) => ApplyStackProjectionChange(() => ViewModel.RemoveItemFromStack(item));
-+            menu.Items.Add(unstack);
-+        }
-+        menu.Items.Add(CreateStackSettingsMenu());
 +        if (!mapped)
 +        {
-+            var release = new MenuFlyoutItem { Text = "移出格子", Icon = new FontIcon { Glyph = "\uE74D" } };
++            var release = new MenuFlyoutItem { Text = T("Widget.MoveBackToDesktop"), Icon = new FontIcon { Glyph = "\uE74A" } };
 +            release.Click += async (_, _) =>
 +            {
-+                try { await workspace.ReleaseAsync(WidgetId, item.Path); }
++                try
++                {
++                    foreach (var member in selection)
++                        await workspace.ReleaseAsync(WidgetId, member.Path);
++                }
 +                catch (Exception error) { App.Log($"移出格子失败 {error.Message}"); }
 +            };
-+            menu.Items.Add(new MenuFlyoutSeparator());
-+            menu.Items.Add(release);
++            int properties = menu.Items.ToList().FindIndex(entry => entry is MenuFlyoutItem command && command.Text == T("Common.Properties"));
++            menu.Items.Insert(properties > 0 ? properties - 1 : menu.Items.Count, release);
 +        }
 +        menu.ShowAt(Root, pointer);
 +    }
@@ -2631,10 +2849,10 @@ index 0000000..53aaffa
 +#endif
 diff --git a/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs b/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs
 new file mode 100644
-index 0000000..cb161cb
+index 0000000..7a318e4
 --- /dev/null
 +++ b/src/DeskBox/Views/ContentWidgetWindow.ReferenceGrid.cs
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,187 @@
 +#if SOULDESK_GRID_PREVIEW
 +using DeskBox.Controls;
 +using DeskBox.Controls.WidgetContents;
@@ -2689,8 +2907,10 @@ index 0000000..cb161cb
 +
 +    private void AppendReferenceGridCreation(MenuFlyout flyout)
 +    {
-+        flyout.Items.Add(ReferenceGridMenuItem("新建格子", "\uE710", () => SubmitReferenceGridSetting("new", action: "show")));
-+        flyout.Items.Add(ReferenceGridMenuItem("映射目录", "\uE8B7", () => SubmitReferenceGridSetting("map", action: "show")));
++        var localization = App.Current.LocalizationService;
++        flyout.Items.Add(ReferenceGridMenuItem(localization.T("Common.NewWidget"), "\uE710", () => SubmitReferenceGridSetting("new", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem(localization.T("Common.NewFolderMapping"), "\uE8B7", () => SubmitReferenceGridSetting("map", action: "show")));
++        flyout.Items.Add(ReferenceGridMenuItem(localization.T("Common.AddFeatureWidget"), "\uE710", () => SubmitReferenceGridSetting("feature-settings", action: "show")));
 +    }
 +
 +    private MenuFlyout CreateReferenceGridMenu()
@@ -2706,49 +2926,20 @@ index 0000000..cb161cb
 +            if (renameRequested) DispatcherQueue.TryEnqueue(StartTitleRename);
 +        };
 +        flyout.Items.Add(rename);
-+        var layout = new MenuFlyoutSubItem { Text = "视图", Icon = new FontIcon { Glyph = "\uE8A9" } };
-+        layout.Items.Add(CreateToggleMenuItem("列表视图", "\uE8FD", _config.ViewMode == DeskBox.Models.ViewMode.List,
-+            value => SubmitReferenceGridSetting("list", value.ToString())));
-+        layout.Items.Add(CreateToggleMenuItem("按类型堆叠", "\uE81E", ReferenceGridPreview.UsesAutomaticStacks(_config),
-+            value => SubmitReferenceGridSetting("stack", value.ToString())));
-+        flyout.Items.Add(layout);
-+
-+        var sort = new MenuFlyoutSubItem { Text = "排序", Icon = new FontIcon { Glyph = "\uE8CB" } };
 +        var tab = renderer.State.Boxes.SelectMany(box => box.Box.Tabs).FirstOrDefault(tab => tab.Id == _config.Id);
-+        foreach (var (value, label) in new[] { ("manual", "手动排序"), ("name", "名称"), ("type", "类型"),
-+                     ("date", "修改时间"), ("size", "大小") })
-+        {
-+            bool selected = tab?.Sort == value;
-+            string direction = selected && value != "manual" ? (_config.SortDescending ? " ↓" : " ↑") : "";
-+            sort.Items.Add(CreateToggleMenuItem(label + direction, "", selected,
-+                _ => SubmitReferenceGridSetting("sort", value)));
-+        }
-+        flyout.Items.Add(sort);
-+        if (tab?.Folder is { } folder)
-+        {
-+            flyout.Items.Add(ReferenceGridMenuItem("在资源管理器打开映射目录", "\uE8B7", () =>
-+            {
-+                try { Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
-+                catch (Exception error) { App.Log($"打开映射目录失败 {error.Message}"); }
-+            }));
-+            flyout.Items.Add(FileWidgetFolderOpenBehaviorMenuBuilder.Create(_config, localization,
-+                value => SubmitReferenceGridSetting("folder-open", value)));
-+        }
-+        else
-+        {
-+            flyout.Items.Add(ReferenceGridMenuItem("添加桌面项目", "\uE710", () => SubmitReferenceGridSetting("pick", action: "show")));
-+            flyout.Items.Add(ReferenceGridMenuItem("自动归类规则", "\uE74C", () => SubmitReferenceGridSetting("rules", action: "show")));
-+        }
-+        flyout.Items.Add(new MenuFlyoutSeparator());
-+        var style = new MenuFlyoutSubItem { Text = "样式", Icon = new FontIcon { Glyph = "\uE790" } };
-+        style.Items.Add(ReferenceGridMenuItem("底色与透明度", "\uE790", () => SubmitReferenceGridSetting("appearance", action: "show")));
++        var style = new MenuFlyoutSubItem { Text = localization.T("Widget.StyleMenu.Label"), Icon = new FontIcon { Glyph = "\uE790" } };
 +        Action? showCustomizer = null;
-+        style.Items.Add(ReferenceGridMenuItem("标题图标", "\uE890", () => showCustomizer = ShowTitleIconCustomizer));
-+        style.Items.Add(ReferenceGridMenuItem("背景图", "\uE91B", () => showCustomizer = ShowWidgetBackgroundCustomizer));
++        style.Items.Add(ReferenceGridMenuItem(localization.T("Widget.CustomIcon.MenuLabel"), "\uE890", () => showCustomizer = ShowTitleIconCustomizer));
++        style.Items.Add(ReferenceGridMenuItem(localization.T("Widget.CustomBackground.MenuLabel"), "\uE91B", () => showCustomizer = ShowWidgetBackgroundCustomizer));
 +        flyout.Closed += (_, _) =>
 +        {
 +            if (showCustomizer is not null) DispatcherQueue.TryEnqueue(() => showCustomizer());
 +        };
++        style.Items.Add(WidgetBorderMenuBuilder.Create(localization, _config, SetWidgetBorderModeOverride));
++        style.Items.Add(WidgetChromeMenuBuilder.Create(_config, _descriptor, localization, null, SetChromeModeOverride));
++        style.Items.Add(WidgetForegroundMenuBuilder.Create(_config, localization, SetWidgetForegroundModeOverride,
++            () => showCustomizer = () => ShowFlyoutWithInteraction(BuildWidgetForegroundColorPickerFlyout(), ContentWidgetShell)));
++        style.Items.Add(ReferenceGridMenuItem("底色与透明度", "\uE790", () => SubmitReferenceGridSetting("appearance", action: "show")));
 +        flyout.Items.Add(style);
 +        flyout.Items.Add(WidgetCollapseMenuBuilder.Create(_config, SettingsService.Settings.WidgetCollapseBehavior,
 +            SettingsService.Settings.WidgetCompactExpansionDirection, localization, SetCollapseBehaviorOverride,
@@ -2765,6 +2956,9 @@ index 0000000..cb161cb
 +        if (savedScreen is not (null or "@primary") && (renderer.State.Displays ?? []).All(display => display.Id != savedScreen))
 +            binding.Items.Add(new MenuFlyoutItem { Text = "已绑定显示器离线", IsEnabled = false });
 +        flyout.Items.Add(binding);
++        var folderOptions = FileWidgetFolderOpenBehaviorMenuBuilder.Create(_config, localization,
++            value => SubmitReferenceGridSetting("folder-open", value));
++        flyout.Items.Add(tab?.Folder is null ? ReferenceGridPreview.DisableMenu(folderOptions, "仅目录映射可用") : folderOptions);
 +        WidgetGroupMenuBuilder.Append(flyout, _config, App.Current.WidgetManager, localization);
 +        if (renderer.State.Boxes.Select(placement => placement.Box).FirstOrDefault(box =>
 +            box.Tabs.Length > 1 && box.Active == _config.Id) is { } group)
@@ -2774,28 +2968,46 @@ index 0000000..cb161cb
 +                         (WidgetGroupNavigationStyles.Stack, "堆叠标签") })
 +            {
 +                appearance.Items.Add(CreateToggleMenuItem(label, "", mode == WidgetGroupNavigationStyles.Normalize(
-+                    group.GroupNavigation, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-navigation", mode)));
++                    group.GroupNavigation ?? SettingsService.Settings.WidgetGroupDefaultNavigationStyle, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-navigation", mode)));
 +            }
++            appearance.Items.Add(CreateToggleMenuItem("跟随全局导航", "", group.GroupNavigation is null,
++                _ => SubmitReferenceGridSetting("group-navigation")));
 +            appearance.Items.Add(new MenuFlyoutSeparator());
 +            foreach (var (mode, label) in new[] { (WidgetGroupTitleDisplayModes.IconAndText, "图标和标题"),
 +                         (WidgetGroupTitleDisplayModes.IconOnly, "仅图标"), (WidgetGroupTitleDisplayModes.TextOnly, "仅标题") })
 +            {
 +                appearance.Items.Add(CreateToggleMenuItem(label, "", mode == WidgetGroupTitleDisplayModes.Normalize(
-+                    group.GroupTitleDisplay, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-title", mode)));
++                    group.GroupTitleDisplay ?? SettingsService.Settings.WidgetGroupDefaultTitleDisplayMode, allowFollowDefault: false), _ => SubmitReferenceGridSetting("group-title", mode)));
 +            }
 +            appearance.Items.Add(new MenuFlyoutSeparator());
-+            appearance.Items.Add(CreateToggleMenuItem("滚轮切换标签", "", group.GroupWheel ?? true,
++            appearance.Items.Add(CreateToggleMenuItem("跟随全局标题", "", group.GroupTitleDisplay is null,
++                _ => SubmitReferenceGridSetting("group-title")));
++            appearance.Items.Add(CreateToggleMenuItem("滚轮切换标签", "", ReferenceGridPreview.GroupWheel(group),
 +                value => SubmitReferenceGridSetting("group-wheel", value.ToString())));
-+            appearance.Items.Add(CreateToggleMenuItem("悬停切换标签", "", group.GroupHover,
++            appearance.Items.Add(CreateToggleMenuItem("悬停切换标签", "", ReferenceGridPreview.GroupHover(group),
 +                value => SubmitReferenceGridSetting("group-hover", value.ToString())));
++            appearance.Items.Add(CreateToggleMenuItem("切换方式跟随全局", "", group.GroupWheel is null &&
++                group.GroupHoverOverride is null && !group.GroupHover,
++                _ => SubmitReferenceGridSetting("reset-group-switching")));
 +            flyout.Items.Add(appearance);
 +        }
++        flyout.Items.Add(ReferenceGridMenuItem(localization.T(WidgetSettingsMenuHelper.GetLocalizationKey(WidgetKind.File)),
++            "\uE713", () => SubmitReferenceGridSetting("file-settings", action: "show")));
++        var management = new MenuFlyoutSubItem { Text = "桌面格子管理", Icon = new FontIcon { Glyph = "\uE8A9" } };
++        management.Items.Add(ReferenceGridMenuItem("管理桌面格子", "\uE713", () => SubmitReferenceGridSetting("manager", action: "show")));
++        management.Items.Add(ReferenceGridMenuItem("桌面整理", "\uE74C", () => SubmitReferenceGridSetting("organization", action: "show")));
++        management.Items.Add(ReferenceGridMenuItem("全局搜索", "\uE721", () => SubmitReferenceGridSetting("search", action: "show")));
++        if (tab?.Folder is null)
++        {
++            management.Items.Add(ReferenceGridMenuItem("添加桌面项目", "\uE710", () => SubmitReferenceGridSetting("pick", action: "show")));
++            management.Items.Add(ReferenceGridMenuItem("自动归类规则", "\uE74C", () => SubmitReferenceGridSetting("rules", action: "show")));
++        }
++        flyout.Items.Add(management);
 +        flyout.Items.Add(new MenuFlyoutSeparator());
-+        AppendReferenceGridCreation(flyout);
-+        flyout.Items.Add(ReferenceGridMenuItem("全局搜索", "\uE721", () => SubmitReferenceGridSetting("search", action: "show")));
-+        flyout.Items.Add(ReferenceGridMenuItem("桌面整理", "\uE74C", () => SubmitReferenceGridSetting("organization", action: "show")));
-+        flyout.Items.Add(ReferenceGridMenuItem("管理桌面格子", "\uE713", () => SubmitReferenceGridSetting("manager", action: "show")));
-+        flyout.Items.Add(ReferenceGridMenuItem("隐藏格子", "\uE890", () => SubmitReferenceGridSetting("hidden", bool.TrueString)));
++        var close = ReferenceGridMenuItem(localization.T("Widget.FeatureWidget.Disable"), "\uE7E8",
++            () => SubmitReferenceGridSetting("hidden", bool.TrueString));
++        WidgetDangerActionStyle.Apply(close);
++        flyout.Items.Add(close);
 +        return flyout;
 +    }
 +
@@ -2804,6 +3016,27 @@ index 0000000..cb161cb
 +        var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
 +        item.Click += (_, _) => action();
 +        return item;
++    }
++
++    internal object VerifyReferenceMenu()
++    {
++        var menu = CreateReferenceGridMenu();
++        var labels = new List<string>();
++        int disabled = 0;
++        void Collect(IEnumerable<MenuFlyoutItemBase> entries)
++        {
++            foreach (var item in entries)
++            {
++                if (item is MenuFlyoutSubItem group) { labels.Add(group.Text); Collect(group.Items); }
++                else if (item is MenuFlyoutItem command)
++                {
++                    labels.Add(command.Text);
++                    if (!command.IsEnabled) disabled++;
++                }
++            }
++        }
++        Collect(menu.Items);
++        return new { labels, disabled };
 +    }
 +}
 +#endif
@@ -2922,10 +3155,10 @@ index 35d897e..0bd8899 100644
      }
 diff --git a/src/DeskBox/App.ReferenceLayout.cs b/src/DeskBox/App.ReferenceLayout.cs
 new file mode 100644
-index 0000000..005a657
+index 0000000..f156be8
 --- /dev/null
 +++ b/src/DeskBox/App.ReferenceLayout.cs
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,166 @@
 +#if SOULDESK_GRID_PREVIEW
 +using DeskBox.Models;
 +using DeskBox.Services;
@@ -3062,13 +3295,23 @@ index 0000000..005a657
 +        {
 +            var items = group.ToArray();
 +            var work = items[0].Display.WorkArea;
-+            bool vertical = state.CapsuleBar == "Vertical";
++            string placement = SettingsService.Settings.WidgetCapsuleBarPlacement;
++            bool vertical = placement is "Left" or "Right" ||
++                (placement == "Floating" && state.CapsuleBar == "Vertical");
 +            var order = items.OrderBy(item => vertical ? item.Bounds.Y : item.Bounds.X).ToArray();
 +            var start = order[0].Bounds;
++            var (point, anchor) = placement switch
++            {
++                "Top" => (new PointInt32(start.X, work.Y), WidgetPositionAnchors.LeftTop),
++                "Bottom" => (new PointInt32(start.X, work.Y + work.Height), WidgetPositionAnchors.LeftBottom),
++                "Left" => (new PointInt32(work.X, start.Y), WidgetPositionAnchors.LeftTop),
++                "Right" => (new PointInt32(work.X + work.Width, start.Y), WidgetPositionAnchors.RightTop),
++                _ => (new PointInt32(start.X, start.Y), WidgetPositionAnchors.LeftTop)
++            };
 +            int spacing = (int)Math.Round(state.CapsuleSpacing * WidgetPositioningService.GetDpiScale(work));
 +            var arrangement = WidgetCapsuleArrangementCalculator.Calculate(order.Select(item =>
 +                new WidgetCapsuleArrangementItem(item.Id, item.Bounds.Width, item.Bounds.Height)).ToArray(),
-+                work, new PointInt32(start.X, start.Y), WidgetPositionAnchors.LeftTop, state.CapsuleBar, spacing);
++                work, point, anchor, vertical ? "Vertical" : "Horizontal", spacing);
 +            foreach (var item in arrangement)
 +            {
 +                var window = byId[item.Key];
@@ -3173,10 +3416,97 @@ index 4192c4a..27b1b80 100644
                  ApplyCustomWidgetBackground();
                  DispatcherQueue.TryEnqueue(() => reopenCustomizer());
 diff --git a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
-index 9d47311..4e04487 100644
+index 9d47311..dfeb1bd 100644
 --- a/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
 +++ b/src/DeskBox/Controls/WidgetContents/FileSurfaceContent.SelectionAndMenus.cs
-@@ -1694,8 +1694,7 @@ public sealed partial class FileSurfaceContent
+@@ -1,4 +1,4 @@
+-﻿using DeskBox.Helpers;
++using DeskBox.Helpers;
+ using DeskBox.Models;
+ using DeskBox.Platform;
+ using DeskBox.Services;
+@@ -591,6 +591,19 @@ public sealed partial class FileSurfaceContent
+             EmptyRecycleBinAsync: EmptyRecycleBinAsync);
+     }
+ 
++    private void ChangeIconSizeOverride(double? size)
++    {
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.SubmitSettingAsync(ViewModel.Config, "icon-size",
++            size?.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } request)
++        {
++            _ = ReferenceGridPreview.ObserveBoxEditAsync(request);
++            return;
++        }
++#endif
++        ViewModel.SetIconSizeOverride(size);
++    }
++
+     private OpenWithMenuPayload? GetOpenWithMenuItems(WidgetItem item)
+     {
+         if (item.IsFolder ||
+@@ -1224,7 +1237,8 @@ public sealed partial class FileSurfaceContent
+             }
+         };
+         view.Items.Add(listView);
+-        view.Items.Add(CreateIconSizeMenu());
++        var iconSize = CreateIconSizeMenu();
++        view.Items.Add(iconSize);
+         flyout.Items.Add(view);
+ 
+         var sortBy = new MenuFlyoutSubItem
+@@ -1270,6 +1284,10 @@ public sealed partial class FileSurfaceContent
+             CreateMenuItem("Common.Paste", "\uE77F");
+         paste.KeyboardAcceleratorTextOverride = "Ctrl+V";
+         paste.IsEnabled = hasMappedFolder && CanPasteFromClipboard();
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null && !hasMappedFolder)
++            ReferenceGridPreview.DisableMenu(paste, "仅目录映射可用");
++#endif
+         paste.Click += async (_, _) =>
+         {
+             flyout.Hide();
+@@ -1293,6 +1311,10 @@ public sealed partial class FileSurfaceContent
+             "Widget.OpenStorageFolder",
+             "\uE838");
+         openFolder.IsEnabled = hasMappedFolder;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null && !hasMappedFolder)
++            ReferenceGridPreview.DisableMenu(openFolder, "仅目录映射可用");
++#endif
+         openFolder.Click += (_, _) =>
+         {
+             flyout.Hide();
+@@ -1332,6 +1354,10 @@ public sealed partial class FileSurfaceContent
+             CreateMenuItem("Common.NewFolder", "\uE8B7");
+         newFolder.KeyboardAcceleratorTextOverride = "Ctrl+Shift+N";
+         newFolder.IsEnabled = hasMappedFolder;
++#if SOULDESK_GRID_PREVIEW
++        if (ReferenceGridPreview.Current?.Renderer is not null && !hasMappedFolder)
++            ReferenceGridPreview.DisableMenu(newFolder, "仅目录映射可用");
++#endif
+         newFolder.Click += async (_, _) =>
+         {
+             await CreateFolderInMappedLocationAsync();
+@@ -1531,7 +1557,7 @@ public sealed partial class FileSurfaceContent
+                 Text = $"{size:0}",
+                 IsChecked = Math.Abs(ViewModel.EffectiveIconSize - size) < 0.01
+             };
+-            item.Click += (_, _) => ViewModel.SetIconSizeOverride(size);
++            item.Click += (_, _) => ChangeIconSizeOverride(size);
+             menu.Items.Add(item);
+         }
+ 
+@@ -1542,7 +1568,7 @@ public sealed partial class FileSurfaceContent
+             IsEnabled = ViewModel.Config.IconSizeOverride is not null,
+             Icon = new FontIcon { Glyph = "\uE777" }
+         };
+-        reset.Click += (_, _) => ViewModel.SetIconSizeOverride(null);
++        reset.Click += (_, _) => ChangeIconSizeOverride(null);
+         menu.Items.Add(reset);
+         return menu;
+     }
+@@ -1694,8 +1720,7 @@ public sealed partial class FileSurfaceContent
          MenuFlyoutItem editRules = CreateMenuItem(
              "Settings.FileStacks.Custom.Rules.Title",
              "\uE713");
@@ -3186,7 +3516,7 @@ index 9d47311..4e04487 100644
          menu.Items.Add(editRules);
  
          return menu;
-@@ -1946,12 +1945,23 @@ public sealed partial class FileSurfaceContent
+@@ -1946,12 +1971,23 @@ public sealed partial class FileSurfaceContent
          MenuFlyoutItem editRules = CreateMenuItem(
              "Settings.FileStacks.Custom.Rules.Title",
              "\uE713");
@@ -3229,3 +3559,3679 @@ index 69c0a73..8418f81 100644
          Config.FollowsDefaultStoragePath = true;
          Config.ManagedFolderName = string.IsNullOrWhiteSpace(Config.ManagedFolderName)
              ? CreateAvailableManagedFolderName(Config.Name, Config.Id)
+diff --git a/src/DeskBox/Views/ReferenceSettingsWindow.cs b/src/DeskBox/Views/ReferenceSettingsWindow.cs
+new file mode 100644
+index 0000000..5a1c63a
+--- /dev/null
++++ b/src/DeskBox/Views/ReferenceSettingsWindow.cs
+@@ -0,0 +1,525 @@
++#if SOULDESK_GRID_PREVIEW
++using CommunityToolkit.WinUI.Controls;
++using DeskBox.Platform;
++using DeskBox.Services;
++using Microsoft.UI.Xaml;
++using Microsoft.UI.Xaml.Automation;
++using Microsoft.UI.Xaml.Automation.Peers;
++using Microsoft.UI.Xaml.Controls;
++using Microsoft.UI.Xaml.Media;
++using Microsoft.UI.Xaml.Media.Imaging;
++using Microsoft.Windows.Storage.Pickers;
++using System.Globalization;
++using System.Text.Json;
++using Windows.Graphics;
++
++namespace DeskBox.Views;
++
++internal sealed class ReferenceSettingsWindow : Window
++{
++    private sealed record Editor(string Kind, string? Text, string[]? Options);
++    private sealed record Row(string Key, string Title, string? Description, string? Glyph, string? Route, Editor[]? Editors, Row[]? Children);
++    private sealed record Page(string Title, string? Parent, string Nav, Row[] Rows);
++    private sealed record Nav(string Tag, string Title, string? Icon);
++    private sealed record Catalog(Nav[] Navigation, Dictionary<string, Page> Pages);
++    private sealed record Match(string Tag, string Title, string Category)
++    {
++        public override string ToString() => Title == Category ? Title : $"{Title}  ·  {Category}";
++    }
++
++    private const string Unavailable = "暂未接入 SoulDesk";
++    private readonly ReferenceGridRenderer _renderer;
++    private readonly Catalog _catalog;
++    private readonly NavigationView _navigation;
++    private readonly ScrollViewer _scroll;
++    private readonly StackPanel _content;
++    private readonly InfoBar _failure;
++    private readonly List<Action<ReferenceGridRenderer.Snapshot>> _readers = [];
++    private readonly Dictionary<string, NavigationViewItem> _items = new(StringComparer.Ordinal);
++    private string _page = "General";
++    private bool _selectingPage, _applyingState;
++
++    internal ReferenceSettingsWindow(ReferenceGridRenderer renderer)
++    {
++        _renderer = renderer;
++        using var source = typeof(ReferenceSettingsWindow).Assembly.GetManifestResourceStream(
++            "DeskBox.ReferenceSettingsCatalog.json") ?? throw new InvalidDataException("设置目录缺失。");
++        _catalog = JsonSerializer.Deserialize<Catalog>(source) ?? throw new InvalidDataException("设置目录无效。");
++        Title = "SoulDesk · 设置";
++        SystemBackdrop = new MicaBackdrop();
++        double scale = Win32Helper.GetDpiScaleForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this), null);
++        var display = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id,
++            Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
++        var work = display.WorkArea;
++        int width = Math.Min(work.Width, (int)Math.Round(1040 * scale));
++        int height = Math.Min(work.Height, (int)Math.Round(720 * scale));
++        AppWindow.MoveAndResize(new RectInt32(work.X + (work.Width - width) / 2,
++            work.Y + (work.Height - height) / 2, width, height));
++        var root = new Grid { MinWidth = 620, MinHeight = 440 };
++        root.Resources.MergedDictionaries.Add(new ResourceDictionary
++        {
++            Source = new Uri("ms-appx:///Styles/SettingsOverviewResources.xaml"),
++        });
++        root.Resources["NavigationViewItemOnLeftMinHeight"] = 42d;
++        root.Resources["NavigationViewItemButtonMargin"] = new Thickness(4, 1, 4, 1);
++
++        var search = new AutoSuggestBox { PlaceholderText = "搜索设置", QueryIcon = new SymbolIcon(Symbol.Find),
++            MinWidth = 260, MaxWidth = 520, CornerRadius = new CornerRadius(16) };
++        var titleBar = new TitleBar { Title = "SoulDesk", Content = search };
++        _navigation = new NavigationView
++        {
++            PaneDisplayMode = NavigationViewPaneDisplayMode.Left, IsPaneOpen = true,
++            OpenPaneLength = 224, CompactPaneLength = 58, IsSettingsVisible = false,
++            IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
++        };
++        foreach (var entry in _catalog.Navigation)
++        {
++            var item = new NavigationViewItem { Content = entry.Title, Tag = entry.Tag };
++            if (entry.Icon is { } icon)
++                item.Icon = new ImageIcon { Width = 28, Height = 28, Source = new SvgImageSource(new Uri(icon)) };
++            _items.Add(entry.Tag, item);
++            _navigation.MenuItems.Add(item);
++        }
++        _navigation.SelectionChanged += (_, args) =>
++        {
++            if (!_selectingPage && args.SelectedItem is NavigationViewItem { Tag: string tag })
++                Navigate(tag);
++        };
++        _navigation.BackRequested += (_, _) =>
++        {
++            if (_catalog.Pages[_page].Parent is { } parent) Navigate(parent);
++        };
++        var matches = _catalog.Pages.SelectMany(entry =>
++            new[] { new Match(entry.Key, entry.Value.Title, entry.Value.Title) }.Concat(
++                Enumerate(entry.Value.Rows).Select(row => new Match(entry.Key, row.Title, entry.Value.Title)))).ToArray();
++        search.TextChanged += (_, args) =>
++        {
++            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
++                search.ItemsSource = string.IsNullOrWhiteSpace(search.Text) ? [] : matches.Where(match =>
++                    match.Title.Contains(search.Text.Trim(), StringComparison.CurrentCultureIgnoreCase)).Distinct().Take(20).ToArray();
++        };
++        search.QuerySubmitted += (_, args) =>
++        {
++            if (string.IsNullOrWhiteSpace(args.QueryText)) return;
++            var match = args.ChosenSuggestion as Match ?? matches.FirstOrDefault(item =>
++                item.Title.Contains(args.QueryText.Trim(), StringComparison.CurrentCultureIgnoreCase));
++            if (match is not null) Navigate(match.Tag);
++        };
++        _content = new StackPanel { Spacing = 4, MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch,
++            Margin = new Thickness(34, 14, 44, 24) };
++        _scroll = new ScrollViewer { Content = _content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
++        _failure = new InfoBar { Severity = InfoBarSeverity.Error, Title = "设置未保存", IsClosable = true };
++        var host = new Grid();
++        host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
++        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
++        host.Children.Add(_failure);
++        Grid.SetRow(_scroll, 1);
++        host.Children.Add(_scroll);
++        _navigation.Content = host;
++        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
++        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
++        root.Children.Add(titleBar);
++        Grid.SetRow(_navigation, 1);
++        root.Children.Add(_navigation);
++        Content = root;
++        ExtendsContentIntoTitleBar = true;
++        SetTitleBar(titleBar);
++        Navigate(_renderer.State.SettingsPage ?? "General");
++    }
++
++    private static IEnumerable<Row> Enumerate(IEnumerable<Row> rows)
++    {
++        foreach (var row in rows)
++        {
++            yield return row;
++            foreach (var child in Enumerate(row.Children ?? [])) yield return child;
++        }
++    }
++
++    internal void Present()
++    {
++        if (_renderer.State.SettingsPage is { } tag && tag != _page)
++            Navigate(tag);
++        Activate();
++        Win32Helper.SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
++    }
++
++    internal void ApplySnapshot()
++    {
++        _applyingState = true;
++        try { foreach (var read in _readers) read(_renderer.State); }
++        finally { _applyingState = false; }
++    }
++
++    internal async Task<object> VerifyIsolatedSettingsAsync()
++    {
++        int rows = 0, disabled = 0;
++        foreach (string tag in _catalog.Pages.Keys)
++        {
++            Navigate(tag);
++            if (_content.Children.Count <= 1)
++                throw new InvalidDataException($"设置页 {tag} 没有显示任何设置。");
++            rows += _content.Children.Count - 1;
++            disabled += _content.Children.OfType<SettingsCard>().Count(card =>
++                card.Description is string description && description.Contains(Unavailable, StringComparison.Ordinal));
++        }
++        Navigate("CapsuleMode");
++        var toggle = _content.Children.OfType<SettingsExpander>().Select(card => card.Content).OfType<ToggleSwitch>()
++            .Single(option => AutomationProperties.GetName(option) == "排列方式");
++        toggle.IsOn = true;
++        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
++        while (_renderer.State.CapsuleBar != "Horizontal")
++            await Task.Delay(100, timeout.Token);
++        Navigate("FileDisplaySettings");
++        var extensions = _content.Children.OfType<SettingsExpander>().Select(card => card.Content).OfType<ToggleSwitch>()
++            .Single(option => AutomationProperties.GetName(option) == "显示文件后缀名");
++        extensions.IsOn = true;
++        while (_renderer.State.Preferences?.GetValueOrDefault("ShowFileExtensions") != "true")
++            await Task.Delay(100, timeout.Token);
++        return new
++        {
++            categories = _navigation.MenuItems.OfType<NavigationViewItem>().Select(item => item.Content).ToArray(),
++            pages = _catalog.Pages.Count, rows, disabled, capsuleBar = _renderer.State.CapsuleBar
++        };
++    }
++
++    private void Navigate(string tag)
++    {
++        if (!_catalog.Pages.TryGetValue(tag, out var page)) return;
++        _page = tag;
++        _selectingPage = true;
++        try { _navigation.SelectedItem = _items[page.Nav]; }
++        finally { _selectingPage = false; }
++        _navigation.IsBackButtonVisible = page.Parent is null ? NavigationViewBackButtonVisible.Collapsed :
++            NavigationViewBackButtonVisible.Visible;
++        _readers.Clear();
++        _content.Children.Clear();
++        var heading = new TextBlock { Text = page.Parent is null ? page.Title : $"{_catalog.Pages[page.Parent].Title}  ›  {page.Title}",
++            FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
++        AutomationProperties.SetHeadingLevel(heading, AutomationHeadingLevel.Level1);
++        _content.Children.Add(heading);
++        foreach (var row in page.Rows) _content.Children.Add(CreateRow(row));
++        if (tag == "DesktopOrganizationSettings")
++            _content.Children.Add(CreateRow(new("souldesk-public", "包含公共桌面", "整理时同时检查公共桌面。",
++                "\uE716", null, null, null)));
++        if (tag == "SearchSettings")
++            _content.Children.Add(CreateRow(new("souldesk-search-index", "Windows 搜索索引", "补充已建立索引的文件结果。",
++                "\uE721", null, null, null)));
++        if (tag == "Interaction")
++            _content.Children.Add(CreateRow(new("souldesk-coordinated", "联动拖动", "按住 Ctrl 拖动当前显示器上的桌面格子。",
++                "\uE8AB", null, null, null)));
++        if (tag == "Displays")
++            _content.Children.Add(CreateRow(new("souldesk-displays", "显示器绑定", "在管理窗口为每个格子选择显示器。",
++                "\uE7F4", null, null, null)));
++        ApplySnapshot();
++        _scroll.ChangeView(null, 0, null, disableAnimation: true);
++    }
++
++    private FrameworkElement CreateRow(Row row)
++    {
++        var editor = ConnectedEditor(row.Key);
++        if (editor is not null) AutomationProperties.SetName(editor, row.Title);
++        var childRows = row.Children ?? [];
++        var definition = row.Editors ?? [];
++        bool group = row.Route is not null || childRows.Length > 0;
++        bool unavailable = editor is null && (!group || definition.Length > 0);
++        string description = row.Description ?? "";
++        if (unavailable)
++            description = description.Length > 0 ? $"{description} · {Unavailable}" : Unavailable;
++        if (editor is null && unavailable)
++            editor = DisabledEditors(row.Title, definition);
++        var glyph = row.Glyph is { Length: > 0 } code ? new FontIcon { Glyph = code } : null;
++        if (childRows.Length > 0)
++        {
++            var expander = new SettingsExpander { Header = row.Title, Description = description, HeaderIcon = glyph, Content = editor };
++            foreach (var child in childRows) expander.Items.Add(CreateRow(child));
++            return expander;
++        }
++        var card = new SettingsCard
++        {
++            Header = row.Title, Description = description, HeaderIcon = glyph, Content = editor,
++            HorizontalContentAlignment = HorizontalAlignment.Right, IsClickEnabled = row.Route is not null,
++        };
++        if (row.Route is { } route)
++            card.Click += (_, _) => Navigate(route);
++        return card;
++    }
++
++    private static FrameworkElement? DisabledEditors(string title, Editor[] editors)
++    {
++        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
++        foreach (var editor in editors)
++        {
++            Control input = editor.Kind switch
++            {
++                "Toggle" => new ToggleSwitch { OnContent = "", OffContent = "" },
++                "Choice" => new ComboBox { ItemsSource = editor.Options, MinWidth = 176, PlaceholderText = Unavailable },
++                "Slider" => new Slider { Width = 176 },
++                "Number" => new NumberBox { Width = 108 },
++                "Text" => new TextBox { Width = 176, PlaceholderText = Unavailable },
++                _ => new Button { Content = editor.Text ?? "打开" },
++            };
++            input.IsEnabled = false;
++            AutomationProperties.SetName(input, editor.Text ?? title);
++            AutomationProperties.SetHelpText(input, Unavailable);
++            controls.Children.Add(input);
++        }
++        return controls.Children.Count > 0 ? controls : null;
++    }
++
++    private FrameworkElement? ConnectedEditor(string key)
++    {
++        var preference = _renderer.State.PreferenceRows?.FirstOrDefault(option => option.Row == key);
++        return preference is not null ? PreferenceEditor(preference) : ExistingEditor(key);
++    }
++
++    private FrameworkElement PreferenceEditor(ReferenceGridRenderer.Preference option)
++    {
++        string Read(ReferenceGridRenderer.Snapshot state) => ReferenceGridPreferences.Read(state, option.Key);
++        if (option.Values is { } values && option.Labels is { } labels)
++            return Choice(option.Key, Read, values.Zip(labels).ToArray());
++        if (option.Kind == "toggle")
++            return Toggle(option.Key, state => Read(state) == "true", value => value ? "true" : "false");
++        if (option.Kind == "color")
++        {
++            var color = new TextBox { Width = 108, MaxLength = 7, PlaceholderText = "#RRGGBB" };
++            _readers.Add(state =>
++            {
++                color.IsEnabled = option.Key switch
++                {
++                    "CustomAccentColor" => ReferenceGridPreferences.Read(state, "AccentColorMode") == "Custom",
++                    "WidgetForegroundColor" => ReferenceGridPreferences.Read(state, "WidgetForegroundMode") == "Custom",
++                    _ => true
++                };
++                if (color.FocusState == FocusState.Unfocused) color.Text = Read(state);
++            });
++            color.LostFocus += async (_, _) =>
++            {
++                if (!_applyingState && color.Text != Read(_renderer.State))
++                    await SubmitAsync(option.Key, color.Text.Length == 0 ? null : color.Text);
++            };
++            return color;
++        }
++
++        var number = new NumberBox { Width = 124, Minimum = option.Min, Maximum = option.Max,
++            SmallChange = option.Step, LargeChange = option.Step * 5,
++            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
++        _readers.Add(state => number.Value = double.Parse(Read(state), CultureInfo.InvariantCulture));
++        number.ValueChanged += async (_, args) =>
++        {
++            if (!_applyingState && double.IsFinite(args.NewValue))
++            {
++                double value = option.Kind == "integer" ? Math.Round(args.NewValue) : args.NewValue;
++                await SubmitAsync(option.Key, value.ToString("0.##", CultureInfo.InvariantCulture));
++            }
++        };
++        return number;
++    }
++
++    private FrameworkElement? ExistingEditor(string key) => key switch
++    {
++        "Settings.CollapseBehavior.Title" => Choice("default-collapse", s => s.DefaultCollapseMode,
++            [("Smart", "悬停自动展开"), ("Click", "单击展开"), ("Expanded", "始终展开")]),
++        "Settings.Capsule.Arrangement.Title" => Toggle("capsule-bar", s => s.CapsuleBar is not null,
++            value => value ? _renderer.State.CapsuleBar ?? "Horizontal" : null),
++        "Settings.Capsule.Direction.Title" => Choice("capsule-bar", s => s.CapsuleBar ?? "Horizontal",
++            [("Horizontal", "横向排列"), ("Vertical", "纵向排列")]),
++        "Settings.Capsule.Spacing.Title" => Spacing(),
++        "DesktopOrganization.Auto.Title" => Toggle("auto-sort", s => s.AutoSort),
++        "souldesk-public" => Toggle("include-public", s => s.IncludePublic),
++        "souldesk-coordinated" => Toggle("coordinated-move", s => s.CoordinatedMove),
++        "souldesk-search-index" when !_renderer.State.Isolated => Toggle("search-index", s => s.SearchIndexed),
++        "Settings.FileStacks.Custom.Rules.Title" => Command("编辑规则", "stack-rules"),
++        "DesktopOrganization.Settings.Title" or "DesktopOrganization.OneClick.Action" =>
++            Command("整理桌面", "organization"),
++        "souldesk-displays" or "Settings.Displays.Title" => Command("管理格子", "manager"),
++        "Settings.Displays.MoveAll" => Command("选择显示器", "display-move-all"),
++        "Settings.Displays.NewWidgets.Header" => NewWidgetMonitor(),
++        "Settings.Capsule.Overrides.ResetAll.Title" => Command("全部恢复", "capsule-overrides-reset"),
++        "Settings.WidgetBackground.PerWidget.Title" => Command("清除独立背景", "background-clear-overrides"),
++        "Settings.WidgetBackground.Image.Title" => BackgroundImageActions(),
++        "DesktopOrganization.Notification.Undo" => Command("查看历史", "organization-history"),
++        "DesktopOrganization.Auto.SetupTitle" => Command("打开整理", "organization"),
++        "DesktopOrganization.Rule.Enable.Title" or "DesktopOrganization.Rule.Extensions" =>
++            Command("编辑当前格子规则", "organization-rule"),
++        "Settings.Search.Everything.Title" when !_renderer.State.Isolated => EverythingActions(),
++        "Settings.DataBackup.Export" => BackupActions(),
++        _ => null,
++    };
++
++    private ComboBox NewWidgetMonitor()
++    {
++        var combo = new ComboBox { MinWidth = 210 };
++        var choices = Array.Empty<(string? Value, string Title)>();
++        _readers.Add(state =>
++        {
++            (string? Value, string Title)[] options =
++            [
++                (null, "主屏（允许移动）"), ("@cursor", "鼠标所在屏幕"), ("@primary", "始终在主屏"),
++                .. (state.Displays ?? []).Select(display => ((string?)display.Id, display.Name))
++            ];
++            if (!options.Any(item => item.Value == state.NewWidgetMonitor))
++                options = [.. options, (state.NewWidgetMonitor, "指定显示器已离线")];
++            if (!choices.SequenceEqual(options))
++            {
++                choices = options;
++                combo.ItemsSource = choices.Select(item => item.Title).ToArray();
++            }
++            combo.SelectedIndex = Array.FindIndex(choices, item => item.Value == state.NewWidgetMonitor);
++        });
++        combo.SelectionChanged += async (_, _) =>
++        {
++            if (!_applyingState && combo.SelectedIndex >= 0)
++                await SubmitAsync("new-widget-monitor", choices[combo.SelectedIndex].Value);
++        };
++        return combo;
++    }
++
++    private ToggleSwitch Toggle(string key, Func<ReferenceGridRenderer.Snapshot, bool> read, Func<bool, string?>? map = null)
++    {
++        var toggle = new ToggleSwitch { OnContent = "", OffContent = "", MinWidth = 0 };
++        _readers.Add(state => toggle.IsOn = read(state));
++        toggle.Toggled += async (_, _) =>
++        {
++            if (!_applyingState) await SubmitAsync(key, map is null ? toggle.IsOn.ToString() : map(toggle.IsOn));
++        };
++        return toggle;
++    }
++
++    private ComboBox Choice(string key, Func<ReferenceGridRenderer.Snapshot, string?> read, (string Value, string Title)[] items)
++    {
++        var combo = new ComboBox { MinWidth = 176, ItemsSource = items.Select(item => item.Title).ToArray() };
++        _readers.Add(state =>
++        {
++            combo.SelectedIndex = Array.FindIndex(items, item => item.Value == read(state));
++            if (key == "capsule-bar") combo.IsEnabled = state.CapsuleBar is not null;
++        });
++        combo.SelectionChanged += async (_, _) =>
++        {
++            if (!_applyingState && combo.SelectedIndex >= 0) await SubmitAsync(key, items[combo.SelectedIndex].Value);
++        };
++        return combo;
++    }
++
++    private NumberBox Spacing()
++    {
++        var spacing = new NumberBox { Minimum = 0, Maximum = 32, SmallChange = 1, Width = 108,
++            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
++        _readers.Add(state => { spacing.Value = state.CapsuleSpacing; spacing.IsEnabled = state.CapsuleBar is not null; });
++        spacing.ValueChanged += async (_, args) =>
++        {
++            if (!_applyingState && double.IsFinite(args.NewValue))
++                await SubmitAsync("capsule-spacing", ((int)Math.Round(args.NewValue)).ToString(CultureInfo.InvariantCulture));
++        };
++        return spacing;
++    }
++
++    private Button Command(string title, string command)
++    {
++        var button = new Button { Content = title };
++        button.Click += async (_, _) => await SubmitAsync(command, null, "settings-show");
++        return button;
++    }
++
++    private StackPanel EverythingActions()
++    {
++        var choose = Command("选择 es.exe", "everything-pick");
++        var clear = new Button { Content = "清除" };
++        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
++        clear.Click += async (_, _) => await SubmitAsync("everything-clear", null);
++        _readers.Add(state =>
++        {
++            clear.IsEnabled = state.EverythingCli is not null;
++            ToolTipService.SetToolTip(choose, state.EverythingCli ?? "未配置 Everything 命令行");
++        });
++        actions.Children.Add(choose);
++        actions.Children.Add(clear);
++        return actions;
++    }
++
++    private StackPanel BackgroundImageActions()
++    {
++        var choose = new Button { Content = "选择图片" };
++        var clear = new Button { Content = "清除" };
++        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
++        actions.Children.Add(choose);
++        actions.Children.Add(clear);
++        bool Panorama(ReferenceGridRenderer.Snapshot state) =>
++            ReferenceGridPreferences.Read(state, "WidgetBackgroundMode") == "Panorama";
++        string Property(ReferenceGridRenderer.Snapshot state) =>
++            Panorama(state) ? "WidgetBackgroundPanoramaImage" : "WidgetBackgroundUnifiedImage";
++        _readers.Add(state =>
++        {
++            choose.IsEnabled = ReferenceGridPreferences.Read(state, "WidgetBackgroundMode") != "Material";
++            string? file = state.Preferences?.GetValueOrDefault(Property(state));
++            clear.IsEnabled = choose.IsEnabled && file is not null;
++            ToolTipService.SetToolTip(choose, file);
++        });
++        clear.Click += async (_, _) => await SubmitAsync(Property(_renderer.State), null);
++        choose.Click += async (_, _) =>
++        {
++            choose.IsEnabled = false;
++            try
++            {
++                string? path = await FileOpenPickerService.PickSingleFileAsync(WinRT.Interop.WindowNative.GetWindowHandle(this),
++                    [".png", ".jpg", ".jpeg", ".bmp", ".ico", ".svg"], PickerLocationId.PicturesLibrary);
++                if (path is null) return;
++                var snapshot = _renderer.State;
++                bool panorama = Panorama(snapshot);
++                var assets = WidgetTitleIconAssetStore.Current;
++                var result = panorama ? await assets.CopyPanoramaBackgroundImageAsync(path)
++                    : await assets.CopyUnifiedBackgroundImageAsync(path);
++                if (result != WidgetTitleIconAssetResult.Copied)
++                    throw new InvalidOperationException(result switch
++                    {
++                        WidgetTitleIconAssetResult.TooLarge => "背景图片超过大小限制。",
++                        WidgetTitleIconAssetResult.UnsupportedFormat => "不支持此图片格式。",
++                        _ => "无法读取背景图片。"
++                    });
++                await SubmitAsync(Property(snapshot), panorama ? WidgetTitleIconAssetStore.GetStoredPanoramaFileName(path)
++                    : WidgetTitleIconAssetStore.GetStoredBackgroundFileName(path));
++            }
++            catch (Exception error)
++            {
++                _failure.Message = error.Message;
++                _failure.IsOpen = true;
++            }
++            finally { ApplySnapshot(); }
++        };
++        return actions;
++    }
++
++    private StackPanel BackupActions()
++    {
++        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
++        actions.Children.Add(Command("导出布局", "backup-export"));
++        actions.Children.Add(Command("导入布局", "backup-import"));
++        return actions;
++    }
++
++    private async Task SubmitAsync(string key, string? value, string action = "settings-edit")
++    {
++        try
++        {
++            if (!await _renderer.SubmitSettingAsync(action, "", "", key, value))
++                throw new InvalidOperationException("桌面格子会话已关闭。");
++            _failure.IsOpen = false;
++        }
++        catch (Exception error)
++        {
++            _failure.Message = error.Message;
++            _failure.IsOpen = true;
++        }
++        finally
++        {
++            try
++            {
++                _renderer.Refresh();
++                App.Current.ApplyReferencePreferences(_renderer.State);
++                ApplySnapshot();
++            }
++            catch (Exception error) { App.Log($"设置状态刷新失败 {error.Message}"); }
++        }
++    }
++}
++#endif
+diff --git a/src/DeskBox/Views/ReferenceSettingsCatalog.json b/src/DeskBox/Views/ReferenceSettingsCatalog.json
+new file mode 100644
+index 0000000..f9d4393
+--- /dev/null
++++ b/src/DeskBox/Views/ReferenceSettingsCatalog.json
+@@ -0,0 +1,2999 @@
++{
++  "Navigation": [
++    {
++      "Tag": "General",
++      "Title": "常规",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/general.svg"
++    },
++    {
++      "Tag": "Appearance",
++      "Title": "外观",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/appearance.svg"
++    },
++    {
++      "Tag": "CapsuleMode",
++      "Title": "胶囊模式",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/capsule-mode.svg"
++    },
++    {
++      "Tag": "AppearanceDetail",
++      "Title": "文件格子",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/file-widget.svg"
++    },
++    {
++      "Tag": "FeatureWidgets",
++      "Title": "功能格子",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/feature-widgets.svg"
++    },
++    {
++      "Tag": "Interaction",
++      "Title": "快捷与交互",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/interaction.svg"
++    },
++    {
++      "Tag": "Maintenance",
++      "Title": "诊断与维护",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/maintenance.svg"
++    },
++    {
++      "Tag": "About",
++      "Title": "关于",
++      "Icon": "ms-appx:///Assets/SettingsNavIcons/about.svg"
++    }
++  ],
++  "Pages": {
++    "General": {
++      "Title": "常规",
++      "Parent": null,
++      "Nav": "General",
++      "Rows": [
++        {
++          "Key": "Settings.Language.Title",
++          "Title": "语言",
++          "Description": "切换 DeskBox 的界面语言",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.AutoStart.Title",
++          "Title": "开机自动启动",
++          "Description": "登录 Windows 后在后台启动 DeskBox",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.AutoStart.Mode.Title",
++              "Title": "启动方式",
++              "Description": "标准方式在 Windows“启动应用”中管理；计划任务尝试更早启动。",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.SilentStartup.Title",
++          "Title": "静默启动",
++          "Description": "启动时隐藏桌面格子，之后按快捷键或单击托盘图标显示",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.Title",
++          "Title": "性能与资源",
++          "Description": "在视觉效果与资源占用之间选择，并控制格子隐藏后的缓存回收",
++          "Glyph": "",
++          "Route": "PerformanceSettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Displays.Title",
++          "Title": "显示器与格子",
++          "Description": "查看显示器排列，选择格子显示在哪块显示器",
++          "Glyph": "",
++          "Route": "Displays"
++        },
++        {
++          "Key": "Settings.AttachmentStorageMode.Title",
++          "Title": "附件保存方式",
++          "Description": "关联: 使用原文件；复制: 在 DeskBox 中保存副本",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Onboarding.Title",
++          "Title": "新手引导",
++          "Description": "重新查看格子创建、文件收纳、功能格子、外观和快捷键说明",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "查看"
++            }
++          ]
++        }
++      ]
++    },
++    "PerformanceSettings": {
++      "Title": "性能与资源",
++      "Parent": "General",
++      "Nav": "General",
++      "Rows": [
++        {
++          "Key": "Settings.Performance.Mode.Title",
++          "Title": "性能模式",
++          "Description": "选择预设；修改下方详细设置后将自动切换为自定义",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.VisibleIdleCleanup.Title",
++          "Title": "可见闲置后台维护",
++          "Description": "格子可见但无操作时，等待多久再清理失效引用",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.HiddenCleanup.Title",
++          "Title": "隐藏后缓存回收",
++          "Description": "所有格子完全隐藏后，等待多久再释放图标、缩略图等缓存",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.HiddenScope.Title",
++          "Title": "隐藏后清理范围",
++          "Description": "保留部分热缓存，或释放所有可重建缓存。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.CacheBudget.Title",
++          "Title": "缓存容量",
++          "Description": "控制可重建的图标、缩略图和解码图片缓存上限",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.IdleWorkingSetTrim.Title",
++          "Title": "空闲时压缩内存占用",
++          "Description": "格子隐藏或你离开时，把暂不使用的内存换出到系统。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Performance.ImmediateHiddenWorkingSetTrim.Title",
++              "Title": "隐藏后立即释放内存(实验性)",
++              "Description": "全部格子隐藏 3 秒后释放内存；再次显示可能短暂延迟",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Performance.QuiescenceWorkingSetTrim.Title",
++              "Title": "操作结束后压缩内存占用",
++              "Description": "格子可见且连续几秒无操作时，把暂不使用的内存换出到系统。",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Performance.DecorativeAnimations.Title",
++          "Title": "持续装饰动画",
++          "Description": "逐项选择跑马灯、唱片旋转、图片轮换等装饰动画。",
++          "Glyph": ""
++        }
++      ]
++    },
++    "Appearance": {
++      "Title": "外观",
++      "Parent": null,
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.Theme.Title",
++          "Title": "应用主题",
++          "Description": "影响所有窗口与格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.TrayIcon.Title",
++          "Title": "托盘图标",
++          "Description": "选择任务栏通知区域的图标样式；选择「隐藏」后，重新运行 DeskBox 可直接打开设置随时改回，F7 仍可唤起格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Accent.Source.Title",
++          "Title": "主题色来源",
++          "Description": "选择跟随 Windows 或使用自定义颜色",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Accent.Title",
++              "Title": "主题色",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：默认蓝"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：珊瑚红"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：绿色"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：紫色"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：橙红"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "强调色：青色"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Material.Title",
++          "Title": "窗口材质与边框",
++          "Glyph": "",
++          "Route": "AppearanceMaterialSettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Density.Title",
++          "Title": "显示密度",
++          "Glyph": "",
++          "Route": "AppearanceDensitySettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Group.AppVisual.Title",
++          "Title": "格子窗口与标题栏",
++          "Glyph": "",
++          "Route": "AppearanceWindowSettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Group.Animation.Title",
++          "Title": "显示与隐藏动画",
++          "Glyph": "",
++          "Route": "AppearanceAnimationSettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Section.WidgetGroups",
++          "Title": "格子组",
++          "Description": "将多个格子放在同一位置，通过标题栏快速切换",
++          "Glyph": "",
++          "Route": "WidgetGroups"
++        }
++      ]
++    },
++    "CapsuleMode": {
++      "Title": "胶囊模式",
++      "Parent": null,
++      "Nav": "CapsuleMode",
++      "Rows": [
++        {
++          "Key": "Settings.CollapseBehavior.Title",
++          "Title": "默认显示方式",
++          "Description": "设置格子的默认展开方式",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.WidthMode.Title",
++          "Title": "展开后的宽度",
++          "Description": "选择展开后沿用胶囊宽度，或使用格子原来的宽度",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "让所有胶囊宽度恢复跟随全局"
++            },
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.ExpansionDirection.Title",
++          "Title": "展开方向",
++          "Description": "自动根据屏幕空间选择；固定向上或向下可避免展开方向变化",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CompactContent.Title",
++          "Title": "收起后显示",
++          "Description": "选择显示关键信息、简要摘要，或仅保留图标和标题",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.Arrangement.Title",
++          "Title": "排列方式",
++          "Description": "让每个胶囊独立摆放，或组合成一个可整体移动的栏",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Capsule.ArrangementDetails.Title",
++              "Title": "组合排列",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Capsule.Spacing.Title",
++              "Title": "胶囊间距",
++              "Description": "调整组合栏内相邻胶囊之间的距离",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Capsule.Direction.Title",
++              "Title": "高级排列方向",
++              "Description": "自动根据组合栏位置选择横向或纵向，通常无需手动修改",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.HoverResponse.Title",
++          "Title": "悬停响应",
++          "Description": "控制鼠标停在标题区域多久后展开，以及移出后多久收起",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Capsule.ExpandDelay.Title",
++              "Title": "悬停展开延迟",
++              "Description": "鼠标进入后等待多久再展开；数值越小，响应越快",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Capsule.CollapseDelay.Title",
++              "Title": "移出收起延迟",
++              "Description": "鼠标移出后等待多久再收起，便于短暂移回操作",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.Animation.Title",
++          "Title": "展开与收起动画",
++          "Description": "选择胶囊展开和收起时的过渡手感",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Capsule.AnimationDuration.Title",
++              "Title": "过渡时长",
++              "Description": "控制展开与收起过渡的持续时间",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CompactPrivacy.Title",
++          "Title": "隐藏具体内容",
++          "Description": "隐藏文件名、正文与封面等具体内容。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Capsule.Overrides.Title",
++          "Title": "已单独设置的格子",
++          "Glyph": "",
++          "Route": "CapsuleOverridesSettings"
++        }
++      ]
++    },
++    "WidgetGroups": {
++      "Title": "格子组",
++      "Parent": "Appearance",
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.WidgetGroupNavigation.Title",
++          "Title": "标题栏布局",
++          "Description": "空间充足时并排显示，不足时自动折叠",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetGroupTitle.Title",
++          "Title": "名称显示",
++          "Description": "选择标题栏中显示图标、名称或两者",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetGroupSwitchAnimation.Title",
++          "Title": "切换动画",
++          "Description": "切换格子组内格子时的过渡效果，自动时按标题栏布局选择方向",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetGroupWheel.Title",
++          "Title": "滚轮切换",
++          "Description": "指针位于格子组标题栏时，滚动一次切换一个格子",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetGroupHover.Title",
++          "Title": "鼠标移入自动切换",
++          "Description": "并排显示时，指针停留片刻后切换格子",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetGroups.Existing.Empty.Title",
++          "Title": "暂无格子组",
++          "Description": "把一个格子拖到另一个格子的标题栏，即可组成格子组",
++          "Glyph": ""
++        }
++      ]
++    },
++    "AppearanceDetail": {
++      "Title": "文件格子",
++      "Parent": null,
++      "Nav": "AppearanceDetail",
++      "Rows": [
++        {
++          "Key": "DesktopOrganization.Settings.Title",
++          "Title": "桌面整理",
++          "Description": "一键整理、自动整理和每个格子的文件接收规则",
++          "Glyph": "",
++          "Route": "DesktopOrganizationSettings",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "预览整理"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Group.FileLayout.Title",
++          "Title": "文件显示",
++          "Description": "图片预览、快捷方式标记、列表信息和路径提示",
++          "Glyph": "",
++          "Route": "FileDisplaySettings"
++        },
++        {
++          "Key": "Settings.FileStacks.Title",
++          "Title": "文件叠放",
++          "Glyph": "",
++          "Route": "FileStackSettings",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileWidget.FolderOpenBehavior.Title",
++          "Title": "文件夹打开方式",
++          "Description": "选择子文件夹是在当前格子中浏览，还是交给文件资源管理器打开",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileWidget.SystemContextMenu.Title",
++          "Title": "桌面原版右键菜单",
++          "Description": "右键单个文件时直接显示 Windows 系统菜单。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "ManagedStorage",
++          "Title": "收纳文件夹",
++          "Route": "ManagedStorage"
++        }
++      ]
++    },
++    "FeatureWidgets": {
++      "Title": "功能格子",
++      "Parent": null,
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "QuickCaptureSettings",
++          "Title": "随记",
++          "Route": "QuickCaptureSettings"
++        },
++        {
++          "Key": "TodoSettings",
++          "Title": "待办",
++          "Route": "TodoSettings"
++        },
++        {
++          "Key": "MusicSettings",
++          "Title": "音乐",
++          "Route": "MusicSettings"
++        },
++        {
++          "Key": "WeatherSettings",
++          "Title": "天气",
++          "Route": "WeatherSettings"
++        },
++        {
++          "Key": "GlanceSettings",
++          "Title": "时光",
++          "Route": "GlanceSettings"
++        },
++        {
++          "Key": "SearchSettings",
++          "Title": "搜索",
++          "Route": "SearchSettings"
++        }
++      ]
++    },
++    "Interaction": {
++      "Title": "快捷与交互",
++      "Parent": null,
++      "Nav": "Interaction",
++      "Rows": [
++        {
++          "Key": "Settings.WidgetLayerMode.Title",
++          "Title": "格子层级",
++          "Description": "选择动态层、桌面固定层或快捷唤起层",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.GlobalHotkey.Title",
++          "Title": "全局快捷键",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.GlobalHotkey.CustomTitle",
++              "Title": "自定义快捷键",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "还原"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.ShowDesktopBehavior.Title",
++          "Title": "按 Win+D 后",
++          "Description": "选择显示桌面时，格子继续显示还是随窗口隐藏",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.OpenMethod.Title",
++          "Title": "打开方式",
++          "Description": "影响格子内项目的打开方式",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Interaction.Hover.Title",
++          "Title": "格子操作按钮",
++          "Description": "选择显示在格子右上角的操作按钮，可同时开启多个",
++          "Glyph": ""
++        },
++        {
++          "Key": "Settings.ResizeSnap.Title",
++          "Title": "格子吸附",
++          "Description": "拖动或调整大小时自动对齐。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.WidgetSnap.Spacing.Title",
++              "Title": "格子间距",
++              "Description": "吸附后相邻格子之间保留的间隔(像素)",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.DesktopDoubleClick.Title",
++          "Title": "双击桌面空白区域",
++          "Description": "双击桌面空白区域，显示或隐藏全部格子。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        }
++      ]
++    },
++    "Displays": {
++      "Title": "显示器与格子",
++      "Parent": "General",
++      "Nav": "General",
++      "Rows": [
++        {
++          "Key": "Settings.Displays.Title",
++          "Title": "显示器与格子",
++          "Description": "查看显示器排列，选择格子显示在哪块显示器",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "识别"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Displays.MoveAll",
++          "Title": "全部移到此显示器",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "全部移到此显示器"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Displays.NewWidgets.Header",
++          "Title": "新格子的显示器",
++          "Description": "新建格子时在哪个显示器创建；默认跟随鼠标。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Displays.MultipleDisplays.Header",
++          "Title": "多显示器",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.Displays.Disconnect.Header",
++              "Title": "显示器断开时",
++              "Description": "重新连接后，格子会自动回到原来的位置",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        }
++      ]
++    },
++    "Maintenance": {
++      "Title": "诊断与维护",
++      "Parent": null,
++      "Nav": "Maintenance",
++      "Rows": [
++        {
++          "Key": "Settings.DataBackup.Title",
++          "Title": "设置与内容备份",
++          "Description": "备份设置、格子、随记、待办和附件副本，不含文件格子中的文件",
++          "Glyph": "",
++          "Route": "BackupRestoreSettings"
++        },
++        {
++          "Key": "Settings.CloudBackup.Title",
++          "Title": "云备份",
++          "Description": "备份到你控制的云端位置；布局、设备状态与文件永不上传。",
++          "Glyph": "",
++          "Route": "CloudBackupSettings"
++        },
++        {
++          "Key": "Settings.AttachmentHealth.Title",
++          "Title": "检查附件",
++          "Description": "检查附件是否可用，并找出未关联到任何内容的副本；不会删除文件",
++          "Glyph": "",
++          "Route": "DataHealthSettings"
++        },
++        {
++          "Key": "Settings.DragDropPermission.Title",
++          "Title": "拖拽诊断",
++          "Description": "检查 DeskBox 自身的权限与启动设置，定位文件拖不进格子的问题。",
++          "Glyph": "",
++          "Route": "CompatibilityDiagnosticsSettings"
++        }
++      ]
++    },
++    "About": {
++      "Title": "关于",
++      "Parent": null,
++      "Nav": "About",
++      "Rows": [
++        {
++          "Key": "Settings.Update.Title",
++          "Title": "应用更新",
++          "Description": "根据当前安装渠道检查新版本，并在可用时引导完成更新",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.Update.AutoCheck",
++              "Title": "自动检查",
++              "Description": "启动后自动检查一次，发现新版本时通知你",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Update.AutoDownload",
++              "Title": "自动下载更新",
++              "Description": "发现新版本后在后台自动下载，完成后提醒你安装；按流量计费的网络不会自动下载。",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Update.ShowUpdateToast",
++              "Title": "显示更新通知",
++              "Description": "发现新版本或下载完成时通过系统通知提醒。",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Update.ShowReleaseNotesAfterUpdate",
++              "Title": "更新后显示更新内容",
++              "Description": "DeskBox 更新到新版本后，自动打开一次更新内容窗口。",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Update.Status",
++              "Title": "当前状态",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button"
++                },
++                {
++                  "Kind": "Button"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Update.Details",
++              "Title": "更新详情",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.About.FeedbackTitle",
++          "Title": "问题反馈",
++          "Description": "匿名反馈，无需登录、不留联系方式。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "发送反馈"
++            },
++            {
++              "Kind": "Button",
++              "Text": "我的反馈"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.About.StoreSupportTitle",
++          "Title": "支持 DeskBox",
++          "Description": "感谢每一位愿意使用和支持 DeskBox 的朋友。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "支持 DeskBox"
++            }
++          ]
++        }
++      ]
++    },
++    "FileDisplaySettings": {
++      "Title": "文件显示",
++      "Parent": "AppearanceDetail",
++      "Nav": "AppearanceDetail",
++      "Rows": [
++        {
++          "Key": "Settings.ShowFileExtensions.Title",
++          "Title": "显示文件后缀名",
++          "Description": "开启后，格子内文件会显示 .txt、.png 等后缀",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.HideShortcutExtension.Title",
++              "Title": "排除快捷方式 .lnk",
++              "Description": "显示后缀名时，快捷方式仍保持原来的名称",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.ShowImageFilesAsIcons.Title",
++          "Title": "图片和视频只显示图标",
++          "Description": "开启后不显示缩略图，只显示系统文件图标。",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.HideShortcutArrow.Title",
++          "Title": "隐藏快捷方式小箭头",
++          "Description": "只影响 DeskBox 格子内的图标显示",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.ListDetails.Title",
++          "Title": "列表详细信息",
++          "Description": "列表模式下显示大小、时间或文件夹项目数量",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FilePathTooltips.Title",
++          "Title": "显示路径提示",
++          "Description": "鼠标移入文件时显示完整路径提示",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileNameWidth.Title",
++          "Title": "文件名宽度",
++          "Description": "调整文件格子中名称文本可使用的宽度",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileNameLines.Title",
++          "Title": "文件名行数",
++          "Description": "隐藏图标视图中的文件名，或选择单行、双行显示",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        }
++      ]
++    },
++    "ManagedStorage": {
++      "Title": "收纳文件夹",
++      "Parent": "AppearanceDetail",
++      "Nav": "AppearanceDetail",
++      "Rows": [
++        {
++          "Key": "Settings.ManagedStorage.ListTitle",
++          "Title": "已关闭格子的收纳文件夹",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "刷新"
++            }
++          ]
++        }
++      ]
++    },
++    "FileStackSettings": {
++      "Title": "文件叠放",
++      "Parent": "AppearanceDetail",
++      "Nav": "AppearanceDetail",
++      "Rows": [
++        {
++          "Key": "Settings.FileStacks.OpenMode.Title",
++          "Title": "展开方式",
++          "Description": "选择单击叠放时在当前布局内展开，或使用独立弹出面板集中显示",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.FileStacks.PopoverLayout.Title",
++              "Title": "弹窗布局",
++              "Description": "叠放弹窗的网格形状，固定网格超出可视数量后上下滚动",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.FileStacks.PopoverStyle.Title",
++              "Title": "弹窗视觉样式",
++              "Description": "跟随格子材质，或使用中性亚克力底色。",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileStacks.Auto.Title",
++          "Title": "自动叠放",
++          "Description": "按归组方式自动聚合散落文件；关闭时仍可手动叠放",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.FileStacks.Threshold.Title",
++              "Title": "自动叠放数量",
++              "Description": "同类文件达到多少个时才自动形成叠放",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.FileStacks.GroupBy.Title",
++              "Title": "分组方式",
++              "Description": "选择文件自动归入叠放的依据",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.FileStacks.Unmatched.Title",
++              "Title": "未匹配文件",
++              "Description": "文件保持散开，或归入其他叠放",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.FileStacks.OrderBy.Title",
++              "Title": "叠放内排序",
++              "Description": "展开叠放后，其中项目的排列顺序",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.FileStacks.Custom.Rules.Title",
++          "Title": "自定义格式规则",
++          "Editors": [
++            {
++              "Kind": "Button"
++            }
++          ]
++        }
++      ]
++    },
++    "DesktopOrganizationSettings": {
++      "Title": "桌面整理",
++      "Parent": "AppearanceDetail",
++      "Nav": "AppearanceDetail",
++      "Rows": [
++        {
++          "Key": "DesktopOrganization.OneClick.Action",
++          "Title": "预览整理",
++          "Editors": [
++            {
++              "Kind": "Button"
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Notification.Undo",
++          "Title": "撤消",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "撤消"
++            },
++            {
++              "Kind": "Button",
++              "Text": "预览整理"
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Auto.SetupTitle",
++          "Title": "设置自动整理",
++          "Description": "先指定不同文件应该进入哪个格子，完成后即可开启自动整理。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "设置规则"
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Auto.Title",
++          "Title": "自动整理新文件",
++          "Description": "只整理此后新出现的文件，单个不超过 100 MB。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "DesktopOrganization.Auto.Interval.Title",
++              "Title": "整理时机",
++              "Description": "新文件在桌面停留多久后被整理。",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Rules.ByType",
++          "Title": "按文件类型查看",
++          "Description": "检查每个文件大类当前会进入哪个格子。",
++          "Glyph": ""
++        },
++        {
++          "Key": "DesktopOrganization.Rule.Enable.Title",
++          "Title": "整理到此格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Rule.AddFileTypes",
++          "Title": "添加文件类型",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "DesktopOrganization.Rule.Categories",
++              "Title": "整类文件"
++            }
++          ]
++        },
++        {
++          "Key": "DesktopOrganization.Rule.Advanced",
++          "Title": "高级规则",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "DesktopOrganization.Rule.Extensions",
++              "Title": "自定义扩展名",
++              "Editors": [
++                {
++                  "Kind": "Text"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "添加"
++                },
++                {
++                  "Kind": "Text"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "添加"
++                }
++              ]
++            }
++          ]
++        }
++      ]
++    },
++    "QuickCaptureSettings": {
++      "Title": "随记",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Settings.QuickCapture.Title",
++          "Title": "随记",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.QuickCapture.WideLayout.Title",
++          "Title": "宽屏布局",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.QuickCapture.WideOpen.Title",
++              "Title": "宽屏打开时的状态",
++              "Description": "选择宽屏详情初次打开时的状态",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.QuickCapture.Tabs.Title",
++          "Title": "顶部分类",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Tabs.VisibleCategories",
++              "Title": "显示的分类",
++              "Description": "设置随记中显示的视图；关闭后将隐藏整条 Tab 栏"
++            },
++            {
++              "Key": "Settings.QuickCapture.DefaultView.Title",
++              "Title": "打开随记时显示",
++              "Description": "选择随记格子打开时默认展示的内容",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.TabStyle.Title",
++              "Title": "切换样式"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.ContentEditor.Group.Title",
++          "Title": "内容与编辑",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.Feature.ListTextSize.Title",
++              "Title": "列表文字大小",
++              "Description": "控制功能格子列表中的文字大小",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Feature.ContentTextSize.Title",
++              "Title": "内容文字大小",
++              "Description": "控制功能格子详细内容中的文字大小",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.ContentEditor.PreviewLines.Title",
++              "Title": "列表内容行数",
++              "Description": "限制每条内容在列表中显示的最大行数，详情中仍显示完整内容",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.Format.Title",
++              "Title": "编辑格式",
++              "Description": "影响编辑器语法与显示样式",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.ContentEditor.EnterBehavior.Title",
++              "Title": "回车键行为",
++              "Description": "选择保存和插入换行所使用的按键",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.ShowCreatedTime.Title",
++              "Title": "显示创建时间",
++              "Description": "在随记记录中显示创建时间",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.RemoteImages.Title",
++              "Title": "Markdown 远程图片",
++              "Description": "允许随记加载 HTTP 或 HTTPS 图片",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.QuickCapture.ClipboardTitle",
++          "Title": "记录最近复制内容",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.QuickCapture.ImageClipboardTitle",
++              "Title": "记录剪贴板图片",
++              "Description": "开启后，截图和复制的图片会进入最近复制，并以本机缓存保存",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.RecentLimitTitle",
++              "Title": "最近复制上限",
++              "Editors": [
++                {
++                  "Kind": "Number"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.QuickCapture.Group.Data.Title",
++          "Title": "数据管理",
++          "Description": "清空最近复制或全部随记数据",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.QuickCapture.ImageCacheTitle",
++              "Title": "图片缓存",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "清理"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.ClearRecentTitle",
++              "Title": "清空最近复制",
++              "Description": "只删除最近复制，不影响随记内容和固定项",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "删除"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.QuickCapture.ClearTitle",
++              "Title": "清空随记数据",
++              "Description": "删除所有记录和固定内容",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "删除"
++                }
++              ]
++            }
++          ]
++        }
++      ]
++    },
++    "TodoSettings": {
++      "Title": "待办",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Settings.Todo.Title",
++          "Title": "待办",
++          "Description": "调整待办格子的列表、日期和删除行为",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.QuickCapture.WideLayout.Title",
++          "Title": "宽屏布局",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Todo.AutoSelectFirst.Title",
++              "Title": "自动选择第一项",
++              "Description": "进入宽屏或切换筛选后展示第一条可见待办",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Todo.Tabs.Title",
++          "Title": "顶部分类",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Tabs.VisibleCategories",
++              "Title": "显示的分类",
++              "Description": "选择待办中显示的待办视图；关闭后将隐藏整条 Tab 栏"
++            },
++            {
++              "Key": "Settings.Todo.DefaultFilter.Title",
++              "Title": "默认视图",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Todo.TabStyle.Title",
++              "Title": "切换样式"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.ContentEditor.Group.Title",
++          "Title": "内容与编辑",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.Feature.ListTextSize.Title",
++              "Title": "列表文字大小",
++              "Description": "控制功能格子列表中的文字大小",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Feature.ContentTextSize.Title",
++              "Title": "内容文字大小",
++              "Description": "控制功能格子详细内容中的文字大小",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.ContentEditor.PreviewLines.Title",
++              "Title": "列表内容行数",
++              "Description": "限制每条内容在列表中显示的最大行数，详情中仍显示完整内容",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Todo.NewTaskPosition.Title",
++              "Title": "新待办位置",
++              "Description": "新建待办后添加到列表顶部或底部",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.ContentEditor.EnterBehavior.Title",
++              "Title": "回车键行为",
++              "Description": "选择保存和插入换行所使用的按键",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Todo.ShowCompleted.Title",
++              "Title": "显示已完成待办",
++              "Description": "关闭后，已完成待办只在“已完成”视图中显示",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Todo.FooterDisplay.Title",
++          "Title": "显示内容",
++          "Description": "选择底部显示的剩余待办数量和清除已完成按钮"
++        },
++        {
++          "Key": "Settings.Todo.ReminderEnabled.Title",
++          "Title": "到期提醒",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Todo.ReminderOffset.Title",
++              "Title": "默认提醒时间",
++              "Description": "新待办默认使用的提醒提前量。",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        }
++      ]
++    },
++    "MusicSettings": {
++      "Title": "音乐",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Settings.Music.DisplayMode.Title",
++          "Title": "显示模式",
++          "Description": "自动适应格子尺寸，或固定为封面布局或控制布局",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Music.ArtworkBackdrop.Title",
++          "Title": "根据封面配色背景",
++          "Description": "播放时从封面提取颜色，生成轻量的半透明背景",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Music.CoverHoverMotion.Title",
++          "Title": "封面悬停动效",
++          "Description": "鼠标移入封面时显示轻微缩放和跟随移动",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Music.HideTimeline.Title",
++          "Title": "隐藏空进度条",
++          "Description": "播放器未提供进度信息时，隐藏进度条与时间，而不是显示空白占位",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        }
++      ]
++    },
++    "WeatherSettings": {
++      "Title": "天气",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Settings.Weather.LocationMode.Title",
++          "Title": "位置来源",
++          "Description": "选择自动定位或手动选择城市",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.CityName.Title",
++          "Title": "城市名称",
++          "Description": "输入城市名称，如 北京 或 Shanghai",
++          "Glyph": ""
++        },
++        {
++          "Key": "Settings.Weather.Group.Display.Title",
++          "Title": "显示选项",
++          "Description": "控制格子内显示哪些天气信息",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.Weather.ShowForecast.Title",
++              "Title": "显示预报",
++              "Description": "在格子内显示多日天气预报",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowSunrise.Title",
++              "Title": "日出日落",
++              "Description": "显示当日日出和日落时间",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowUvIndex.Title",
++              "Title": "紫外线指数",
++              "Description": "显示当日紫外线指数",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowPrecipitation.Title",
++              "Title": "降水概率",
++              "Description": "显示降水概率百分比",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowHumidity.Title",
++              "Title": "湿度",
++              "Description": "显示当前空气湿度",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowWind.Title",
++              "Title": "风速",
++              "Description": "显示当前风速和风向",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.Weather.ShowPressure.Title",
++              "Title": "气压",
++              "Description": "仅在展开布局且高度足够(约 300 像素)时显示当前大气压力",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.DefaultView.Title",
++          "Title": "默认视图",
++          "Description": "仅对从未在格子上切换过视图的格子生效。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.Skin.Title",
++          "Title": "显示样式",
++          "Description": "简洁: 纯色背景与基本天气信息；丰富: 渐变背景和更多细节",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.IconStyle.Title",
++          "Title": "图标风格",
++          "Description": "内置图标在所有 Windows 版本上观感一致",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.TemperatureUnit.Title",
++          "Title": "温度单位",
++          "Description": "选择摄氏度或华氏度",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.WindSpeedUnit.Title",
++          "Title": "风速单位",
++          "Description": "选择 km/h、m/s 或 mph",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.DataSource.Title",
++          "Title": "天气数据源",
++          "Description": "选择 MSN 或 Open-Meteo;请求失败时自动切换。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Weather.RefreshInterval.Title",
++          "Title": "刷新间隔",
++          "Description": "天气数据自动刷新频率",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        }
++      ]
++    },
++    "GlanceSettings": {
++      "Title": "时光",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Glance.Instances.Title",
++          "Title": "时光格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            },
++            {
++              "Kind": "Toggle"
++            },
++            {
++              "Kind": "Button",
++              "Text": "新增时光格子"
++            },
++            {
++              "Kind": "Button",
++              "Text": "更多操作"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.Background.Title",
++          "Title": "背景图片",
++          "Description": "图片来源、轮换方式与缓存",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Glance.Background.Category.Title",
++              "Title": "在线图片分类",
++              "Description": "选择在线图片的主题，切换后会自动获取新图片",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Background.Files",
++              "Title": "本地图片",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "选择图片"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "选择文件夹"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "清除"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Background.Transparency.Title",
++              "Title": "图片透明度",
++              "Description": "仅调整背景图片，文字和控件保持不变",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Rotation.Title",
++              "Title": "轮换",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Rotation.Random",
++              "Title": "随机顺序",
++              "Editors": [
++                {
++                  "Kind": "Toggle"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Cache.Title",
++              "Title": "图片缓存",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "清除缓存"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Glance.Typography.Font",
++          "Title": "字体",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Glance.Typography.TimeFormat",
++              "Title": "时间格式",
++              "Description": "时间不含秒，按分钟刷新以节省电量",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Typography.Title",
++              "Title": "字体大小",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Glance.Display.Title",
++          "Title": "显示内容",
++          "Description": "选择格子中需要显示的内容",
++          "Glyph": ""
++        },
++        {
++          "Key": "Glance.Layout.Title",
++          "Title": "布局",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.CalendarMaterial.Title",
++          "Title": "日历材质",
++          "Description": "设置日历卡片的背景风格",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.CalendarMaterial.Transparency",
++          "Title": "透明度",
++          "Description": "仅调整日历背景，100% 时完全透明",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.TraditionalCalendar.Title",
++          "Title": "传统历法",
++          "Description": "自动跟随 DeskBox 语言，也可手动选择或关闭",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.Festivals.Title",
++          "Title": "中国传统节日",
++          "Description": "在农历日期位置优先显示春节、中秋等传统节日",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Glance.Transition.Title",
++          "Title": "切换动效",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Glance.Speed.Title",
++              "Title": "切换速度",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Glance.Readability.Title",
++              "Title": "可读性",
++              "Description": "在背景图片与文字之间加一层柔和衬底。",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Glance.PhotoControls.Title",
++          "Title": "图片控制按钮",
++          "Description": "鼠标移入时显示暂停、切换和图片信息按钮",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        }
++      ]
++    },
++    "SearchSettings": {
++      "Title": "搜索",
++      "Parent": "FeatureWidgets",
++      "Nav": "FeatureWidgets",
++      "Rows": [
++        {
++          "Key": "Settings.Search.Everything.Title",
++          "Title": "Everything 文件搜索",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "前往 Everything 官网下载"
++            },
++            {
++              "Kind": "Toggle"
++            },
++            {
++              "Kind": "Toggle"
++            },
++            {
++              "Kind": "Button",
++              "Text": "说明"
++            },
++            {
++              "Kind": "Button",
++              "Text": "自动检测"
++            },
++            {
++              "Kind": "Button",
++              "Text": "启动 Everything"
++            },
++            {
++              "Kind": "Button",
++              "Text": "选择 Everything.exe"
++            },
++            {
++              "Kind": "Button",
++              "Text": "前往 Everything 官网下载"
++            },
++            {
++              "Kind": "Button",
++              "Text": "如何设置?"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Search.Hotkey.Title",
++          "Title": "搜索快捷键",
++          "Description": "按下快捷键直接打开搜索弹窗",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Search.Hotkey.CustomTitle",
++              "Title": "自定义搜索快捷键",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "还原"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Search.Scope.DeskBox",
++          "Title": "DeskBox 内容",
++          "Description": "搜索待办、随记和格子内文件",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Search.Recommendations.Title",
++          "Title": "推荐内容",
++          "Description": "未输入时展示推荐内容",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Search.DefaultTab.Title",
++          "Title": "默认结果分类",
++          "Description": "输入新查询时默认展示的分类",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice",
++              "Options": [
++                "全部",
++                "应用",
++                "文件",
++                "DeskBox"
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Search.IconAnimation.Title",
++          "Title": "推荐应用图标动效",
++          "Description": "搜索面板推荐应用图标的入场动画风格",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice",
++              "Options": [
++                "渐显缩放",
++                "渐显上浮",
++                "波浪渐显",
++                "柔弹入场"
++              ]
++            }
++          ]
++        }
++      ]
++    },
++    "AppearanceMaterialSettings": {
++      "Title": "窗口材质与边框",
++      "Parent": "Appearance",
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.Material.Title",
++          "Title": "窗口材质与边框",
++          "Description": "选择窗口材质，展开调整透明度、材质强度、边框和圆角",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.Opacity.Title",
++              "Title": "背景透明度",
++              "Description": "调整背景的透明程度，纯色可设为全透明。",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.MaterialIntensity.Title",
++              "Title": "材质浓度",
++              "Description": "调整原生材质的色调与层次，不影响透明度",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetForeground.Title",
++          "Title": "格子文字",
++          "Description": "选择格子文字和单色控件的颜色，不影响图片和彩色图标",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.WidgetForeground.CustomColor.Title",
++              "Title": "自定义文字颜色",
++              "Description": "设置格子文字与单色控件的颜色，不做自动对比度调整。",
++              "Glyph": ""
++            }
++          ]
++        },
++        {
++          "Key": "Settings.TextShadow.Title",
++          "Title": "文字阴影",
++          "Description": "为格子文字添加柔和阴影，在壁纸上更易辨认",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WidgetBackground.Title",
++          "Title": "格子背景",
++          "Description": "让所有格子共用一张图片，或用一张全景图取景。",
++          "Glyph": "",
++          "Children": [
++            {
++              "Key": "Settings.WidgetBackground.Mode.Title",
++              "Title": "背景模式",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.WidgetBackground.Image.Title",
++              "Title": "背景图片",
++              "Description": "图片会拷贝进应用存储，源文件移动或删除不受影响。",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "选择图片…"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.WidgetBackground.Fit.Title",
++              "Title": "契合度",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.WidgetBackground.Dim.Title",
++              "Title": "背景明暗",
++              "Editors": [
++                {
++                  "Kind": "Slider"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.WidgetBackground.PerWidget.Title",
++              "Title": "独立背景",
++              "Description": "设置了独立背景的格子不受全局模式影响",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Button",
++                  "Text": "全部清除"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.BorderColor.Title",
++          "Title": "边框颜色",
++          "Description": "使用中性色、主题色或隐藏窗口边框",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Border.Title",
++          "Title": "边框样式",
++          "Description": "控制格子的边框粗细",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Corner.Title",
++          "Title": "格子圆角",
++          "Description": "控制格子的圆角样式",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.SystemTransparency.Title",
++          "Title": "透明效果(系统)",
++          "Description": "Windows 全局设置——关闭后毛玻璃以纯色显示，影响所有应用。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "打开 Windows 设置"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.WindowShadow.Title",
++          "Title": "窗口阴影(系统)",
++          "Description": "Windows 全局设置——控制所有应用窗口的阴影。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "打开 Windows 设置"
++            }
++          ]
++        }
++      ]
++    },
++    "AppearanceDensitySettings": {
++      "Title": "显示密度",
++      "Parent": "Appearance",
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.Density.Title",
++          "Title": "显示密度",
++          "Description": "选择紧凑、标准或宽松；选择“自定义”后可逐项微调下方滑杆",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Density.Scale.Title",
++          "Title": "整体密度",
++          "Description": "调整待办、随记和文件列表的行距与内边距",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.TextSize.Title",
++          "Title": "文字大小",
++          "Description": "调整所有格子中的文字大小",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.IconSize.Title",
++          "Title": "图标大小",
++          "Description": "调整文件格子中的图标大小",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.HorizontalSpacing.Title",
++          "Title": "横向间距",
++          "Description": "调整文件格子中图标之间的横向距离",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.VerticalSpacing.Title",
++          "Title": "纵向间距",
++          "Description": "调整文件格子中图标之间的纵向距离",
++          "Editors": [
++            {
++              "Kind": "Slider"
++            }
++          ]
++        }
++      ]
++    },
++    "AppearanceWindowSettings": {
++      "Title": "格子窗口与标题栏",
++      "Parent": "Appearance",
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.WidgetTitleIcon.Title",
++          "Title": "格子标题图标",
++          "Description": "控制每个格子标题前的标识样式",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.DisplayWidgetChrome.Title",
++          "Title": "展示格子标题样式",
++          "Description": "用于音乐、天气等以查看为主的格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "将所有展示格子的标题样式重置为跟随全局"
++            },
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.InteractiveWidgetChrome.Title",
++          "Title": "内容格子标题样式",
++          "Description": "用于文件、随记、待办等需要编辑和整理的格子",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "将所有内容格子的标题样式重置为跟随全局"
++            },
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.DefaultWidth.Title",
++          "Title": "默认宽度",
++          "Description": "新建格子时使用，单位为像素",
++          "Editors": [
++            {
++              "Kind": "Number"
++            },
++            {
++              "Kind": "Number"
++            }
++          ]
++        }
++      ]
++    },
++    "AppearanceAnimationSettings": {
++      "Title": "显示与隐藏动画",
++      "Parent": "Appearance",
++      "Nav": "Appearance",
++      "Rows": [
++        {
++          "Key": "Settings.Group.Animation.Title",
++          "Title": "显示与隐藏动画",
++          "Description": "F7 或托盘显示、隐藏格子时使用。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Animation.Effect.Title",
++          "Title": "显示动画",
++          "Description": "显示与隐藏格子的过渡效果",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Animation.Speed.Title",
++          "Title": "动画速度",
++          "Description": "选择格子动画的持续时长",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Animation.Direction.Title",
++          "Title": "滑动方向",
++          "Description": "选择滑动动画的方向",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Animation.Easing.Title",
++          "Title": "缓动强度",
++          "Description": "控制动画的加速和减速效果",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.Animation.Stagger.Title",
++          "Title": "错峰滑动",
++          "Description": "格子组逐个错开启动显示与隐藏。",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        }
++      ]
++    },
++    "CapsuleOverridesSettings": {
++      "Title": "已单独设置的格子",
++      "Parent": "CapsuleMode",
++      "Nav": "CapsuleMode",
++      "Rows": [
++        {
++          "Key": "Settings.Capsule.Overrides.Empty.Title",
++          "Title": "所有格子均跟随全局设置",
++          "Description": "直接在格子上修改收起方式、宽度或位置后，会在这里显示",
++          "Glyph": ""
++        },
++        {
++          "Key": "Settings.Capsule.Overrides.ResetAll.Title",
++          "Title": "全部恢复跟随全局",
++          "Description": "清除所有格子的单独展开方式、胶囊宽度和保存位置",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "全部恢复"
++            }
++          ]
++        }
++      ]
++    },
++    "BackupRestoreSettings": {
++      "Title": "设置与内容备份",
++      "Parent": "Maintenance",
++      "Nav": "Maintenance",
++      "Rows": [
++        {
++          "Key": "Settings.DataBackup.AutomaticBackup.Title",
++          "Title": "自动备份",
++          "Description": "按计划自动创建设置与应用数据的本地快照",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ],
++          "Children": [
++            {
++              "Key": "Settings.DataBackup.AutomaticBackupInterval.Title",
++              "Title": "备份间隔",
++              "Description": "多久创建一份新的自动快照",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.DataBackup.AutomaticBackupRetention.Title",
++              "Title": "保留快照份数",
++              "Description": "达到上限后自动删除最旧的快照",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Choice"
++                }
++              ]
++            },
++            {
++              "Key": "Settings.DataBackup.AutomaticBackupDirectory.Title",
++              "Title": "备份目录",
++              "Description": "自动快照的保存位置，留空时使用默认还原目录",
++              "Glyph": "",
++              "Editors": [
++                {
++                  "Kind": "Text"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "更改目录"
++                },
++                {
++                  "Kind": "Button",
++                  "Text": "恢复默认目录"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "Key": "Settings.DataBackup.Snapshots.Title",
++          "Title": "本机快照",
++          "Description": "自动快照用于故障恢复，还原前快照用于撤消最近一次还原",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "还原备份"
++            },
++            {
++              "Kind": "Button",
++              "Text": "导出备份"
++            },
++            {
++              "Kind": "Button",
++              "Text": "立即备份"
++            },
++            {
++              "Kind": "Button",
++              "Text": "打开目录"
++            },
++            {
++              "Kind": "Button",
++              "Text": "刷新"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.DataBackup.Export",
++          "Title": "导出备份",
++          "Editors": [
++            {
++              "Kind": "Button"
++            }
++          ]
++        }
++      ]
++    },
++    "CloudBackupSettings": {
++      "Title": "云备份",
++      "Parent": "Maintenance",
++      "Nav": "Maintenance",
++      "Rows": [
++        {
++          "Key": "Settings.CloudBackup.Provider.Title",
++          "Title": "备份渠道",
++          "Description": "快照上传到 WebDAV，兼容 Nextcloud、坚果云与多数 NAS。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.Connection.Title",
++          "Title": "连接",
++          "Description": "服务器地址与帐户；密码存在 Windows 凭据管理器。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Text"
++            },
++            {
++              "Kind": "Text"
++            },
++            {
++              "Kind": "Text"
++            },
++            {
++              "Kind": "Text"
++            },
++            {
++              "Kind": "Button",
++              "Text": "保存"
++            },
++            {
++              "Kind": "Button",
++              "Text": "测试连接"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.TodoData.Title",
++          "Title": "待办数据",
++          "Description": "所有待办格子里的待办项。不包含附件文件。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.QuickCaptureData.Title",
++          "Title": "随记数据",
++          "Description": "随记内容。不包含附件文件。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.WidgetStyle.Title",
++          "Title": "格子样式",
++          "Description": "透明度、材质、配色等外观设置。不包含格子位置和显示器布局",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Toggle"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.Interval.Title",
++          "Title": "备份间隔",
++          "Description": "DeskBox 运行期间后台上传快照的频率",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.Retention.Title",
++          "Title": "保留份数",
++          "Description": "每次上传后删除更早的远端快照",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Choice"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.CloudBackup.Snapshots.Title",
++          "Title": "备份与还原",
++          "Description": "立即上传快照，或从远端快照还原。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "立即备份"
++            },
++            {
++              "Kind": "Button",
++              "Text": "刷新"
++            }
++          ]
++        }
++      ]
++    },
++    "DataHealthSettings": {
++      "Title": "检查附件",
++      "Parent": "Maintenance",
++      "Nav": "Maintenance",
++      "Rows": [
++        {
++          "Key": "Settings.AttachmentHealth.Title",
++          "Title": "检查附件",
++          "Description": "检查附件是否可用，并找出未关联到任何内容的副本；不会删除文件",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "立即检查"
++            }
++          ]
++        }
++      ]
++    },
++    "CompatibilityDiagnosticsSettings": {
++      "Title": "拖拽诊断",
++      "Parent": "Maintenance",
++      "Nav": "Maintenance",
++      "Rows": [
++        {
++          "Key": "Settings.DragDropPermission.Title",
++          "Title": "拖拽诊断",
++          "Description": "检查 DeskBox 自身的权限与启动设置，定位文件拖不进格子的问题。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "刷新"
++            },
++            {
++              "Kind": "Button",
++              "Text": "修复"
++            },
++            {
++              "Kind": "Button",
++              "Text": "打开 Windows 安全通知设置"
++            }
++          ]
++        },
++        {
++          "Key": "Settings.RuntimeHealth.Title",
++          "Title": "后台服务状态",
++          "Description": "文件、剪贴板、桌面或搜索未及时更新时，可在这里重新同步。",
++          "Glyph": "",
++          "Editors": [
++            {
++              "Kind": "Button",
++              "Text": "导出诊断包"
++            },
++            {
++              "Kind": "Button",
++              "Text": "重新同步"
++            }
++          ]
++        }
++      ]
++    }
++  }
++}
+diff --git a/src/DeskBox/Services/SettingsService.cs b/src/DeskBox/Services/SettingsService.cs
+index 17c8f32..c61bac0 100644
+--- a/src/DeskBox/Services/SettingsService.cs
++++ b/src/DeskBox/Services/SettingsService.cs
+@@ -1,4 +1,4 @@
+-﻿using System.Collections.Concurrent;
++using System.Collections.Concurrent;
+ using System.Text.Json;
+ using System.Text.Json.Nodes;
+ using System.Text.Json.Serialization;
+@@ -1352,6 +1352,10 @@ settings.FocusClickedWidgetOnRaise = false;
+         });
+     }
+ 
++#if SOULDESK_GRID_PREVIEW
++    internal void NotifyReferenceSettingsChanged() => NotifySettingsChangedSafely();
++#endif
++
+     private void NotifySettingsChangedSafely(
+         SettingsChangeKind kind = SettingsChangeKind.General)
+     {
+diff --git a/src/DeskBox/Services/ReferenceGridPreferences.cs b/src/DeskBox/Services/ReferenceGridPreferences.cs
+new file mode 100644
+index 0000000..807d29f
+--- /dev/null
++++ b/src/DeskBox/Services/ReferenceGridPreferences.cs
+@@ -0,0 +1,89 @@
++#if SOULDESK_GRID_PREVIEW
++using System.Globalization;
++using System.Reflection;
++using DeskBox.Contracts;
++using DeskBox.Models;
++
++namespace DeskBox.Services;
++
++internal static class ReferenceGridPreferences
++{
++    private static readonly AppSettings Defaults = CreateDefaults();
++
++    private static AppSettings CreateDefaults()
++    {
++        var settings = new AppSettings();
++        SettingsService.ApplyDefaultPreferences(settings);
++        settings.WidgetOpacity = 0.90;
++        settings.DefaultWidgetWidth = 324;
++        return settings;
++    }
++
++    private static PropertyInfo? Property(string key) =>
++        typeof(AppSettings).GetProperty(key, BindingFlags.Instance | BindingFlags.Public);
++
++    internal static string Read(ReferenceGridRenderer.Snapshot state, string key)
++    {
++        if (key == "CompactHoverResponse")
++            return CapsuleOptionKinds.ResolveHoverResponse(
++                int.Parse(Read(state, "WidgetCompactExpandDelayMs"), CultureInfo.InvariantCulture),
++                int.Parse(Read(state, "WidgetCompactCollapseDelayMs"), CultureInfo.InvariantCulture));
++        if (state.Preferences?.TryGetValue(key, out var value) == true)
++            return value;
++        if (key is "WidgetCompactExpandDelayMs" or "WidgetCompactCollapseDelayMs" &&
++            state.Preferences?.TryGetValue("CompactHoverResponse", out var response) == true &&
++            CapsuleOptionKinds.HoverResponsePresetDelays(response) is { } delays)
++            return (key == "WidgetCompactExpandDelayMs" ? delays.Expand : delays.Collapse).ToString(CultureInfo.InvariantCulture);
++        if (LayoutDensityKinds.TryGetPresetValues(state.Preferences?.GetValueOrDefault("LayoutDensity"), out var preset))
++        {
++            double? number = key switch
++            {
++                "IconSize" => preset.IconSize,
++                "TextSize" => preset.TextSize,
++                "LayoutDensityScale" => preset.DensityScale,
++                "HorizontalSpacingScale" => preset.HorizontalSpacingScale,
++                "VerticalSpacingScale" => preset.VerticalSpacingScale,
++                "FileNameWidthScale" => preset.FileNameWidthScale,
++                _ => null
++            };
++            if (number is { } presetValue) return presetValue.ToString(CultureInfo.InvariantCulture);
++        }
++
++        return key switch
++        {
++            "AutoSortDelaySeconds" => "4",
++            _ => Property(key)?.GetValue(Defaults) switch
++            {
++                bool enabled => enabled ? "true" : "false",
++                null when key == "WidgetBackgroundMode" => WidgetBackgroundModeKinds.Material,
++                null when key == "WidgetBackgroundUnifiedFit" => WidgetBackgroundKinds.FitFill,
++                null when key == "WidgetBackgroundDim" => WidgetBackgroundKinds.DefaultDimPercent.ToString(CultureInfo.InvariantCulture),
++                IFormattable number => number.ToString(null, CultureInfo.InvariantCulture),
++                string text => text,
++                _ => ""
++            }
++        };
++    }
++
++    internal static bool Apply(AppSettings settings, ReferenceGridRenderer.Snapshot state)
++    {
++        bool changed = false;
++        foreach (var option in state.PreferenceRows ?? [])
++        {
++            if (Property(option.Key) is not { CanWrite: true } property)
++                continue;
++            string value = Read(state, option.Key);
++            Type type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
++            object? next = option.Kind == "image" && value.Length == 0 ? null :
++                type == typeof(string) ? value :
++                type == typeof(int) ? (int)double.Parse(value, CultureInfo.InvariantCulture) :
++                Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
++            if (Equals(property.GetValue(settings), next))
++                continue;
++            property.SetValue(settings, next);
++            changed = true;
++        }
++        return changed;
++    }
++}
++#endif
+diff --git a/src/DeskBox/Views/WidgetWindowBase.Foreground.cs b/src/DeskBox/Views/WidgetWindowBase.Foreground.cs
+index 436ff8d..903c6ee 100644
+--- a/src/DeskBox/Views/WidgetWindowBase.Foreground.cs
++++ b/src/DeskBox/Views/WidgetWindowBase.Foreground.cs
+@@ -37,6 +37,9 @@ public abstract partial class WidgetWindowBase
+     protected void SetWidgetForegroundModeOverride(string? mode)
+     {
+         WidgetForegroundSettings.SetModeOverride(Config, mode);
++#if SOULDESK_GRID_PREVIEW
++        ReferenceGridPreview.Current?.PersistMetadata(Config, "artwork", ReferenceGridPreview.ArtworkKeys);
++#endif
+         SettingsService.UpdateWidget(Config);
+         ApplyWidgetForegroundAppearance();
+     }
+@@ -108,6 +111,9 @@ public abstract partial class WidgetWindowBase
+                 WidgetForegroundSettings.SetModeOverride(
+                     Config,
+                     WidgetForegroundSettings.ModeCustom);
++#if SOULDESK_GRID_PREVIEW
++                ReferenceGridPreview.Current?.PersistMetadata(Config, "artwork", ReferenceGridPreview.ArtworkKeys);
++#endif
+                 SettingsService.UpdateWidget(Config);
+                 ApplyWidgetForegroundAppearance();
+             }

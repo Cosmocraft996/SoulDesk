@@ -78,6 +78,8 @@ namespace SoulDesk.DesktopGrid
         public bool? SortDescending;
         public bool List;
         public bool StackByType;
+        public bool? AutoStack;
+        public double? IconSize;
         public string FolderOpen;
         public Dictionary<string, string> StackSettings = new Dictionary<string, string>();
         public Dictionary<string, string> Artwork = new Dictionary<string, string>();
@@ -109,12 +111,14 @@ namespace SoulDesk.DesktopGrid
         public string GroupTitleDisplay;
         public bool? GroupWheel;
         public bool GroupHover;
+        public bool? GroupHoverOverride;
         public string BoundMonitor;
         public bool HoverExpand = true;
         public string CollapseMode;
         public string Active;
         public string Color = "#283635";
         public int Opacity = 90;
+        public bool UseCustomOpacity;
         public List<GridTab> Tabs = new List<GridTab>();
 
         internal const string Smart = "Smart", Click = "Click", Expanded = "Expanded", SystemDefault = "System";
@@ -179,6 +183,8 @@ namespace SoulDesk.DesktopGrid
         public bool CoordinatedMove = true;
         public List<GridStackRule> StackRules = new List<GridStackRule>();
         public string EverythingCli;
+        public Dictionary<string, string> Preferences = new Dictionary<string, string>(StringComparer.Ordinal);
+        public string NewWidgetMonitor;
         public List<GridBox> Boxes = new List<GridBox>();
         public Dictionary<string, Dictionary<string, GridPosition>> Layouts =
             new Dictionary<string, Dictionary<string, GridPosition>>();
@@ -211,6 +217,10 @@ namespace SoulDesk.DesktopGrid
                     rule.Extensions.Any(ext => string.IsNullOrEmpty(ext) || !Regex.IsMatch(ext, "^[a-z0-9_+-]{1,24}$"))) ||
                 StackRules.Select(rule => rule.Id).Distinct().Count() != StackRules.Count)
                 throw new InvalidDataException("自定义堆栈规则无效。");
+            if (Preferences == null || Preferences.Count > GridPreferences.Rows.Length ||
+                Preferences.Any(item => !GridPreferences.Accepts(item.Key, item.Value)) ||
+                (NewWidgetMonitor != null && (NewWidgetMonitor.Length == 0 || NewWidgetMonitor.Length > 256)))
+                throw new InvalidDataException("桌面格子选项包含无效的名称或设置值。");
             var groups = new HashSet<string>(StringComparer.Ordinal);
             var tabs = new HashSet<string>(StringComparer.Ordinal);
             var items = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -235,6 +245,7 @@ namespace SoulDesk.DesktopGrid
                         (tab.Folder != null && !References.IsLocalPath(tab.Folder)) ||
                         (tab.Rules != null && tab.Rules.Length > 512) ||
                         !GridTab.SortModes.Contains(tab.Sort) ||
+                        (tab.IconSize.HasValue && (double.IsNaN(tab.IconSize.Value) || tab.IconSize.Value < 24 || tab.IconSize.Value > 56)) ||
                         !ValidMetadata(tab.StackSettings, StackKeys, 262144) ||
                         !ValidMetadata(tab.Artwork, ArtworkKeys, 128) ||
                         (tab.FolderOpen != null && tab.FolderOpen != "Explorer" && tab.FolderOpen != "Embedded"))
@@ -274,7 +285,8 @@ namespace SoulDesk.DesktopGrid
             "FileStackOrderBy", "FileStackOpenMode", "FileStackDisabledGroups", "FileStackNameOverrides",
             "FileStackGroupOrder", "FileStackMemberOverrides" };
         internal static readonly string[] ArtworkKeys = { "TitleIconEmoji", "TitleIconImage",
-            "BackgroundImage", "BackgroundFit", "BackgroundDim", "BackgroundColor" };
+            "BackgroundImage", "BackgroundFit", "BackgroundDim", "BackgroundColor",
+            "WidgetBorderMode", "ChromeMode", "WidgetForegroundMode", "WidgetForegroundColor" };
 
         private static bool ValidMetadata(Dictionary<string, string> values, string[] keys, int limit)
         {

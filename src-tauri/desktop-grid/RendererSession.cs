@@ -31,6 +31,13 @@ namespace SoulDesk.DesktopGrid
         public string Session;
         public long Revision;
         public bool Visible, Closing;
+        public bool SettingsOnly, Isolated, AutoSort, IncludePublic, SearchIndexed = true;
+        public string EverythingCli;
+        public long SettingsFocus;
+        public string SettingsPage;
+        public string NewWidgetMonitor;
+        public Dictionary<string, string> Preferences = new Dictionary<string, string>(StringComparer.Ordinal);
+        public GridPreference[] PreferenceRows = GridPreferences.Rows;
         public string DefaultCollapseMode = GridBox.Smart;
         public GridDisplayInfo[] Displays = new GridDisplayInfo[0];
         public string CapsuleBar;
@@ -102,8 +109,9 @@ namespace SoulDesk.DesktopGrid
         private readonly string requestFile;
         private readonly GridRenderState state = new GridRenderState();
         private Process renderer;
+        private string publishedSettingsReply;
 
-        internal GridRendererSession(string root, WindowIdentity desktopLayer = null)
+        internal GridRendererSession(string root, WindowIdentity desktopLayer = null, bool settingsOnly = false)
         {
             using (var process = Process.GetCurrentProcess())
             {
@@ -112,6 +120,7 @@ namespace SoulDesk.DesktopGrid
                     System.Globalization.CultureInfo.InvariantCulture);
             }
             state.Session = GridState.NewId();
+            state.SettingsOnly = settingsOnly;
             state.DesktopLayer = desktopLayer;
             if (desktopLayer != null)
                 state.DesktopStarted = desktopLayer.Started.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -125,7 +134,8 @@ namespace SoulDesk.DesktopGrid
         {
             if (renderer != null)
                 throw new InvalidOperationException("格子界面已经启动。");
-            string mode = state.DesktopLayer == null ? "--souldesk-grid-renderer" : "--souldesk-grid-desktop";
+            string mode = state.SettingsOnly ? "--souldesk-grid-settings" :
+                state.DesktopLayer == null ? "--souldesk-grid-renderer" : "--souldesk-grid-desktop";
             renderer = Process.Start(new ProcessStartInfo(executable, mode + " \"" + directory + "\"")
                 {
                     UseShellExecute = false,
@@ -180,9 +190,44 @@ namespace SoulDesk.DesktopGrid
             LocalJson.Write(stateFile, state);
         }
 
+        internal void PublishSettings(GridState preferences, bool isolated, bool focus = false, string page = null,
+            GridDisplayInfo[] displays = null)
+        {
+            string everything = isolated ? null : preferences.EverythingCli;
+            displays = displays ?? new GridDisplayInfo[0];
+            if (!focus && state.Visible && state.Isolated == isolated && state.AutoSort == preferences.AutoSort &&
+                state.IncludePublic == preferences.IncludePublic && state.SearchIndexed == preferences.SearchIndexed &&
+                state.EverythingCli == everything && state.DefaultCollapseMode == preferences.DefaultCollapseMode &&
+                state.CapsuleBar == preferences.CapsuleBar && state.CapsuleSpacing == preferences.CapsuleSpacing &&
+                state.CoordinatedMove == preferences.CoordinatedMove && publishedSettingsReply == state.Completed &&
+                state.NewWidgetMonitor == preferences.NewWidgetMonitor && state.Displays.Length == displays.Length &&
+                state.Displays.Zip(displays, (left, right) => left.Id == right.Id && left.Name == right.Name &&
+                    left.Primary == right.Primary).All(same => same) &&
+                state.Preferences.Count == preferences.Preferences.Count &&
+                state.Preferences.All(entry => preferences.Preferences.ContainsKey(entry.Key) &&
+                    preferences.Preferences[entry.Key] == entry.Value))
+                return;
+            state.Isolated = isolated;
+            state.AutoSort = preferences.AutoSort;
+            state.IncludePublic = preferences.IncludePublic;
+            state.SearchIndexed = preferences.SearchIndexed;
+            state.NewWidgetMonitor = preferences.NewWidgetMonitor;
+            state.EverythingCli = everything;
+            if (focus)
+            {
+                state.SettingsFocus++;
+                state.SettingsPage = page;
+            }
+            Publish(new GridRenderBox[0], new string[0], true, preferences.DefaultCollapseMode,
+                displays, preferences.CapsuleBar, preferences.CapsuleSpacing, preferences.CoordinatedMove,
+                preferences: preferences.Preferences);
+            publishedSettingsReply = state.Completed;
+        }
+
         internal void Publish(IEnumerable<GridRenderBox> boxes, IEnumerable<string> files, bool visible,
             string defaultCollapseMode = GridBox.Smart, GridDisplayInfo[] displays = null,
-            string capsuleBar = null, int capsuleSpacing = 8, bool coordinatedMove = true, GridStackRule[] stackRules = null)
+            string capsuleBar = null, int capsuleSpacing = 8, bool coordinatedMove = true, GridStackRule[] stackRules = null,
+            Dictionary<string, string> preferences = null)
         {
             state.Boxes = boxes.ToArray();
             state.Files = files.Where(References.IsLocalPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -193,6 +238,7 @@ namespace SoulDesk.DesktopGrid
             state.CapsuleSpacing = capsuleSpacing;
             state.CoordinatedMove = coordinatedMove;
             state.StackRules = stackRules ?? new GridStackRule[0];
+            state.Preferences = preferences ?? new Dictionary<string, string>();
             state.Revision++;
             LocalJson.Write(stateFile, state);
         }
@@ -226,6 +272,8 @@ namespace SoulDesk.DesktopGrid
         {
             if (!state.Visible || request.Revision != state.Revision)
                 throw new InvalidOperationException("格子已更新，请重新操作。");
+            if (state.SettingsOnly)
+                return ApplySettingsRequest(store, request, show);
             if (request.Action == "activate" || request.Action == "collapse" || request.Action == "detach" ||
                 request.Action == "merge" || request.Action == "reorder" || request.Action == "collapse-mode")
                 return ApplyBox(store, request);
@@ -240,7 +288,8 @@ namespace SoulDesk.DesktopGrid
                 bool known = request.Setting == "manager" || request.Setting == "search" ||
                     request.Setting == "new" || request.Setting == "map" ||
                     request.Setting == "rules" || request.Setting == "pick" || request.Setting == "appearance" ||
-                    request.Setting == "organization" || request.Setting == "stack-rules";
+                    request.Setting == "organization" || request.Setting == "stack-rules" || request.Setting == "settings" ||
+                    request.Setting == "file-settings" || request.Setting == "feature-settings";
                 if (!known || !state.Boxes.Any(box => box.Box.Id == request.Box &&
                     box.Box.Tabs.Any(tab => tab.Id == request.Tab)))
                     throw new InvalidOperationException("格子菜单入口已失效。");
@@ -249,6 +298,76 @@ namespace SoulDesk.DesktopGrid
             }
             state.Accepted = ApplyMembers(store, request, state.Files);
             return state.Accepted.Length > 0;
+        }
+
+        private bool ApplySettingsRequest(GridStore store, GridRenderRequest request, Action<string, string> show)
+        {
+            if (request.Action == "settings-show" && show != null &&
+                (request.Setting == "manager" || request.Setting == "organization" || request.Setting == "stack-rules" ||
+                 request.Setting == "organization-history" || request.Setting == "organization-rule" ||
+                 request.Setting == "capsule-overrides-reset" || request.Setting == "display-move-all" ||
+                 request.Setting == "background-clear-overrides" ||
+                 request.Setting == "backup-export" || request.Setting == "backup-import" ||
+                 request.Setting == "everything-pick" && !state.Isolated))
+            {
+                show(request.Setting, null);
+                return false;
+            }
+            if (request.Action != "settings-edit")
+                throw new InvalidOperationException("设置入口不支持该操作。");
+            store.Change(preferences =>
+            {
+                if (GridPreferences.Known(request.Setting))
+                {
+                    GridPreferences.Set(preferences, request.Setting, request.Value);
+                    return;
+                }
+                if (request.Setting == "new-widget-monitor" && (request.Value == null || request.Value == "@primary" ||
+                    request.Value == "@cursor" || state.Displays.Any(display => display.Id == request.Value)))
+                {
+                    preferences.NewWidgetMonitor = request.Value;
+                    return;
+                }
+                bool flag;
+                if (bool.TryParse(request.Value, out flag))
+                {
+                    switch (request.Setting)
+                    {
+                        case "auto-sort": preferences.AutoSort = flag; return;
+                        case "include-public": preferences.IncludePublic = flag; return;
+                        case "coordinated-move": preferences.CoordinatedMove = flag; return;
+                        case "search-index":
+                            if (!state.Isolated) { preferences.SearchIndexed = flag; return; }
+                            break;
+                    }
+                }
+                if (request.Setting == "default-collapse" && request.Value != GridBox.SystemDefault &&
+                    GridBox.CollapseModes.Contains(request.Value))
+                {
+                    preferences.SetDefaultCollapseMode(request.Value);
+                    return;
+                }
+                if (request.Setting == "capsule-bar" && (request.Value == null || request.Value == "Horizontal" ||
+                    request.Value == "Vertical"))
+                {
+                    preferences.CapsuleBar = request.Value;
+                    return;
+                }
+                int spacing;
+                if (request.Setting == "capsule-spacing" && int.TryParse(request.Value, out spacing) &&
+                    spacing >= 0 && spacing <= 32)
+                {
+                    preferences.CapsuleSpacing = spacing;
+                    return;
+                }
+                if (request.Setting == "everything-clear" && !state.Isolated)
+                {
+                    preferences.EverythingCli = null;
+                    return;
+                }
+                throw new InvalidOperationException("不支持此设置或设置值无效。");
+            });
+            return true;
         }
 
         private static bool ApplyPosition(GridStore store, GridRenderRequest request, string topology,
@@ -293,7 +412,19 @@ namespace SoulDesk.DesktopGrid
                         tab.Name = name;
                         break;
                     case "list": tab.List = ReadSwitch(request.Value); break;
-                    case "stack": tab.StackByType = ReadSwitch(request.Value); break;
+                    case "icon-size":
+                        double size;
+                        if (request.Value == null)
+                            tab.IconSize = null;
+                        else if (double.TryParse(request.Value, System.Globalization.NumberStyles.AllowDecimalPoint,
+                            System.Globalization.CultureInfo.InvariantCulture, out size) && size >= 24 && size <= 56)
+                            tab.IconSize = size;
+                        else throw new InvalidOperationException("图标大小必须在 24～56 之间。");
+                        break;
+                    case "stack":
+                        tab.AutoStack = request.Value == null ? (bool?)null : ReadSwitch(request.Value);
+                        tab.StackByType = tab.AutoStack ?? false;
+                        break;
                     case "sort": tab.ChangeSort(request.Value); break;
                     case "folder-open":
                         if (request.Value != null && request.Value != "Explorer" && request.Value != "Embedded")
@@ -312,8 +443,16 @@ namespace SoulDesk.DesktopGrid
                     case "reset-width": current.CapsuleWidth = null; break;
                     case "group-navigation": current.GroupNavigation = request.Value; break;
                     case "group-title": current.GroupTitleDisplay = request.Value; break;
-                    case "group-wheel": current.GroupWheel = ReadSwitch(request.Value); break;
-                    case "group-hover": current.GroupHover = ReadSwitch(request.Value); break;
+                    case "group-wheel": current.GroupWheel = request.Value == null ? (bool?)null : ReadSwitch(request.Value); break;
+                    case "group-hover":
+                        current.GroupHoverOverride = request.Value == null ? (bool?)null : ReadSwitch(request.Value);
+                        current.GroupHover = current.GroupHoverOverride ?? false;
+                        break;
+                    case "reset-group-switching":
+                        current.GroupWheel = null;
+                        current.GroupHoverOverride = null;
+                        current.GroupHover = false;
+                        break;
                     case "bind":
                         if (request.Value != null && request.Value != "@primary" &&
                             !state.Displays.Any(display => display.Id == request.Value))

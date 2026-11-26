@@ -9,7 +9,7 @@ using System.Windows.Forms;
 
 namespace SoulDesk.DesktopGrid
 {
-    internal sealed class GridManager : Form
+    internal sealed partial class GridManager : Form
     {
         private static readonly Color Canvas = Color.FromArgb(32, 32, 32);
         private static readonly Color Card = Color.FromArgb(44, 44, 44);
@@ -25,6 +25,7 @@ namespace SoulDesk.DesktopGrid
         private readonly Label empty;
         private readonly NotifyIcon tray;
         private readonly Action<int> selectPage;
+        private Form organizationHistory;
         private bool refreshing;
         private bool resourcesDisposed;
 
@@ -32,7 +33,7 @@ namespace SoulDesk.DesktopGrid
         {
             this.app = app;
             Text = "SoulDesk · 桌面格子";
-            ClientSize = new Size(810, 550);
+            ClientSize = new Size(860, 610);
             MinimumSize = new Size(690, 450);
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -147,22 +148,11 @@ namespace SoulDesk.DesktopGrid
             organizeRows.Controls.Add(SettingRow("撤销整理", "恢复上一次可撤销的布局变更。", undo));
             organize.Controls.Add(organizeRows);
 
-            var settings = new Panel { Dock = DockStyle.Fill, Visible = false };
-            var settingRows = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-                WrapContents = false, AutoScroll = true };
-            settingRows.Controls.Add(SettingRow("格子选项", "设置自动归类、公共桌面与索引搜索。", ActionButton("打开选项", Options)));
-            settingRows.Controls.Add(SettingRow("桌面布局", "设置 Ctrl 联动拖动及胶囊排列。",
-                ActionButton("布局设置", LayoutOptions)));
-            settingRows.Controls.Add(SettingRow("自定义堆栈", "按扩展名分组。每个文件采用第一条匹配规则。",
-                ActionButton("编辑规则", StackRules)));
-            settingRows.Controls.Add(SettingRow("布局备份", "导入或导出格子位置、标签和文件引用。",
-                ActionButton("导入布局", () => Transfer(false)), ActionButton("导出布局", () => Transfer(true))));
-            settings.Controls.Add(settingRows);
-            foreach (var rows in new[] { organizeRows, settingRows })
-                rows.SizeChanged += (sender, args) =>
-                {
-                    foreach (Control row in rows.Controls) row.Width = Math.Max(0, rows.ClientSize.Width - 4);
-                };
+            var settings = CreateSettingsPage();
+            organizeRows.SizeChanged += (sender, args) =>
+            {
+                foreach (Control row in organizeRows.Controls) row.Width = Math.Max(0, organizeRows.ClientSize.Width - 4);
+            };
 
             var pages = new[] { grids, organize, settings };
             var names = new[] { "桌面格子", "桌面整理", "设置" };
@@ -179,7 +169,10 @@ namespace SoulDesk.DesktopGrid
             for (int i = 0; i < tabs.Length; i++)
             {
                 int index = i;
-                var button = tabs[i] = ActionButton(names[i], () => selectPage(index));
+                var button = tabs[i] = ActionButton(names[i], () =>
+                {
+                    if (index != 2 || !app.ShowSettings()) selectPage(index);
+                });
                 button.AutoSize = false;
                 button.Size = new Size(142, 39);
                 button.TextAlign = ContentAlignment.MiddleLeft;
@@ -194,12 +187,30 @@ namespace SoulDesk.DesktopGrid
             layout.Controls.Add(content, 1, 0);
             Controls.Add(layout);
             var trayMenu = GridLook.Menu();
+            trayMenu.ShowItemToolTips = true;
+            trayMenu.Items.Add(app.MenuItem("整理桌面…", () => OpenGridAction("organization", null)));
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(app.MenuItem("新建收纳格子", () => OpenGridAction("new", null)));
+            trayMenu.Items.Add(app.MenuItem("新建文件夹映射", () => OpenGridAction("map", null)));
+            trayMenu.Items.Add(app.MenuItem("添加功能格子", () => OpenGridAction("feature-settings", null)));
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(app.MenuItem("打开收纳目录", app.OpenOrganizationDirectory));
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(DisabledTrayItem("有可用更新"));
+            trayMenu.Items.Add(app.MenuItem("设置", () => OpenGridAction("settings", null)));
             trayMenu.Items.Add(GridLook.Item("管理桌面格子", app.ShowManager));
             trayMenu.Items.Add(GridLook.Item("全局搜索", app.ShowSearch));
-            trayMenu.Items.Add(app.MenuItem("关闭格子并恢复桌面", () => app.Stop(true)));
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(app.MenuItem("退出", () => app.Stop(true)));
             tray = new NotifyIcon { Icon = SystemIcons.Application, Text = "SoulDesk 桌面格子",
                 ContextMenuStrip = trayMenu, Visible = !app.Isolated };
             tray.DoubleClick += (sender, args) => app.ShowManager();
+        }
+
+        private static ToolStripMenuItem DisabledTrayItem(string title)
+        {
+            const string notice = "暂未接入 SoulDesk";
+            return new ToolStripMenuItem(title + " · " + notice) { Enabled = false, ToolTipText = notice };
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -239,6 +250,7 @@ namespace SoulDesk.DesktopGrid
             refreshing = false;
             empty.Visible = list.Items.Count == 0;
             UpdateSelection();
+            refreshSettings();
         }
 
         private void UpdateSelection()
@@ -299,6 +311,7 @@ namespace SoulDesk.DesktopGrid
 
         internal static void CreateGrid(GridApplication app, IWin32Window owner, bool mapped)
         {
+            var cursorDisplay = Native.MonitorId(Screen.FromPoint(Cursor.Position));
             string folder = null;
             if (mapped)
             {
@@ -313,11 +326,27 @@ namespace SoulDesk.DesktopGrid
             string name = GridLook.Prompt(owner, mapped ? "映射目录" : "新建格子", "输入格子名称",
                 mapped ? new DirectoryInfo(folder).Name : "新格子", 64);
             if (!string.IsNullOrWhiteSpace(name))
-                app.Edit(state => state.Add(name, folder).SetCollapseMode(GridBox.SystemDefault), true);
+                app.Edit(state =>
+                {
+                    var box = state.Add(name, folder);
+                    box.SetCollapseMode(GridBox.SystemDefault);
+                    box.BoundMonitor = state.NewWidgetMonitor == "@cursor" ? cursorDisplay : state.NewWidgetMonitor;
+                }, true);
         }
 
         internal void OpenGridAction(string action, string tabId)
         {
+            if (action == "settings" || action == "file-settings" || action == "feature-settings")
+            {
+                string page = action == "file-settings" ? "FileDisplaySettings" :
+                    action == "feature-settings" ? "FeatureWidgets" : null;
+                if (!app.ShowSettings(page))
+                {
+                    app.ShowManager();
+                    selectPage(2);
+                }
+                return;
+            }
             if (action == "search")
             {
                 app.ShowSearch();
@@ -325,6 +354,11 @@ namespace SoulDesk.DesktopGrid
             }
             app.ShowManager();
             if (action == "organization") selectPage(1);
+            else if (action == "stack-rules")
+            {
+                selectPage(2);
+                selectSettingsSection(2);
+            }
             else selectPage(0);
             var row = list.Items.Cast<GridRow>().FirstOrDefault(item => item.Tab.Id == tabId);
             if (row != null) list.SelectedItem = row;
@@ -336,6 +370,77 @@ namespace SoulDesk.DesktopGrid
                 case "rules": EditRules(app, this, tabId); break;
                 case "appearance": if (row != null) EditAppearance(app, this, row.Box.Id); break;
                 case "stack-rules": StackRules(); break;
+            }
+        }
+
+        internal void OpenSettingsAction(string action)
+        {
+            switch (action)
+            {
+                case "manager":
+                case "organization":
+                case "stack-rules":
+                    OpenGridAction(action, null);
+                    break;
+                case "organization-history":
+                    OpenGridAction("organization", null);
+                    ShowOrganizationHistory();
+                    break;
+                case "organization-rule":
+                    OpenGridAction("manager", null);
+                    var row = list.SelectedItem as GridRow;
+                    if (row != null) EditRules(app, this, row.Tab.Id);
+                    else app.Report("请先选择要修改归类规则的格子。");
+                    break;
+                case "capsule-overrides-reset":
+                    app.ShowManager();
+                    if (MessageBox.Show(this, "让所有格子的展开方式、方向和胶囊宽度恢复跟随全局设置？",
+                        "恢复全局设置", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
+                        app.Edit(state =>
+                        {
+                            foreach (var box in state.Boxes)
+                            {
+                                box.SetCollapseMode(GridBox.SystemDefault);
+                                box.ExpansionDirection = null;
+                                box.CapsuleWidth = null;
+                            }
+                        }, true);
+                    break;
+                case "display-move-all":
+                    app.ShowManager();
+                    ChooseDisplayForAll();
+                    break;
+                case "background-clear-overrides":
+                    app.ShowManager();
+                    if (MessageBox.Show(this, "清除所有格子的独立背景，让它们恢复跟随全局设置？",
+                        "清除独立背景", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
+                        app.Edit(state =>
+                        {
+                            foreach (var box in state.Boxes)
+                            {
+                                box.Color = "#283635";
+                                foreach (var tab in box.Tabs)
+                                    foreach (string key in GridState.ArtworkKeys.Where(key => key.StartsWith("Background", StringComparison.Ordinal)))
+                                        tab.Artwork.Remove(key);
+                            }
+                        }, true);
+                    break;
+                case "backup-export":
+                case "backup-import":
+                    app.ShowManager();
+                    Transfer(action == "backup-export");
+                    break;
+                case "everything-pick":
+                    if (app.Isolated) return;
+                    app.ShowManager();
+                    using (var picker = new OpenFileDialog { FileName = "es.exe", Filter = "Everything CLI (es.exe)|es.exe" })
+                        if (picker.ShowDialog(this) == DialogResult.OK)
+                        {
+                            if (References.IsLocalPath(picker.FileName) && References.Equal(Path.GetFileName(picker.FileName), "es.exe"))
+                                app.Edit(state => state.EverythingCli = picker.FileName);
+                            else app.Report("请选择本机的 Everything es.exe。");
+                        }
+                    break;
             }
         }
 
@@ -420,41 +525,25 @@ namespace SoulDesk.DesktopGrid
             return menu;
         }
 
-        private void LayoutOptions()
+        private void ChooseDisplayForAll()
         {
-            using (var dialog = new Form { Text = "桌面布局设置", ClientSize = new Size(495, 235),
-                StartPosition = FormStartPosition.CenterParent, BackColor = Canvas, ForeColor = Ink, ShowInTaskbar = false })
+            var displays = app.DisplayChoices();
+            using (var dialog = Selection("将全部格子移到显示器", displays.Select(display => display.Name).ToArray()))
             {
-                var state = app.Store.State;
-                var rows = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-                    WrapContents = false, Padding = new Padding(16) };
-                var coordinated = new CheckBox { Text = "按住 Ctrl 拖动同屏未锁定的格子", Checked = state.CoordinatedMove, AutoSize = true };
-                var arrangement = new ComboBox { Width = 135, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "胶囊栏布局" };
-                var modes = new[] { null, "Horizontal", "Vertical" };
-                arrangement.Items.AddRange(new[] { "自由摆放", "横向排列", "纵向排列" });
-                arrangement.SelectedIndex = Array.IndexOf(modes, state.CapsuleBar);
-                var spacing = new NumericUpDown { Minimum = 0, Maximum = 32, Value = state.CapsuleSpacing, Width = 104,
-                    AccessibleName = "胶囊间距" };
-                rows.Controls.Add(coordinated);
-                rows.Controls.Add(SettingRow("胶囊栏", "将同屏已折叠的格子集中排列。"));
-                var options = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-                options.Controls.AddRange(new Control[] { arrangement, new Label { Text = "间距", AutoSize = true,
-                    Margin = new Padding(12, 6, 3, 0) }, spacing });
-                rows.Controls.Add(options);
-                var save = ActionButton("保存", () =>
+                dialog.Pick.SelectionMode = SelectionMode.One;
+                dialog.Confirm.Text = "移到所选显示器";
+                if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Pick.SelectedIndex < 0) return;
+                string monitor = displays[dialog.Pick.SelectedIndex].Id;
+                if (!app.DisplayChoices().Any(display => display.Id == monitor))
                 {
-                    app.Edit(copy =>
-                    {
-                        copy.CoordinatedMove = coordinated.Checked;
-                        copy.CapsuleBar = modes[arrangement.SelectedIndex];
-                        copy.CapsuleSpacing = (int)spacing.Value;
-                    });
-                    dialog.Close();
+                    app.Report("显示器已断开，请重新选择。");
+                    return;
+                }
+                app.Edit(state =>
+                {
+                    foreach (var box in state.Boxes)
+                        box.BoundMonitor = monitor;
                 }, true);
-                rows.Controls.Add(save);
-                dialog.AcceptButton = save;
-                dialog.Controls.Add(rows);
-                dialog.ShowDialog(this);
             }
         }
 
@@ -487,6 +576,7 @@ namespace SoulDesk.DesktopGrid
                     var copy = state.Boxes.Single(item => item.Id == boxId);
                     copy.Color = string.Format("#{0:X2}{1:X2}{2:X2}", picker.Color.R, picker.Color.G, picker.Color.B);
                     copy.Opacity = opacity;
+                    copy.UseCustomOpacity = true;
                 }, true);
             }
         }
@@ -500,7 +590,8 @@ namespace SoulDesk.DesktopGrid
 
         private void Categorize(bool move)
         {
-            var changes = app.Propose(app.DesktopItems(), move);
+            var changes = app.ProposeDesktopOrganization(move);
+            if (changes == null) return;
             if (changes.Count == 0)
             {
                 app.Report("没有匹配项。可从格子菜单设置自动归类规则。");
@@ -518,19 +609,36 @@ namespace SoulDesk.DesktopGrid
                 {
                     var selected = checkedRows.CheckedIndices.Cast<int>().Select(index => changes[index])
                         .ToDictionary(change => change.Key.Id, change => change.Value.Id, StringComparer.OrdinalIgnoreCase);
-                    var current = app.Propose(app.DesktopItems(), move).Where(change =>
+                    var refreshed = app.ProposeDesktopOrganization(move);
+                    if (refreshed == null) return;
+                    var current = refreshed.Where(change =>
                         selected.ContainsKey(change.Key.Id) && selected[change.Key.Id] == change.Value.Id).ToList();
                     if (current.Count > 0)
                     {
                         if (move) app.MoveOriginals(current);
                         else app.Edit(state => GridApplication.Apply(state, current), true);
                     }
+                    else app.Report("所选项目已变更，请重新预览。");
                 }
             }
         }
 
+        internal bool DismissOrganizationHistory()
+        {
+            if (organizationHistory == null)
+                return false;
+            if (organizationHistory.Visible)
+                organizationHistory.DialogResult = DialogResult.Cancel;
+            return true;
+        }
+
         private void ShowOrganizationHistory()
         {
+            if (organizationHistory != null)
+            {
+                organizationHistory.Activate();
+                return;
+            }
             using (var dialog = new Form { Text = "整理历史", ClientSize = new Size(930, 440), MinimumSize = new Size(650, 360),
                 StartPosition = FormStartPosition.CenterParent, BackColor = Canvas, ForeColor = Ink, ShowInTaskbar = false })
             {
@@ -581,8 +689,10 @@ namespace SoulDesk.DesktopGrid
                 dialog.Controls.Add(rows);
                 dialog.Controls.Add(details);
                 dialog.Controls.Add(bar);
+                organizationHistory = dialog;
                 try { refresh(); dialog.ShowDialog(this); }
                 catch (Exception error) { app.Report(error.Message); }
+                finally { organizationHistory = null; }
             }
         }
 
@@ -627,51 +737,6 @@ namespace SoulDesk.DesktopGrid
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 if (exporting) app.Export(dialog.FileName);
                 else app.Import(dialog.FileName);
-            }
-        }
-
-        private void Options()
-        {
-            using (var dialog = new Form { Text = "桌面格子选项", ClientSize = new Size(535, 280), BackColor = GridLook.Canvas,
-                ForeColor = GridLook.Text, StartPosition = FormStartPosition.CenterParent, Font = GridLook.Font(), ShowInTaskbar = false })
-            {
-                var state = app.Store.State;
-                var settings = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-                    WrapContents = false, Padding = new Padding(14) };
-                var auto = new CheckBox { AutoSize = true, Text = "按规则自动归类新桌面项目", Checked = state.AutoSort };
-                var shared = new CheckBox { AutoSize = true, Text = "整理时包含公共桌面项目", Checked = state.IncludePublic };
-                var indexed = new CheckBox { AutoSize = true, Text = "使用 Windows 搜索索引", Checked = state.SearchIndexed, Enabled = !app.Isolated };
-                var collapse = new ComboBox { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList,
-                    AccessibleName = "默认展开方式", BackColor = GridLook.Panel, ForeColor = GridLook.Text };
-                collapse.Items.AddRange(GridBox.CollapseLabels.Skip(1).ToArray());
-                collapse.SelectedIndex = Array.IndexOf(GridBox.CollapseModes, state.DefaultCollapseMode) - 1;
-                var collapseRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-                collapseRow.Controls.Add(new Label { Text = "默认展开方式", AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
-                collapseRow.Controls.Add(collapse);
-                var path = new Label { AutoEllipsis = true, Width = 480, Height = 24,
-                    Text = state.EverythingCli ?? "Everything 未配置", ForeColor = GridLook.Muted };
-                string everything = state.EverythingCli;
-                var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-                buttons.Controls.Add(GridLook.Button("选择 Everything es.exe", () =>
-                {
-                    using (var picker = new OpenFileDialog { FileName = "es.exe", Filter = "Everything CLI (es.exe)|es.exe" })
-                        if (picker.ShowDialog(dialog) == DialogResult.OK && References.IsLocalPath(picker.FileName) &&
-                            References.Equal(Path.GetFileName(picker.FileName), "es.exe"))
-                            path.Text = everything = picker.FileName;
-                }));
-                buttons.Controls.Add(GridLook.Button("清除", () => { everything = null; path.Text = "Everything 未配置"; }));
-                buttons.Enabled = !app.Isolated;
-                var save = GridLook.Button("保存", () =>
-                {
-                    app.Edit(copy => { copy.AutoSort = auto.Checked; copy.IncludePublic = shared.Checked;
-                        copy.SearchIndexed = indexed.Checked; copy.EverythingCli = everything;
-                        copy.SetDefaultCollapseMode(GridBox.CollapseModes[collapse.SelectedIndex + 1]); });
-                    dialog.Close();
-                }, GridLook.Accent);
-                settings.Controls.AddRange(new Control[] { collapseRow, auto, shared, indexed, path, buttons, save });
-                dialog.Controls.Add(settings);
-                dialog.AcceptButton = save;
-                dialog.ShowDialog(this);
             }
         }
 

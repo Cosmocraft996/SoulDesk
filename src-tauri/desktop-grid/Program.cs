@@ -97,7 +97,8 @@ namespace SoulDesk.DesktopGrid
             }
             catch (Exception error)
             {
-                try { LocalJson.Write(Path.Combine(root, "last-error.json"), new { message = error.Message }); }
+                try { LocalJson.Write(Path.Combine(root, "last-error.json"),
+                    new { message = error.Message, type = error.GetType().FullName, stack = error.StackTrace }); }
                 catch (IOException) { }
                 if (args[0] == "--open")
                 {
@@ -243,6 +244,33 @@ namespace SoulDesk.DesktopGrid
 
         internal void ShowSearch() { new GridSearch(this).Show(); }
 
+        private GridRendererSession settingsRenderer;
+
+        internal bool ShowSettings(string page = null)
+        {
+            if (rendererExecutable == null)
+                return false;
+            try
+            {
+                if (settingsRenderer == null || settingsRenderer.Exited)
+                {
+                    if (settingsRenderer != null) settingsRenderer.Dispose();
+                    settingsRenderer = new GridRendererSession(root, settingsOnly: true);
+                    settingsRenderer.PublishSettings(Store.State, Isolated, true, page, DisplayChoices());
+                    settingsRenderer.Start(rendererExecutable);
+                }
+                else settingsRenderer.PublishSettings(Store.State, Isolated, true, page, DisplayChoices());
+                return true;
+            }
+            catch (Exception error)
+            {
+                if (settingsRenderer != null) settingsRenderer.Dispose();
+                settingsRenderer = null;
+                Report(error.Message);
+                return false;
+            }
+        }
+
         internal void Toggle()
         {
             if (Isolated)
@@ -281,7 +309,7 @@ namespace SoulDesk.DesktopGrid
                 Status = "Windows 桌面图标正在显示";
                 if (exiting)
                 {
-                    ExitThread();
+                    ExitAfterHistoryCloses();
                     return;
                 }
             }
@@ -405,6 +433,27 @@ namespace SoulDesk.DesktopGrid
 
         private void Tick(object sender, EventArgs e)
         {
+            if (exiting && lease == null)
+            {
+                ExitAfterHistoryCloses();
+                return;
+            }
+            if (settingsRenderer != null)
+            {
+                if (settingsRenderer.Exited)
+                {
+                    string error = settingsRenderer.Error;
+                    settingsRenderer.Dispose();
+                    settingsRenderer = null;
+                    if (error != null) Report("设置窗口未能打开 · " + error);
+                }
+                else if (settingsRenderer.ApplyRequest(Store, show: (command, tab) =>
+                    Post(() => manager.OpenSettingsAction(command))))
+                {
+                    Render();
+                    manager.RefreshState();
+                }
+            }
             if (renderer != null)
             {
                 if (Isolated && renderer.Exited)
@@ -463,7 +512,7 @@ namespace SoulDesk.DesktopGrid
                     Status = shouldResume ? "正在等待 Explorer 恢复" : "Windows 桌面图标正在显示";
                     manager.RefreshState();
                     if (exiting)
-                        ExitThread();
+                        ExitAfterHistoryCloses();
                     return;
                 }
                 if (desired && !enabled && recovery.Signaled("ready", lease.Token))
@@ -584,7 +633,8 @@ namespace SoulDesk.DesktopGrid
                     candidates[item.Id] = current;
                     continue;
                 }
-                if (now - observed[item.Id] >= TimeSpan.FromSeconds(4))
+                if (now - observed[item.Id] >= TimeSpan.FromSeconds(
+                    GridPreferences.Integer(Store.State, "AutoSortDelaySeconds", 4)))
                     stable.Add(item);
             }
             var changes = Propose(stable);
@@ -602,6 +652,24 @@ namespace SoulDesk.DesktopGrid
         internal List<DesktopItem> DesktopItems()
         {
             return Isolated || shell != null ? icons.ToList() : ShellDesktop.Files();
+        }
+
+        internal List<KeyValuePair<DesktopItem, GridTab>> ProposeDesktopOrganization(bool includeMapped)
+        {
+            try
+            {
+                return Propose(Isolated ? icons : ShellDesktop.Files(), includeMapped);
+            }
+            catch (IOException error)
+            {
+                Report("无法读取桌面文件 · " + error.Message);
+                return null;
+            }
+            catch (UnauthorizedAccessException error)
+            {
+                Report("无法读取桌面文件 · " + error.Message);
+                return null;
+            }
         }
 
         internal bool TestPath(string path)
@@ -805,6 +873,17 @@ namespace SoulDesk.DesktopGrid
             catch (Exception error) { Report(error.Message); }
         }
 
+        internal void OpenOrganizationDirectory()
+        {
+            try
+            {
+                string directory = Organization.StorageDirectory;
+                Directory.CreateDirectory(directory);
+                Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
+            }
+            catch (Exception error) { Report(error.Message); }
+        }
+
         internal void Reveal(string path)
         {
             if (!TestPath(path))
@@ -908,6 +987,8 @@ namespace SoulDesk.DesktopGrid
             rebuilding = true;
             try
             {
+                if (settingsRenderer != null && !settingsRenderer.Exited)
+                    settingsRenderer.PublishSettings(Store.State, Isolated, displays: DisplayChoices());
                 foreach (var surface in surfaces) surface.Dispose();
                 surfaces.Clear();
                 topology = Topology();
@@ -952,7 +1033,8 @@ namespace SoulDesk.DesktopGrid
                         (pos == null ? null : screens.FirstOrDefault(item => Native.MonitorId(item) == pos.Monitor))
                         ?? Screen.PrimaryScreen;
                     var work = screen.WorkingArea;
-                    int width = Math.Min(work.Width, Native.Scale(screen, pos == null ? 324 : pos.Width));
+                    int width = Math.Min(work.Width, Native.Scale(screen, pos == null
+                        ? GridPreferences.Integer(Store.State, "DefaultWidgetWidth", 324) : pos.Width));
                     int height = Math.Min(work.Height, Native.Scale(screen, pos == null ? 255 : pos.Height));
                     int left = pos == null ? Math.Max(0, work.Width - width - Native.Scale(screen, 22 + 26 * (index % 8))) :
                         (int)Math.Round((work.Width - width) * pos.X);
@@ -974,7 +1056,8 @@ namespace SoulDesk.DesktopGrid
                     renderer.Publish(projections, icons.Select(item => item.Id)
                         .Concat(Store.State.Tabs().SelectMany(tab => tab.Items)).Where(TestPath), enabled,
                         Store.State.DefaultCollapseMode, DisplayChoices(), Store.State.CapsuleBar,
-                        Store.State.CapsuleSpacing, Store.State.CoordinatedMove, Store.State.StackRules.ToArray());
+                        Store.State.CapsuleSpacing, Store.State.CoordinatedMove, Store.State.StackRules.ToArray(),
+                        Store.State.Preferences);
                 if (enabled)
                     ShowSurfaces();
             }
@@ -1004,6 +1087,13 @@ namespace SoulDesk.DesktopGrid
             renderer = null;
         }
 
+        private void ExitAfterHistoryCloses()
+        {
+            // 等 ShowDialog 的消息循环退出后，再释放它的所有者。
+            if (!manager.DismissOrganizationHistory())
+                ExitThread();
+        }
+
         protected override void ExitThreadCore()
         {
             if (threadExited)
@@ -1012,6 +1102,8 @@ namespace SoulDesk.DesktopGrid
             timer.Stop();
             ClearSurfaces();
             CloseRenderer();
+            if (settingsRenderer != null) settingsRenderer.Dispose();
+            settingsRenderer = null;
             if (Hotkey) Native.UnregisterHotKey(owner.Handle, 1);
             owner.DestroyHandle();
             manager.Dispose();

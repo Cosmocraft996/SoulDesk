@@ -686,15 +686,14 @@ internal static partial class GridAcceptance
         bool advanced = scenario == "renderer-advanced";
         string moveFixture = advanced ? Path.Combine(Path.GetDirectoryName(document),
             "SoulDeskMove-" + Guid.NewGuid().ToString("N") + ".txt") : null;
-        if (advanced) File.WriteAllText(moveFixture, "SoulDesk isolated original file");
         bool mixedDisplay = scenario == "renderer-display-mixed";
         store.Change(state =>
         {
             var box = state.Add("产品接管测试", null);
             box.Collapsed = gestures || compactPlacement || shortcutEdge;
-            if (placement && !compactPlacement)
+            if ((placement && !compactPlacement) || grouping)
                 box.SetCollapseMode(GridBox.Expanded);
-            else if (placement || grouping || displayDriver != null)
+            else if (placement || displayDriver != null)
                 box.HoverExpand = compactPlacement;
             if (!gestures)
                 state.Attach(box.Current().Id, new[] { document });
@@ -706,7 +705,7 @@ internal static partial class GridAcceptance
             if (grouping)
             {
                 var target = state.Add("验收目标格子", null);
-                target.HoverExpand = false;
+                target.SetCollapseMode(GridBox.Expanded);
                 state.Place("qa-initial", target.Id, new GridPosition
                 {
                     Monitor = Native.MonitorId(Screen.PrimaryScreen), X = .32, Y = .67
@@ -740,6 +739,9 @@ internal static partial class GridAcceptance
                 var target = state.Add("联动验收格子", null);
                 target.SetCollapseMode(GridBox.Expanded);
                 target.BoundMonitor = "@primary";
+                string displayProbe = Path.Combine(root, "display-preference-proof.log");
+                File.WriteAllText(displayProbe, "扩展名显示验收");
+                state.Attach(target.Current().Id, new[] { displayProbe });
                 state.CapsuleBar = "Horizontal";
                 state.Place("qa-initial", target.Id, new GridPosition {
                     Monitor = Native.MonitorId(Screen.PrimaryScreen), X = .28, Y = .65
@@ -873,8 +875,9 @@ internal static partial class GridAcceptance
                     {
                         using (var process = lease.Renderer.OpenProcess()) return process == null;
                     }, 6500, "Explorer 已恢复，但 WinUI 格子进程仍在运行");
-                if (gracefulExit || scenario == "explorer-restart")
-                    Require(product.WaitForExit(6500) && product.ExitCode == 0, "格子引擎未正常退出");
+                if ((gracefulExit || scenario == "explorer-restart") &&
+                    (!product.WaitForExit(6500) || product.ExitCode != 0))
+                    throw new InvalidOperationException("格子引擎未正常退出 · " + Error(root));
                 Wait(() => HitPid(position) == explorerPid && Native.Responsive(lease.Desktop),
                     6000, "恢复后原坐标没有命中可响应的 Explorer");
                 DoubleClickAndCheck(position, "还原原生桌面后");
@@ -1121,17 +1124,48 @@ internal static partial class GridAcceptance
         SetForegroundWindow(manager);
         var management = AutomationElement.FromHandle(manager);
         ClickNamed(management, "设置");
-        ClickNamed(management, "布局设置");
-        AutomationElement settings = null;
-        Wait(() => (settings = Named(AutomationElement.RootElement, "桌面布局设置")) != null,
-            10000, "未打开桌面布局设置");
-        Require(Named(settings, "胶囊栏布局") != null && Named(settings, "胶囊间距") != null,
-            "桌面布局设置缺少胶囊栏选项");
-        ClickNamed(settings, "保存");
+        int settingsOwner = 0;
+        IntPtr settingsWindow = IntPtr.Zero;
+        Wait(() => (settingsWindow = FindPreviewForm("SoulDesk · 设置", out settingsOwner)) != IntPtr.Zero,
+            20000, "未打开独立 WinUI 设置窗口");
+        string settingsSession = Directory.GetDirectories(root, "deskbox-renderer-*").Single(directory =>
+        {
+            var state = LocalJson.TryRead<GridRenderState>(Path.Combine(directory, "state.json"));
+            return state != null && state.SettingsOnly && !state.Closing;
+        });
+        SendAdvancedRequest(settingsSession, new GridRenderRequest
+            { Action = "settings-edit", Setting = "WidgetCapsuleBarPlacement", Value = "Bottom" });
+        Wait(() =>
+        {
+            WindowRect left, right;
+            return GetWindowRect(first, out left) && GetWindowRect(second, out right) &&
+                Math.Abs(left.Bottom - primary.Bottom) <= 3 && Math.Abs(right.Bottom - primary.Bottom) <= 3;
+        }, 10000, "真实桌面的两个胶囊未应用贴底设置");
+        Require(new GridStore(root).State.Preferences["WidgetCapsuleBarPlacement"] == "Bottom",
+            "胶囊贴底设置未写入布局");
+        SendAdvancedRequest(settingsSession, new GridRenderRequest
+            { Action = "settings-edit", Setting = "WidgetCapsuleBarPlacement", Value = "Floating" });
+        SendAdvancedRequest(session, new GridRenderRequest
+            { Action = "collapse-mode", Box = original.Boxes[1].Id, CollapseMode = GridBox.Expanded });
+        SendAdvancedRequest(settingsSession, new GridRenderRequest
+            { Action = "settings-edit", Setting = "ShowFileExtensions", Value = "true" });
+        Wait(() => Named(AutomationElement.FromHandle(second), "display-preference-proof.log") != null,
+            12000, "真实格子没有应用文件扩展名显示设置");
+        Trace("GRID_ADVANCED_PREFERENCES_PASS");
+        Require(PostMessage(settingsWindow, 0x10, IntPtr.Zero, IntPtr.Zero), "未能关闭 WinUI 设置窗口");
+        Wait(() => !Native.IsWindowVisible(settingsWindow), 8000, "WinUI 设置窗口关闭后仍然可见");
+        SetForegroundWindow(manager);
         Trace("GRID_ADVANCED_SETTINGS_PASS");
-        ClickNamed(management, "桌面整理");
-        ClickNamed(management, "预览搬移");
-        ClickNamed(AutomationElement.RootElement, "搬移勾选的原文件");
+        ClickNamed(AutomationElement.FromHandle(manager), "桌面整理");
+        AutomationElement previewButton = null;
+        Wait(() => (previewButton = Named(AutomationElement.FromHandle(manager), "预览搬移")) != null &&
+            !previewButton.Current.IsOffscreen, 12000, "整理页面没有显示搬移按钮", () => ManagerContents(manager));
+        File.WriteAllText(moveFixture, "SoulDesk isolated original file");
+        InvokeOrClick(previewButton);
+        AutomationElement moveButton = null;
+        Wait(() => (moveButton = Named(AutomationElement.RootElement, "搬移勾选的原文件")) != null,
+            20000, "没有打开搬移预览", () => ManagerContents(manager) + " " + Error(root));
+        InvokeOrClick(moveButton);
         var history = new GridOrganization(root);
         OrganizedItem receipt = null;
         Wait(() => (receipt = history.Read().FirstOrDefault(item => item.Source == moveFixture && item.Status == "moved")) != null &&
@@ -1144,33 +1178,45 @@ internal static partial class GridAcceptance
             "未找到可撤回的搬移记录");
         ((SelectionItemPattern)objectPattern).Select();
         ClickNamed(AutomationElement.RootElement, "恢复到原路径");
-        Wait(() => history.Read().Any(item => item.Id == receipt.Id && item.Status == "restored") &&
+        Wait(() => history.Read().Any(item => item.Id == receipt.Id && item.Status == "restored" && item.LayoutSynced) &&
             File.Exists(moveFixture) && !File.Exists(receipt.Destination), 20000, "真实桌面未恢复原文件");
         Require(File.ReadAllText(moveFixture) == "SoulDesk isolated original file", "文件搬移和撤回改变了内容");
         Trace("GRID_ADVANCED_ORGANIZATION_PASS");
         var recovery = new Recovery(root);
         GridLease latest = null;
-        Wait(() => (latest = recovery.Current()) != null && recovery.Signaled("ready", latest.Token), 75000,
+        Wait(() => (latest = recovery.Current()) != null && recovery.Signaled("ready", latest.Token) &&
+            !recovery.Signaled("done", latest.Token) && !Native.IsWindowVisible(latest.Desktop.Hwnd), 75000,
             "整理后 Explorer 接管未恢复");
         Require(latest.Owner.Pid == engine, "整理后换用了其他格子进程");
+        int historyOwner;
+        FindPreviewForm("整理历史", out historyOwner);
+        Require(historyOwner == engine, "停止宿主前整理历史对话框没有保持打开");
         return latest;
     }
 
     private static void SendAdvancedRequest(string session, GridRenderRequest request)
     {
         string statePath = Path.Combine(session, "state.json");
-        var state = LocalJson.Read<GridRenderState>(statePath);
-        request.Version = state.Version;
-        request.Session = state.Session;
-        request.Revision = state.Revision;
-        request.Id = Guid.NewGuid().ToString("N");
-        LocalJson.Write(Path.Combine(session, "request.json"), request);
-        Wait(() =>
+        // 用于自动验收的请求绕过了界面的互斥提交。若恰逢桌面刷新，只对版本冲突重取一次快照。
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            var current = LocalJson.TryRead<GridRenderState>(statePath);
-            return current != null && current.Completed == request.Id;
-        }, 7000, "格子引擎未确认验收请求");
-        Require(LocalJson.Read<GridRenderState>(statePath).Error == null, "格子引擎拒绝验收请求");
+            var state = LocalJson.Read<GridRenderState>(statePath);
+            request.Version = state.Version;
+            request.Session = state.Session;
+            request.Revision = state.Revision;
+            request.Id = Guid.NewGuid().ToString("N");
+            LocalJson.Write(Path.Combine(session, "request.json"), request);
+            GridRenderState reply = null;
+            Wait(() =>
+            {
+                reply = LocalJson.TryRead<GridRenderState>(statePath);
+                return reply != null && reply.Completed == request.Id;
+            }, 7000, "格子引擎未确认验收请求 " + (request.Setting ?? request.Action));
+            if (reply.Error == null) return;
+            if (attempt == 0 && reply.Error == "格子已更新，请重新操作。") continue;
+            throw new InvalidOperationException("格子引擎拒绝验收请求 " +
+                (request.Setting ?? request.Action) + " · " + reply.Error);
+        }
     }
 
     private static void VerifyRendererTabs(string root, GridLease lease, IntPtr window, string renderer)
@@ -1182,10 +1228,11 @@ internal static partial class GridAcceptance
         ClickNamed(surface, "标签归档");
         Wait(() => GridStore.ReadLayout(path).Boxes.Single().Active == target &&
             Title(window).StartsWith("标签归档", StringComparison.Ordinal), 10000, "切换的标签没有应用到原窗口或写入布局");
-        Require(VerifyActiveRenderer(root, renderer, lease) == window, "切换标签时更换了格子窗口");
+        Require(VerifyActiveRenderer(root, renderer, lease, "标签归档") == window, "切换标签时更换了格子窗口");
 
         WindowRect expanded;
         Require(GetWindowRect(window, out expanded), "无法验证折叠前的格子坐标");
+        SetCursorPos(expanded.Left + 30, expanded.Top + 22);
         var fold = new OrCondition(
             new PropertyCondition(AutomationElement.AutomationIdProperty, "CollapseButton"),
             new PropertyCondition(AutomationElement.NameProperty, "收起"),
@@ -1215,50 +1262,74 @@ internal static partial class GridAcceptance
         string sourceTab = source.Active;
         var targetWindow = VerifyActiveRenderer(root, renderer, lease, "验收目标格子", 2);
 
-        OpenRendererMoreMenu(sourceWindow);
+        OpenRendererGroupMenu(sourceWindow, lease.Renderer.Pid);
         var join = FindRendererMenuItem(lease.Renderer.Pid, "组合格子…", "Combine with another widget…");
-        object expansion;
-        if (join.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out expansion))
-            ((ExpandCollapsePattern)expansion).Expand();
-        else
-            ClickAt(join, false);
-        InvokeOrClick(FindRendererMenuItem(lease.Renderer.Pid, "验收目标格子"));
+        ClickAt(join, false);
+        var targetMenuItem = FindRendererMenuItem(lease.Renderer.Pid, "验收目标格子");
+        InvokeOrClick(targetMenuItem);
         Wait(() =>
         {
             var merged = new GridStore(root).State.Boxes;
             return merged.Count == 1 && merged[0].Id == target.Id && merged[0].Active == target.Active &&
                 merged[0].Tabs.Select(tab => tab.Id).SequenceEqual(new[] { target.Active, sourceTab }) &&
                 merged[0].Tabs[1].Items.Contains(document);
-        }, 10000, "格子菜单合组后没有保存正确的标签和文件引用");
+        }, 10000, "格子菜单合组后没有保存正确的标签和文件引用",
+            () => GridRendererRequestSummary(root, lease.RendererSession));
         Require(VerifyActiveRenderer(root, renderer, lease) == targetWindow, "合组后没有保留目标格子窗口");
+        Trace("GRID_RENDERER_GROUP_MERGE_PASS");
 
         ClickNamed(AutomationElement.FromHandle(targetWindow), "产品接管测试");
         Wait(() => new GridStore(root).State.Boxes.Single().Active == sourceTab &&
             Title(targetWindow).StartsWith("产品接管测试", StringComparison.Ordinal),
             10000, "合组后的文件标签没有切换到界面");
-        OpenRendererMoreMenu(targetWindow);
+        Require(VerifyActiveRenderer(root, renderer, lease, "产品接管测试") == targetWindow,
+            "合组后切换活动标签时更换了窗口");
+        // 合组后标签条取代单格标题，在标签条右侧的标题栏空白处打开窗口菜单。
+        WindowRect groupedBounds;
+        Require(GetWindowRect(targetWindow, out groupedBounds), "无法读取格子组标题栏坐标");
+        var screen = Screen.FromHandle(targetWindow);
+        var header = new Point(groupedBounds.Right - Native.Scale(screen, 9), groupedBounds.Top + Native.Scale(screen, 17));
+        Require(HitPid(header) == lease.Renderer.Pid, "格子组标题栏被其他窗口遮挡");
+        SetCursorPos(header.X, header.Y);
+        mouse_event(8, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(16, 0, 0, 0, UIntPtr.Zero);
         InvokeOrClick(FindRendererMenuItem(lease.Renderer.Pid, "移出格子组", "Remove from widget group"));
         Wait(() =>
         {
             var detached = new GridStore(root).State.Boxes;
             return detached.Count == 2 && detached.Any(box => box.Id == target.Id && box.Active == target.Active) &&
                 detached.Any(box => box.Id != target.Id && box.Active == sourceTab && box.Current().Items.Contains(document));
-        }, 10000, "从菜单拆出标签后没有恢复两个独立格子");
+        }, 10000, "从菜单拆出标签后没有恢复两个独立格子",
+            () => GridRendererRequestSummary(root, lease.RendererSession));
         VerifyActiveRenderer(root, renderer, lease, "产品接管测试", 2);
         Trace("GRID_RENDERER_GROUP_PASS");
     }
 
-    private static void OpenRendererMoreMenu(IntPtr window)
+    private static void OpenRendererGroupMenu(IntPtr window, int rendererPid)
     {
-        WindowRect rectangle;
-        Require(GetWindowRect(window, out rectangle), "无法读取格子菜单坐标");
-        SetCursorPos((rectangle.Left + rectangle.Right) / 2, rectangle.Top + 22);
         var surface = AutomationElement.FromHandle(window);
-        var buttonId = new PropertyCondition(AutomationElement.AutomationIdProperty, "MoreButton");
-        AutomationElement button = null;
-        Wait(() => (button = surface.FindFirst(TreeScope.Descendants, buttonId)) != null && !button.Current.IsOffscreen,
-            8000, "看不到格子菜单按钮");
-        InvokeOrClick(button);
+        var titleIds = new OrCondition(new[] { "TitleText", "CompactTitleText", "OverlayTitleText" }
+            .Select(id => (Condition)new PropertyCondition(AutomationElement.AutomationIdProperty, id)).ToArray());
+        AutomationElement title = null;
+        Wait(() =>
+        {
+            title = surface.FindAll(TreeScope.Descendants, titleIds).Cast<AutomationElement>()
+                .FirstOrDefault(element => !element.Current.IsOffscreen && !element.Current.BoundingRectangle.IsEmpty);
+            return title != null;
+        }, 8000, "找不到可点击的格子标题");
+        var bounds = title.Current.BoundingRectangle;
+        Require(HitPid(new Point((int)(bounds.Left + bounds.Width / 2), (int)(bounds.Top + bounds.Height / 2))) == rendererPid,
+            "格子标题被其他窗口遮挡");
+        ClickAt(title, true);
+    }
+
+    private static string GridRendererRequestSummary(string root, string session)
+    {
+        var directory = Path.Combine(root, "deskbox-renderer-" + session);
+        var request = LocalJson.TryRead<GridRenderRequest>(Path.Combine(directory, "request.json"));
+        var state = LocalJson.TryRead<GridRenderState>(Path.Combine(directory, "state.json"));
+        return request == null ? "界面未提交请求" :
+            request.Action + " · " + (state == null ? "无状态回执" : state.Error ?? "无拒绝记录");
     }
 
     private static AutomationElement FindRendererMenuItem(int rendererPid, params string[] names)
@@ -1421,6 +1492,9 @@ internal static partial class GridAcceptance
             first = a.Id; tab = a.Current().Id;
             second = state.Add("快捷方式", fixtures).Id;
             state.Attach(tab, new[] { document, shortcut });
+            GridPreferences.Set(state, "ShowFileExtensions", "true");
+            GridPreferences.Set(state, "WidgetCapsuleBarPlacement", "Bottom");
+            state.NewWidgetMonitor = "@cursor";
             state.Place("双屏", first, new GridPosition { Monitor = "副屏", X = .5, Y = .3 });
             state.Place("单屏", first, new GridPosition { Monitor = "主屏", X = .2, Y = .8 });
         });
@@ -1430,6 +1504,12 @@ internal static partial class GridAcceptance
         store.Export(backup);
         var imported = GridStore.ReadLayout(backup);
         Require(imported.Tabs().First().Items.Count == 2, "备份丢失引用");
+        Require(imported.Preferences["ShowFileExtensions"] == "true" &&
+            imported.Preferences["WidgetCapsuleBarPlacement"] == "Bottom" &&
+            imported.NewWidgetMonitor == "@cursor", "备份丢失格子全局设置");
+        Require(!GridPreferences.Accepts("WidgetCapsuleBarPlacement", "Invalid") &&
+            !GridPreferences.Accepts("WidgetOpacity", "101") &&
+            !GridPreferences.Accepts("WidgetBackgroundUnifiedImage", @"..\background.png"), "错误设置值通过了校验");
         Require(imported.Position("双屏", first, new[] { "主屏", "副屏" }).Monitor == "副屏", "双屏布局丢失");
         Require(imported.Position("单屏", first, new[] { "主屏" }).Monitor == "主屏", "单屏布局丢失");
         store.Change(state => state.MoveTab(first, tab, second), true);
@@ -1898,6 +1978,7 @@ internal static partial class GridAcceptance
         File.WriteAllText(left, "left stack");
         File.WriteAllText(right, "right stack");
         File.WriteAllText(Path.Combine(root, "isolated-test-data.marker"), "SoulDesk isolated test data");
+        File.WriteAllText(Path.Combine(root, "test-reference-menu.request"), "isolated menu");
         var store = new GridStore(root);
         store.Change(state =>
         {
@@ -1924,6 +2005,12 @@ internal static partial class GridAcceptance
                 string launch = File.ReadAllText(ready);
                 Require(launch.Contains("mapped-grid-probe.txt"), "WinUI 未加载映射目录内容");
                 Require(launch.Contains("stack-probe"), "WinUI 未加载自定义堆栈内容");
+                var probe = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(launch);
+                var menu = (Dictionary<string, object>)probe["menu"];
+                var commands = ((System.Collections.IEnumerable)menu["labels"]).Cast<string>().ToArray();
+                Require(commands.Any(label => label.Contains("仅目录映射可用")) &&
+                    commands.Any(label => label.Contains("文件格子设置")), "格子菜单缺少原版入口或上下文提示");
+                VerifyWinUISettings(app, root);
                 int owner;
                 var window = FindPreviewForm("隔离窗口 · 桌面格子", out owner);
                 WindowRect initial;
@@ -1994,6 +2081,41 @@ internal static partial class GridAcceptance
             }
             finally { app.Stop(true); }
         }
+    }
+
+    private static void VerifyWinUISettings(GridApplication app, string root)
+    {
+        File.WriteAllText(Path.Combine(root, "test-reference-settings.request"), "isolated settings");
+        Require(app.ShowSettings("CapsuleMode"), "设置窗口未启动");
+        string session = Directory.GetDirectories(root, "deskbox-renderer-*").Single(directory =>
+        {
+            var state = LocalJson.TryRead<GridRenderState>(Path.Combine(directory, "state.json"));
+            return state != null && state.SettingsOnly;
+        });
+        string ready = Path.Combine(session, "preview-ready.json");
+        string error = Path.Combine(session, "preview-error.txt");
+        Wait(() => { Application.DoEvents(); return File.Exists(ready); }, 30000, "设置窗口未完成首帧",
+            () => File.Exists(error) ? File.ReadAllText(error) : "");
+        var identity = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(ready));
+        var window = new IntPtr(Convert.ToInt64(identity["handle"]));
+        Require(Native.IsWindowVisible(window), "设置窗口不可见");
+        string reportFile = Path.Combine(session, "settings-test.json");
+        Wait(() => { Application.DoEvents(); return File.Exists(reportFile); }, 12000, "WinUI 设置页验证未完成",
+            () => File.Exists(error) ? File.ReadAllText(error) : "");
+        var report = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(reportFile));
+        var categories = ((System.Collections.IEnumerable)report["categories"]).Cast<string>().ToArray();
+        Require(categories.SequenceEqual(new[] { "常规", "外观", "胶囊模式", "文件格子", "功能格子", "快捷与交互", "诊断与维护", "关于" }),
+            "设置分类与 DeskBox 固定版本不一致");
+        Require((int)report["pages"] == 30 && (int)report["disabled"] > 0, "设置详情页或未接入提示缺失");
+        Require(new GridStore(root).State.CapsuleBar == "Horizontal", "WinUI 胶囊排列开关未通过设置会话保存");
+        Require(new GridStore(root).State.Preferences["ShowFileExtensions"] == "true",
+            "WinUI 文件后缀名开关未通过设置会话保存");
+        Require(app.ShowSettings("About"), "不能复用设置窗口");
+        Wait(() => { Application.DoEvents(); return Native.IsWindowVisible(window) &&
+            LocalJson.Read<GridRenderState>(Path.Combine(session, "state.json")).SettingsPage == "About"; },
+            4000, "设置窗口路由切换失败");
+        Require(PostMessage(window, 0x10, IntPtr.Zero, IntPtr.Zero), "无法关闭设置窗口");
+        Wait(() => { Application.DoEvents(); return !Native.IsWindowVisible(window); }, 6500, "设置窗口关闭后仍可见");
     }
 
     private static void VerifySurfaces(string root)
@@ -2090,14 +2212,7 @@ internal static partial class GridAcceptance
                 "导入未恢复标签组或更改了测试项目");
             Require(new Recovery(root).Current() == null, "隔离预览发起了 Explorer 交接");
             var manager = Application.OpenForms.OfType<GridManager>().Single();
-            var buttons = Descendants(manager).OfType<Button>().ToArray();
-            buttons.Single(item => item.Text == "桌面整理").PerformClick();
-            Require(buttons.Single(item => item.Text == "预览整理").Visible &&
-                !buttons.Single(item => item.Text == "新建格子").Visible, "桌面整理未切换到独立分区");
-            buttons.Single(item => item.Text == "设置").PerformClick();
-            Require(buttons.Single(item => item.Text == "导出布局").Visible, "设置未显示布局备份入口");
-            buttons.Single(item => item.Text == "桌面格子").PerformClick();
-            Require(Descendants(manager).OfType<ComboBox>().Single().Visible, "格子列表未显示展开方式");
+            VerifyManagerSettings(app, manager, root);
             using (var loose = new LooseSurface(app))
             {
                 var item = DesktopItem.FromPath(document);
@@ -2118,6 +2233,75 @@ internal static partial class GridAcceptance
                 return !Application.OpenForms.OfType<GridManager>().Any();
             }, 5000, "隔离预览关闭后仍有管理窗口");
         }
+    }
+
+    private static void VerifyManagerSettings(GridApplication app, GridManager manager, string root)
+    {
+        var controls = Descendants(manager).ToArray();
+        var buttons = controls.OfType<Button>().ToArray();
+        buttons.Single(item => item.Text == "桌面整理").PerformClick();
+        Require(buttons.Single(item => item.Text == "预览整理").Visible &&
+            !buttons.Single(item => item.Text == "新建格子").Visible, "桌面整理未切换到独立分区");
+        buttons.Single(item => item.Text == "设置").PerformClick();
+        manager.Size = manager.MinimumSize;
+        Application.DoEvents();
+        var sections = controls.OfType<RadioButton>().ToDictionary(item => item.Text);
+        Require(sections.Values.All(item => item.Visible && item.Parent.ClientRectangle.Contains(item.Bounds) &&
+            TextRenderer.MeasureText(item.Text, item.Font, Size.Empty, TextFormatFlags.NoPadding).Width + 6 <= item.ClientSize.Width),
+            "最小窗口宽度下设置分区标题被截断");
+        var combos = controls.OfType<ComboBox>().ToDictionary(item => item.AccessibleName);
+        var switches = controls.OfType<CheckBox>().ToDictionary(item => item.AccessibleName);
+        var commit = typeof(ComboBox).GetMethod("OnSelectionChangeCommitted",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Action<string, int> choose = (name, index) =>
+        {
+            var picker = combos[name];
+            Require(picker.Visible && picker.Enabled, name + " 无法操作");
+            picker.SelectedIndex = index;
+            commit.Invoke(picker, new object[] { EventArgs.Empty });
+        };
+
+        Require(sections["布局与展开"].Checked && !combos["胶囊间距"].Enabled, "布局默认分区或胶囊间距联动错误");
+        choose("默认展开方式", 2);
+        choose("胶囊栏布局", 2);
+        choose("胶囊间距", 14);
+        switches["联动拖动"].Checked = false;
+        var persisted = new GridStore(root).State;
+        Require(persisted.DefaultCollapseMode == GridBox.Expanded && !persisted.CoordinatedMove &&
+            persisted.CapsuleBar == "Vertical" && persisted.CapsuleSpacing == 14, "全局布局设置未正确保存");
+
+        sections["单格设置"].Checked = true;
+        choose("单格展开方式", 0);
+        choose("显示器绑定", 1);
+        switches["锁定位置"].Checked = true;
+        switches["锁定大小"].Checked = true;
+        var box = new GridStore(root).State.Boxes.Single();
+        Require(box.BoundMonitor == "@primary" && box.DisplayMode == GridBox.SystemDefault &&
+            box.LocksPosition && box.LocksSize, "单格设置未持久化");
+
+        sections["整理与堆栈"].Checked = true;
+        switches["自动归类"].Checked = true;
+        switches["包含公共桌面"].Checked = true;
+        persisted = new GridStore(root).State;
+        Require(persisted.AutoSort && persisted.IncludePublic &&
+            buttons.Single(item => item.Text == "编辑规则").Visible, "整理选项或堆栈编辑入口无效");
+
+        sections["全局搜索"].Checked = true;
+        Require(switches["Windows 搜索索引"].Visible && !switches["Windows 搜索索引"].Enabled &&
+            buttons.Single(item => item.Text == "选择程序").Visible &&
+            !buttons.Single(item => item.Text == "选择程序").Enabled, "搜索分区未保留隔离限制");
+        sections["布局备份"].Checked = true;
+        Require(buttons.Single(item => item.Text == "导出布局").Visible &&
+            buttons.Single(item => item.Text == "导入布局").Visible, "设置未显示布局备份入口");
+        app.Edit(state => state.SetDefaultCollapseMode(GridBox.Click));
+        sections["布局与展开"].Checked = true;
+        Require(combos["默认展开方式"].SelectedIndex == 1, "外部布局更新后设置显示旧值");
+        app.Edit(state => state.RemoveBox(box.Id));
+        sections["单格设置"].Checked = true;
+        Require(!combos["当前格子"].Enabled && !combos["显示器绑定"].Enabled &&
+            !switches["锁定位置"].Enabled, "无格子时还允许修改单格设置");
+        buttons.Single(item => item.Text == "桌面格子").PerformClick();
+        Require(combos["展开方式"].Visible && !combos["当前格子"].Visible, "返回格子列表时设置分区未隐藏");
     }
 
     private static IEnumerable<Control> Descendants(Control parent)

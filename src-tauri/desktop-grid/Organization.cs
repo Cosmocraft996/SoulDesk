@@ -33,13 +33,15 @@ namespace SoulDesk.DesktopGrid
             return File.Exists(path) ? LocalJson.Read<List<OrganizedItem>>(path) : new List<OrganizedItem>();
         }
 
+        internal string StorageDirectory { get { return Path.Combine(root, "organized"); } }
+
         internal OrganizedItem[] Plan(IEnumerable<KeyValuePair<DesktopItem, GridTab>> changes)
         {
             string batch = GridState.NewId();
             return changes.Select(change =>
             {
                 var tab = change.Value;
-                string folder = tab.Folder ?? Path.Combine(root, "organized", tab.Id);
+                string folder = tab.Folder ?? Path.Combine(StorageDirectory, tab.Id);
                 return new OrganizedItem {
                     Id = GridState.NewId(), Batch = batch, Tab = tab.Id, Title = tab.Name,
                     Source = change.Key.Id, Destination = Path.Combine(folder, Path.GetFileName(change.Key.Id)),
