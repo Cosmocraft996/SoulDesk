@@ -18,6 +18,7 @@ mod clipboard_native;
 mod clipboard_shortcuts;
 mod clipboard_surface;
 mod clipboard_tools;
+mod cloud_workbench;
 mod coin;
 mod coin_live;
 mod component_lifecycle;
@@ -177,6 +178,7 @@ pub struct Core {
     coin_index: coin::IndexCache,
     content_cache: content_cache::Service,
     website_verification: website_verification::State,
+    cloud_workbench: cloud_workbench::Service,
     hardware: hardware::Service,
     keyboard: keyboard_host::Service,
     reminders: reminder_host::Service,
@@ -873,6 +875,9 @@ async fn widget_request(
     }
     if owner == Gateway::Server {
         return server_monitor::gateway(&app, window.label(), &token, args).await;
+    }
+    if owner == Gateway::CloudWorkbench {
+        return cloud_workbench::gateway(&app, window.label(), &token, &method, args).await;
     }
     if owner == Gateway::Labor {
         return labor::gateway(&app, window.label(), &token, args).await;
@@ -1681,6 +1686,7 @@ fn manage_core(
         coin_index: Default::default(),
         content_cache: Default::default(),
         website_verification: Default::default(),
+        cloud_workbench: Default::default(),
         hardware: Default::default(),
         keyboard: Default::default(),
         reminders: Default::default(),
@@ -1729,6 +1735,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         market_runtime::Role::InProcess
     };
     let channels = manage_core(app, store, integration, verification, market_role);
+    cloud_workbench::start(app.handle());
+    cloud_workbench::queue_widget_upgrade(app.handle(), &args);
     if split_market {
         market_runtime::start_desktop(app.handle())?;
     }
@@ -2023,6 +2031,16 @@ mod exit_tests {
 
 pub fn run() {
     let args = std::env::args().collect::<Vec<_>>();
+    if let Some(result) = cloud_workbench::import_command(&args) {
+        match result {
+            Ok(summary) => println!("{summary}"),
+            Err(error) => {
+                eprintln!("SoulDesk 服务器导入：{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(result) = market_runtime::run_worker(&args) {
         if let Err(error) = result {
             eprintln!("SoulDesk 行情进程：{error}");

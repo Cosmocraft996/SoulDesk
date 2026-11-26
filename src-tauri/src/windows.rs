@@ -2135,6 +2135,7 @@ pub fn detail(app: &AppHandle, id: &str) -> AppResult<()> {
 pub fn detail_capability(page: &str) -> AppResult<Option<&'static str>> {
     match page {
         "quotes" | "rules" | "history" => Ok(None),
+        "cloud-workbench" => Ok(Some(crate::cloud_workbench::CAPABILITY)),
         "pomodoro-scenes" | "pomodoro-settings" | "pomodoro-history" => Ok(Some("focus.pomodoro")),
         page if page.starts_with("market-chart:") => {
             let mut fields = page["market-chart:".len()..].split(':');
@@ -2200,7 +2201,7 @@ fn show_detail(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
             .append_pair("detail", id)
             .append_pair("page", page)
             .finish();
-        let (width, height) = if page.starts_with("market-chart:") {
+        let (width, height) = if page.starts_with("market-chart:") || page == "cloud-workbench" {
             (1120., 760.)
         } else {
             (820., 740.)

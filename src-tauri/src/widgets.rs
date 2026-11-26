@@ -114,6 +114,18 @@ fn validate_manifest(m: &Manifest) -> AppResult<()> {
     }
     crate::asset_permissions::validate(&m.capabilities)?;
     crate::clipboard_host::validate_permissions(&m.id, &m.capabilities)?;
+    if m.id != crate::cloud_workbench::COMPONENT_ID
+        && m.capabilities.iter().any(|name| {
+            matches!(
+                name.as_str(),
+                crate::cloud_workbench::CAPABILITY
+                    | crate::cloud_workbench::WAKE
+                    | crate::cloud_workbench::MANAGE
+            )
+        })
+    {
+        return Err("只有云服务器工作台组件可声明本机云服务器权限".into());
+    }
     if m.id != "local.souldesk.website-favorites"
         && m.capabilities
             .iter()
@@ -998,14 +1010,17 @@ fn open_session_inner(
     if expected_digest.is_some_and(|expected| expected != digest) {
         return Err("VERSION_INCOMPATIBLE: 组件版本已更新，请重新加载".into());
     }
-    if display
-        && detail
-        && !manifest
-            .capabilities
-            .iter()
-            .any(|c| c == "alerts.manage" || c == "focus.pomodoro")
-    {
-        return Err("CAPABILITY_DENIED: 此组件未声明详情能力".into());
+    if display && detail {
+        let allowed = manifest.capabilities.iter().any(|capability| {
+            if package == crate::cloud_workbench::COMPONENT_ID {
+                capability == crate::cloud_workbench::CAPABILITY
+            } else {
+                capability == "alerts.manage" || capability == "focus.pomodoro"
+            }
+        });
+        if !allowed {
+            return Err("CAPABILITY_DENIED: 此组件未声明详情能力".into());
+        }
     }
     let token = Uuid::new_v4().to_string();
     sessions.retain(|_, s| {
@@ -1738,6 +1753,49 @@ mod tests {
         store.save_preference("hidden_all", "true").unwrap();
         assert!(open_display_session(&store, &sessions, "panel", &id, None).is_err());
     }
+
+    #[test]
+    fn cloud_console_requires_the_fixed_component_and_its_read_capability() {
+        let root = std::env::temp_dir().join(format!("souldesk-cloud-console-{}", Uuid::new_v4()));
+        let store = Store::open(root.clone()).unwrap();
+        let sessions = Sessions::default();
+        let mut manifest: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/surface/manifest.json"))
+                .unwrap();
+        let package = crate::cloud_workbench::COMPONENT_ID;
+        manifest["id"] = json!(package);
+        manifest["version"] = json!("0.1.2");
+        manifest["capabilities"] = json!([
+            crate::cloud_workbench::CAPABILITY,
+            crate::cloud_workbench::WAKE
+        ]);
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let id = create_instance(&store, package).unwrap();
+        let primary = format!("float-{id}");
+        let detail = format!("detail-{id}");
+        let main = open_display_session(&store, &sessions, &primary, &id, None).unwrap();
+        let first = open_display_session(&store, &sessions, &detail, &id, None).unwrap();
+        let ready = open_display_session(&store, &sessions, &detail, &id, first["digest"].as_str())
+            .unwrap();
+        assert_eq!(ready["role"], "details");
+        assert_eq!(ready["capabilities"], manifest["capabilities"]);
+        assert!(sessions
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(main["token"].as_str().unwrap()));
+
+        manifest["id"] = json!("local.fixture.surface");
+        assert!(import(&store, &fixture(&root, &manifest, None)).is_err());
+
+        manifest["id"] = json!(package);
+        manifest["version"] = json!("0.1.3");
+        manifest["capabilities"] = json!([crate::cloud_workbench::WAKE]);
+        import(&store, &fixture(&root, &manifest, None)).unwrap();
+        let error = open_display_session(&store, &sessions, &detail, &id, None).unwrap_err();
+        assert_eq!(error, "CAPABILITY_DENIED: 此组件未声明详情能力");
+    }
+
     #[test]
     fn confirmed_update_requires_the_same_installed_digest() {
         let root =

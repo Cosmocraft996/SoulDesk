@@ -70,7 +70,7 @@ fn validate_options(value: &Value) -> AppResult<(String, Vec<String>)> {
     }
     Ok((name.into(), formats))
 }
-fn read_selected(path: &Path, limit: usize) -> AppResult<Vec<u8>> {
+pub(crate) fn read_selected(path: &Path, limit: usize) -> AppResult<Vec<u8>> {
     let file = File::open(path).map_err(err)?;
     if !file.metadata().map_err(err)?.is_file()
         || file.metadata().map_err(err)?.len() > limit as u64
@@ -86,7 +86,7 @@ fn read_selected(path: &Path, limit: usize) -> AppResult<Vec<u8>> {
     }
     Ok(bytes)
 }
-fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     if !path.is_absolute() {
         return Err("INVALID_ARGUMENT: 文件选择必须返回绝对路径".into());
     }
@@ -134,6 +134,21 @@ pub async fn gateway(
     method: &str,
     args: Value,
 ) -> AppResult<Value> {
+    if args.get("cloudWorkbenchBackup").is_some() {
+        if args.as_object().is_none_or(|fields| fields.len() != 1)
+            || args["cloudWorkbenchBackup"] != true
+            || !matches!(method, "documents.open" | "documents.save")
+        {
+            return Err("服务器备份参数无效".into());
+        }
+        return crate::cloud_workbench::backup_dialog(
+            app,
+            window,
+            token,
+            method == "documents.save",
+        )
+        .await;
+    }
     if method == "documents.open" && args.get("launcher").is_some() {
         return crate::launcher::choose(app, window, token, args).await;
     }

@@ -46,7 +46,7 @@ fn storage_key(instance: &str) -> String {
 }
 
 #[cfg(windows)]
-fn crypt(bytes: &[u8], instance: &str, decrypt: bool) -> AppResult<Vec<u8>> {
+pub(crate) fn local_dpapi(bytes: &[u8], entropy: &[u8], decrypt: bool) -> AppResult<Vec<u8>> {
     use windows_sys::Win32::{
         Foundation::LocalFree,
         Security::Cryptography::{
@@ -54,9 +54,8 @@ fn crypt(bytes: &[u8], instance: &str, decrypt: bool) -> AppResult<Vec<u8>> {
         },
     };
     if bytes.len() > 128 * 1024 {
-        return Err("CREDENTIAL_ERROR: AI凭据超过容量，未覆盖".into());
+        return Err("CREDENTIAL_ERROR: 凭据超过容量，未覆盖".into());
     }
-    let entropy = format!("SoulDesk.ai.v1/{instance}").into_bytes();
     let input = CRYPT_INTEGER_BLOB {
         cbData: bytes.len() as u32,
         pbData: bytes.as_ptr() as *mut u8,
@@ -93,7 +92,7 @@ fn crypt(bytes: &[u8], instance: &str, decrypt: bool) -> AppResult<Vec<u8>> {
         }
     };
     if ok == 0 {
-        return Err("CREDENTIAL_ERROR: AI凭据保护失败，可能不属于当前Windows用户或实例".into());
+        return Err("CREDENTIAL_ERROR: 凭据保护失败，可能不属于当前Windows用户或实例".into());
     }
     let value = if output.cbData == 0 {
         Vec::new()
@@ -104,13 +103,21 @@ fn crypt(bytes: &[u8], instance: &str, decrypt: bool) -> AppResult<Vec<u8>> {
         LocalFree(output.pbData as _);
     }
     if value.len() > 128 * 1024 {
-        return Err("CREDENTIAL_ERROR: AI凭据超过容量，未覆盖".into());
+        return Err("CREDENTIAL_ERROR: 凭据超过容量，未覆盖".into());
     }
     Ok(value)
 }
 #[cfg(not(windows))]
-fn crypt(_bytes: &[u8], _instance: &str, _decrypt: bool) -> AppResult<Vec<u8>> {
-    Err("UNSUPPORTED: AI凭据当前仅支持Windows保护".into())
+pub(crate) fn local_dpapi(_bytes: &[u8], _entropy: &[u8], _decrypt: bool) -> AppResult<Vec<u8>> {
+    Err("UNSUPPORTED: 凭据当前仅支持Windows保护".into())
+}
+
+fn crypt(bytes: &[u8], instance: &str, decrypt: bool) -> AppResult<Vec<u8>> {
+    local_dpapi(
+        bytes,
+        format!("SoulDesk.ai.v1/{instance}").as_bytes(),
+        decrypt,
+    )
 }
 fn validate_profile(value: &Profile) -> AppResult<()> {
     ai_protocol::endpoint(&value.base_url)?;

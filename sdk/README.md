@@ -242,6 +242,16 @@ kind固定为stats、info、pull或push。stats按原客户端POST `mem:*`、`cu
 
 服务器组件配置仍使用4MiB实例存储，串行提交成功后才应用。原刷新间隔设置现在按每台1～3600秒（默认10秒）生效；轮询最多4并发、更改地址/令牌/主服务器后忽略旧响应，删除后释放自己的读取状态。主服务器同步包含连接令牌和元数据，界面明确说明，并只向用户指定的服务发送；本地保存与远端同步结果分开。当前本地HTTP夹具、静态模板与组件动作检查通过；真实服务、桌面、剪贴板和同步未验收，原服务端仓库链接404，没有替代服务部署。
 
+## 本机云服务器工作台摘要
+
+固定组件 `local.souldesk.cloud-workbench` 声明 `cloud-workbench.read` 后，可在正式会话调用无参数的 `cloudWorkbench.summary()` 和 `cloudWorkbench.openConsole()`。摘要含 `native`、`configured`、最近采集时间与每台服务器的展示指标。固定详情窗口额外开放 `details`、`history({id,hours})`、`refresh`、`wake({id,requestId})` 和 `openService({id,index})`。历史范围为 1、24 或 168 小时。唤醒按 UUID 去重，仅提交给已导入且状态和工作区核验通过的 Instabox，结果通过详情返回。入口 URL 来自已导入配置。试加载不取得这些能力。
+
+远端唤醒另需声明 `cloud-workbench.wake`。本机启动参数 `--souldesk-cloud-import <原项目绝对路径>` 一次性导入，迁移成功后重复执行不覆盖。导入配置和凭据通过当前 Windows 用户的 DPAPI 加密，历史保留在同一宿主数据库中。采集由宿主后台按配置间隔共享调度，阿里云使用 Windows OpenSSH 和已导入的主机密钥，Instabox 使用固定官方读取接口。组件页面无权读取凭据或执行本机程序。
+
+同一组件在固定详情会话中声明 `cloud-workbench.manage` 后，可调用 `cloudWorkbench.manage.list`，取得可编辑字段、凭据是否齐全及清单修订号。通过 `documents.open({cloudWorkbenchBackup:true})` 与 `documents.save({cloudWorkbenchBackup:true})` 请求原生导入和导出完整 JSON 备份。凭据与备份字节由宿主直接读写，组件只收到文件名或导入计数。
+
+`save({revision,id,server,credentials})` 添加或编辑配置，`id: null` 表示添加。凭据留空时沿用同一连接目标的原值。启动采集需同时配置 SSH 私钥和可信主机公钥，或 Instabox API 密钥。`remove({revision,id})` 移出本机清单，`reorder({revision,ids})` 接受完整 ID 顺序。旧修订号拒绝写入。备份包含完整连接配置、凭据和主机信任。导入合并并跳过已存在的目标，已配齐凭据的新项进入采集。
+
 ## 喝水提醒能力（0.5.0本轮源码）
 
 声明`reminders.water`后，正式展示会话可调用`water.get()`或`water.get({})`，首次调用在核心注册本实例提醒。`water.change({requestId,operation})`仅接受UUID请求标识和`add`或`reset`，分别对今天加一杯或归零；不接受实例、路径、通知文字或其他字段。响应包含`sampledAt/day/count/targetCup/enableReminder/interval/lastReminderAt/nextReminderAt/delivery/lastError`。毫秒时间用于间隔，day按Windows当前本地日期计算，历史按日和实例隔离。

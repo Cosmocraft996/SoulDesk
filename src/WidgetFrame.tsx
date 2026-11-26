@@ -48,6 +48,10 @@ export function WidgetFrame({ instance, probe = false, page, assistantShell = fa
       session = s;
       if (disposed) { void call('close_session', { token: s.token }); return; }
       const resource = widgetEntryUrl(convertFileSrc(s.resourcePath, 'widget'));
+      if (s.packageId === 'local.souldesk.cloud-workbench' && s.role === 'details' && page === 'cloud-workbench'
+        && !['0.1.0', '0.1.1'].includes(s.version)) {
+        resource.pathname = new URL('./console.html', resource).pathname;
+      }
       resource.searchParams.set('hostOrigin', location.origin);
       if (s.verify) resource.searchParams.set('verify', s.verificationMode ?? '1');
       if (s.role) resource.searchParams.set('role', s.role);

@@ -96,6 +96,9 @@ pub(crate) const CAPABILITIES: &[&str] = &[
     "focus.pomodoro.window",
     "keyboard.display",
     "servers.monitor",
+    crate::cloud_workbench::CAPABILITY,
+    crate::cloud_workbench::WAKE,
+    crate::cloud_workbench::MANAGE,
     "links.open",
     OPEN_WEB_LINK,
     WEBSITE_METADATA,
@@ -120,6 +123,7 @@ pub(crate) enum Gateway {
     Clipboard,
     Metrics,
     Server,
+    CloudWorkbench,
     Labor,
     Water,
     Todo,
@@ -141,6 +145,13 @@ pub(crate) fn gateway(method: &str) -> Gateway {
         ("content.live", CoinLive),
         ("system.metrics", Metrics),
         ("server.request", Server),
+        ("cloudWorkbench.summary", CloudWorkbench),
+        ("cloudWorkbench.openConsole", CloudWorkbench),
+        ("cloudWorkbench.details", CloudWorkbench),
+        ("cloudWorkbench.history", CloudWorkbench),
+        ("cloudWorkbench.refresh", CloudWorkbench),
+        ("cloudWorkbench.wake", CloudWorkbench),
+        ("cloudWorkbench.openService", CloudWorkbench),
         ("labor.get", Labor),
         ("notifications.send", Reminders),
     ] {
@@ -149,6 +160,7 @@ pub(crate) fn gateway(method: &str) -> Gateway {
         }
     }
     for (prefix, owner) in [
+        ("cloudWorkbench.manage.", CloudWorkbench),
         ("pomodoro.window.", PomodoroWindow),
         ("jobs.", Jobs),
         ("island.", Reminders),
