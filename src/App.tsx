@@ -9,6 +9,7 @@ import { OfficialGallery, UpdateAllWidgets, type CatalogResponse } from './Offic
 import { WidgetBrowser, widgetCategory } from './WidgetBrowser';
 import { WidgetFrame } from './WidgetFrame';
 import { NetworkSettings } from './NetworkSettings';
+import { BinanceAccountSettings } from './BinanceAccountSettings';
 import { NotificationSettings } from './NotificationSettings';
 import { heldShortcutModifiers, shortcutMainKey } from './shortcut-keys.ts';
 import { PanelCanvas, type PanelScroll } from './PanelCanvas';
@@ -534,6 +535,7 @@ export function App() {
       </section>}
       <NotificationSettings shortcutsOnly={tab === 'shortcuts'} historyRequest={notificationHistory} />
       </> : tab === 'data' ? <>
+      <BinanceAccountSettings />
       <NetworkSettings />
       <section className="settings-panel" id="local-data" tabIndex={-1}>
         <h2>本地数据与诊断</h2>

@@ -39,6 +39,7 @@ fn main() {
             "set_autostart",
             "schedule_test",
             "business_settings",
+            "binance_account_settings",
             "report_view",
             "trial_failed",
             "desktop_probe_set_ratio",

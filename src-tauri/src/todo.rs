@@ -1318,6 +1318,7 @@ mod tests {
             "formal".into(),
             crate::widgets::Session {
                 instance: a.clone(),
+                package_digest: None,
                 window: "float-a".into(),
                 shared_cursor: None,
                 preview: None,
@@ -1369,6 +1370,7 @@ mod tests {
             "trial".into(),
             crate::widgets::Session {
                 instance: a.clone(),
+                package_digest: None,
                 window: "trial-todo".into(),
                 shared_cursor: None,
                 preview: Some(std::sync::Arc::new(std::sync::Mutex::new(

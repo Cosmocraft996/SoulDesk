@@ -2057,6 +2057,7 @@ mod tests {
             token.clone(),
             widgets::Session {
                 instance: f.instance.clone(),
+                package_digest: None,
                 window: f.window.clone(),
                 preview: Some(preview),
                 shared_cursor: None,

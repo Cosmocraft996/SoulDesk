@@ -790,6 +790,7 @@ pub fn unregister_package(store: &Store, package: &str) -> AppResult<()> {
 pub struct Session {
     pub instance: String,
     pub window: String,
+    pub package_digest: Option<String>,
     pub preview: Option<Arc<Mutex<Preview>>>,
     pub shared_cursor: Option<(String, u64)>,
 }
@@ -1014,6 +1015,8 @@ fn open_session_inner(
         let allowed = manifest.capabilities.iter().any(|capability| {
             if package == crate::cloud_workbench::COMPONENT_ID {
                 capability == crate::cloud_workbench::CAPABILITY
+            } else if package == crate::binance_account::PACKAGE {
+                capability == crate::binance_account::READ
             } else {
                 capability == "alerts.manage" || capability == "focus.pomodoro"
             }
@@ -1036,6 +1039,7 @@ fn open_session_inner(
         Session {
             instance: instance.into(),
             window: window.into(),
+            package_digest: Some(digest.clone()),
             preview: None,
             shared_cursor: None,
         },
@@ -1099,6 +1103,7 @@ pub fn open_preview(
         Session {
             instance: instance.into(),
             window: window.into(),
+            package_digest: None,
             preview: Some(preview),
             shared_cursor: None,
         },

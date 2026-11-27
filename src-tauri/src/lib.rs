@@ -9,6 +9,7 @@ mod asset_permissions;
 mod assistant_host;
 mod assistant_state;
 mod assistant_webviews;
+mod binance_account;
 mod business;
 mod clipboard_actions;
 mod clipboard_capture;
@@ -168,6 +169,7 @@ pub async fn run_sleep_probe(report: std::path::PathBuf) -> Result<(), String> {
     recovery::run(report, true).await
 }
 pub struct Core {
+    binance_account: binance_account::Service,
     ai: ai_host::Service,
     assistant: assistant_host::Service,
     jobs: job_host::Service,
@@ -863,6 +865,9 @@ async fn widget_request(
     }
     if owner == Gateway::Weather {
         return weather::gateway(&app, window.label(), &token, &method, args).await;
+    }
+    if owner == Gateway::BinanceAccount {
+        return binance_account::gateway(&app, &window, &token, &method, args).await;
     }
     if owner == Gateway::Ai {
         return ai_host::gateway(&app, window.label(), &token, &method, args).await;
@@ -1687,6 +1692,7 @@ fn manage_core(
         content_cache: Default::default(),
         website_verification: Default::default(),
         cloud_workbench: Default::default(),
+        binance_account: Default::default(),
         hardware: Default::default(),
         keyboard: Default::default(),
         reminders: Default::default(),
@@ -2214,6 +2220,7 @@ pub fn run() {
                 set_autostart,
                 schedule_test,
                 business_settings,
+                binance_account::binance_account_settings,
                 set_panel,
                 drag_panel_edge,
                 panel_view,

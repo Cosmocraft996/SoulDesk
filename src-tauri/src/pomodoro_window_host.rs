@@ -812,6 +812,7 @@ mod tests {
             token.clone(),
             widgets::Session {
                 instance: f.instance.clone(),
+                package_digest: None,
                 window: s.owner.label(),
                 preview: None,
                 shared_cursor: None,

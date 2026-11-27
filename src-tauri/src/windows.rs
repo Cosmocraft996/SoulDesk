@@ -563,6 +563,10 @@ pub fn settings(app: &AppHandle) -> AppResult<()> {
     show_settings_tab(app, "general")
 }
 
+pub(crate) fn account_settings(app: &AppHandle) -> AppResult<()> {
+    show_settings_tab(app, "data")
+}
+
 pub(crate) fn component_library(app: &AppHandle) -> AppResult<()> {
     show_settings_tab(app, "library")
 }
@@ -2136,6 +2140,7 @@ pub fn detail_capability(page: &str) -> AppResult<Option<&'static str>> {
     match page {
         "quotes" | "rules" | "history" => Ok(None),
         "cloud-workbench" => Ok(Some(crate::cloud_workbench::CAPABILITY)),
+        "binance-account" => Ok(Some(crate::binance_account::READ)),
         "pomodoro-scenes" | "pomodoro-settings" | "pomodoro-history" => Ok(Some("focus.pomodoro")),
         page if page.starts_with("market-chart:") => {
             let mut fields = page["market-chart:".len()..].split(':');
@@ -2201,7 +2206,9 @@ fn show_detail(app: &AppHandle, id: &str, page: &str) -> AppResult<()> {
             .append_pair("detail", id)
             .append_pair("page", page)
             .finish();
-        let (width, height) = if page.starts_with("market-chart:") || page == "cloud-workbench" {
+        let (width, height) = if page.starts_with("market-chart:")
+            || matches!(page, "cloud-workbench" | "binance-account")
+        {
             (1120., 760.)
         } else {
             (820., 740.)
@@ -2476,6 +2483,7 @@ mod document_drop_tests {
     fn hiding_one_panel_instance_preserves_other_session_tokens_and_windows() {
         let session = |instance: &str, window: &str| crate::widgets::Session {
             instance: instance.into(),
+            package_digest: None,
             window: window.into(),
             shared_cursor: None,
             preview: None,

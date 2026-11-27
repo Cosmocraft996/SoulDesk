@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-binance-account-settings"
+description = "Enables the binance_account_settings command without any pre-configured scope."
+commands.allow = ["binance_account_settings"]
+
+[[permission]]
+identifier = "deny-binance-account-settings"
+description = "Denies the binance_account_settings command without any pre-configured scope."
+commands.deny = ["binance_account_settings"]

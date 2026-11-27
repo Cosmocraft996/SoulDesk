@@ -591,6 +591,7 @@ mod tests {
             "preview".into(),
             widgets::Session {
                 instance: first.clone(),
+                package_digest: None,
                 window: "trial-weather".into(),
                 shared_cursor: None,
                 preview: Some(preview),

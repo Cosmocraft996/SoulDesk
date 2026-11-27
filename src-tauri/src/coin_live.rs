@@ -499,6 +499,7 @@ mod tests {
             "preview".into(),
             widgets::Session {
                 instance: first,
+                package_digest: None,
                 window: "trial-coin".into(),
                 shared_cursor: None,
                 preview: Some(preview),

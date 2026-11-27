@@ -269,6 +269,7 @@ mod tests {
             "preview".into(),
             widgets::Session {
                 instance: first.clone(),
+                package_digest: None,
                 window: "trial-server".into(),
                 shared_cursor: None,
                 preview: Some(std::sync::Arc::new(std::sync::Mutex::new(

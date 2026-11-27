@@ -37,6 +37,29 @@ Windows 默认组件来源为 `http://widget.localhost`；SDK 从宿主提供的
 
 从广场仓库运行 `python scripts/widget.py prompt-favorites` 得到示例 ZIP。通过宿主管理窗口「导入本地 ZIP」登记后从组件库添加。开发验证用 `pnpm dev` 默认的隔离数据。
 
+## 币安账户监控
+
+0.5.12 增加 `binance.account.read` 和 `binance.account.trade`。从 0.5.13 起，正式实例会话必须对应当前已安装且由用户在宿主设置授权的币安账户组件包 SHA-256。新摘要需要重新授权。待授权实例可以打开宿主设置，隐藏试加载只完成界面初始化。Windows 宿主管理普通 U 本位、币本位、现货及统一账户的 U 本位配置。HMAC 凭据由当前 Windows 用户加密保护，组件只收到配置状态、脱敏数据与回执。
+
+| 方法 | 参数与结果 |
+|---|---|
+| `binanceAccount.status` | 四类账户的配置和授权状态 |
+| `binanceAccount.openSettings` | 打开宿主的「数据」设置页 |
+| `binanceAccount.snapshot` | `{market}`，返回账户、持仓、余额、配置、USDT 参考价、采样时间和逐项错误。0.5.13 的 `ordersRevision` 在委托事件或写操作后变化，可据此刷新活动委托 |
+| `binanceAccount.history` | `{market,section,symbol?,startTime?,endTime?}`，按市场允许的固定查询项读取历史及原始字段 |
+| `view.openDetails` | `{page:"binance-account"}`，打开同实例的账户明细 |
+| `binanceAccount.trade` | `{market,operation}`，发起宿主确认任务，返回任务 ID |
+| `binanceAccount.tradeStatus` | `{id}`，读取原确认任务状态和脱敏回执 |
+| `binanceAccount.pending` / `binanceAccount.reconcile` | `{market}`，查看待核对指令和按币安订单或设置查询其结果 |
+
+`market` 为 `usd`、`coin`、`spot` 或 `portfolio`。账户快照按市场共享，私有推送使相关快照失效并重新读取。推送关闭或网络中断时由签名轮询补齐。部分数据失败时返回对应错误，币种折算无可靠来源时显示缺值。真实接口的账户权限、历史时限、查询窗口和字段取决于币安当前政策。
+
+交易操作类型为 `close`、`order`、`cancel`、`amend` 和 `setting`。除桌面的平仓入口外，写入来自详情窗口。每次真实写入前须通过宿主原生对话框确认，宿主重新核对会话、授权及订单状态。平仓保留用户确认的最高买价或最低卖价。当新报价更有利且可成交量仍满足已确认条件时，可以继续提交。现货组合单在确认中显示撤销范围，改价重挂根据最终撤单回执扣除已成交量。
+
+预写指令记录供重启后对账。订单未查到时，待核对记录仍保留。用户可在币安人工核对后，从宿主设置归档并解锁。归档保留未知结果，宿主不会自动补发。收到提交回执和实际成交分别显示。仓位张数、原生价格和订单编号用于操作，USDT 折算只用于桌面展示。
+
+从 0.5.14 起，币安 HTTP 接口失败会在宿主 `logs/current.jsonl` 记录 `binance.account.http`。记录包括接口路径、请求方式、账户类型、失败阶段、耗时、HTTP 状态、币安错误码和可用的数字限流响应头。`httpStatus` 为 `null` 表示没有收到状态码。日志只保留诊断字段，请求参数、签名、凭据和响应正文均不保存。
+
 ## 可选本地共享库（本轮0.5.0源码）
 
 七款预置的0.2.0版本新增`storage.shared`：思维导图、倒计时、倒计时列表、生日列表、待办、大号日历、番茄钟。默认仍使用原`storage.instance`私有数据；这里只提供本地共享，原云同步未实现。宿主按固定预置身份限制为mindmap/countdown/birthday/todo/pomodoro五种数据类型，不允许跨类型连接。

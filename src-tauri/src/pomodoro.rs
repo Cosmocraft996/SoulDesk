@@ -1499,6 +1499,7 @@ mod tests {
             "formal".into(),
             crate::widgets::Session {
                 instance: a.clone(),
+                package_digest: None,
                 window: "float-a".into(),
                 shared_cursor: None,
                 preview: None,

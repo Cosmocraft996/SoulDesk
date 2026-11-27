@@ -630,6 +630,7 @@ mod tests {
             "preview-token".into(),
             widgets::Session {
                 instance: id,
+                package_digest: None,
                 window: "trial-keyboard".into(),
                 preview: Some(std::sync::Arc::new(Mutex::new(widgets::Preview {
                     package,

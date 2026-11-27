@@ -980,6 +980,7 @@ mod tests {
             "preview".into(),
             widgets::Session {
                 instance: a.clone(),
+                package_digest: None,
                 window: "trial-labor".into(),
                 shared_cursor: None,
                 preview: Some(std::sync::Arc::new(std::sync::Mutex::new(
